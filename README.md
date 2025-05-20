@@ -1,11 +1,11 @@
-# TransferToken
+# Trades
 
-This project is an Electron application optimized for macOS that performs automated ERC20 token transfers from a list of source addresses (file A) to a list of destination addresses (file B), using a file (file C) that contains private keys. The app includes advanced features such as configurable transaction parameters, AES-256 encryption for securing private keys, and an ergonomic user interface with real-time feedback.
+This project is an Electron application optimized for macOS that performs trades of ERC20 token transfers.
 
 ## Features
 
 - **File Management:** Import and manage files containing source/destination addresses and private keys.
-- **Automated Transfers:** Execute ERC20 token transfers with customizable delays and amounts.
+- **Automated Transfers:** Execute ERC20 trades.
 - **Security:** Secure storage of private keys using AES-256 encryption.
 - **Real-Time Monitoring:** Detailed, real-time logs and history of transfers.
 - **Optimized UX/UI:** macOS-optimized interface with advanced error handling and user feedback.
@@ -26,8 +26,8 @@ Follow these steps to get your development environment set up:
    Open your terminal and clone the repository to your local machine:
 
    ```bash
-   git clone https://github.com/your-username/my-electron-app.git
-   cd my-electron-app
+   git clone https://github.com/QChab/Trades.git
+   cd Trades
    ```
 
 2. **Install Dependencies:**
