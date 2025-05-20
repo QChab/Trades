@@ -17,7 +17,7 @@
     "vite:build": "vite build"
   },
   "build": {
-    "appId": "com.techinblocks.transfers",
+    "appId": "com.techinblocks.trades",
     "mac": {
       "target": [
         {

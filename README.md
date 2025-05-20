@@ -5,9 +5,9 @@ This project is an Electron application optimized for macOS that performs trades
 ## Features
 
 - **File Management:** Import and manage files containing source/destination addresses and private keys.
-- **Automated Transfers:** Execute ERC20 trades.
+- **Automated Trades:** Execute ERC20 trades.
 - **Security:** Secure storage of private keys using AES-256 encryption.
-- **Real-Time Monitoring:** Detailed, real-time logs and history of transfers.
+- **Real-Time Monitoring:** Detailed, real-time logs and history of trades.
 - **Optimized UX/UI:** macOS-optimized interface with advanced error handling and user feedback.
 - **Testing & Linting:** Pre-configured ESLint and Jest for code quality and testing.
 

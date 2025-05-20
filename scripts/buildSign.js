@@ -7,7 +7,7 @@ const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 const version = packageJson.version;
 
 // Define dmg filename dynamically
-const dmgName = `transfers-${version}-arm64.dmg`;
+const dmgName = `Trades-${version}-arm64.dmg`;
 const dmgPath = path.join('dist', dmgName);
 
 // Define credentials (replace or load from ENV for security)

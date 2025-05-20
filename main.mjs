@@ -297,14 +297,14 @@ function createWindow() {
   });  
 
   mainWindow.webContents.on('before-input-event', (event, input) => {
-    const isReload =
-      (input.control || input.meta) &&
-      (input.key.toLowerCase() === 'r' || input.code === 'F5');
+    // const isReload =
+    //   (input.control || input.meta) &&
+    //   (input.key.toLowerCase() === 'r' || input.code === 'F5');
   
-    if (isReload) {
-      event.preventDefault(); // Block refresh
-      console.log('[main] Blocked reload!');
-    }
+    // if (isReload) {
+    //   event.preventDefault(); // Block refresh
+    //   console.log('[main] Blocked reload!');
+    // }
   });
 
   ipcMain.handle('decrypt-rtf', (event, rtf) => {

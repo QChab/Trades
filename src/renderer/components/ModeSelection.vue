@@ -1,21 +1,6 @@
 <template>
   <div class="mode-selection">
     <h3>Settings</h3>
-    <p v-if="isProcessRunning && haveSettingsBeenModifiedSinceRunning">The modifications will only be applied to next run.</p>
-    <!-- Delay settings -->
-    <div class="form-group">
-      <img class="icon-line" :src="timeImage" width="30"/>
-      <label>
-        Between 
-        <input class="small-number" type="number" v-model.number="minuteDelayMin" placeholder="0" /> min
-        <input class="small-number" type="number" v-model.number="delayMin" placeholder="Min" /> s
-      </label>
-      <label>
-        and
-        <input class="small-number" type="number" v-model.number="minuteDelayMax" placeholder="0" /> min
-        <input class="small-number" type="number" v-model.number="delayMax" placeholder="Max" /> s
-      </label>
-    </div>
 
     <!-- Max Gas Input -->
     <div class="form-group">
@@ -29,66 +14,11 @@
       />
     </div>
 
-    <!-- Amount by transfer selection -->
-    <div class="form-group">
-      <p @click="shouldDiplayAmountForm = !shouldDiplayAmountForm" class="text-center">
-        Amount by transfer
-        <span class="tips"> {{ amountChoices.filter((ac) => ac.enabled).length }} selected </span>
-        <img :src="chevronDownImage" class="chevron-down" :class="{ rotated : shouldDiplayAmountForm }"></img>
-      </p>
-      <div v-if="shouldDiplayAmountForm" class="settings-section">
-        <ul class="two-column-list">
-          <!-- CHECKBOXES -->
-          <li v-if="!isEditingAmountChoices" v-for="(choice, index) in amountChoices" :key="index">
-            <!-- Wrap input and text in a label to make entire area clickable -->
-            <label class="checkbox-label" :class="{ selected: choice.enabled }">
-              <input type="checkbox" v-model="choice.enabled" @change="emitSettings"/>
-              <span v-if="!choice.isRange">{{ choice.value }}</span>
-              <span v-else>Between {{ choice.min ? choice.min : 0 }} and {{ choice.max }} ({{ choice.decimals }} decimals)</span>
-            </label>
-            <label v-if="isEditingAmountChoices && !choice.isRange" class="checkbox-label">
-              <input v-if="!choice.isRange" v-model="choice.value"/>
-            </label>
-            <label v-if="isEditingAmountChoices && choice.isRange" class="checkbox-label">
-                Min: <input v-model.number="choice.min"/>
-            </label>
-            <label v-if="isEditingAmountChoices && choice.isRange" class="checkbox-label">
-                Max: <input v-model.number="choice.max"/>
-            </label>
-          </li>
-
-          <!-- EDITING -->
-          <li v-if="isEditingAmountChoices" v-for="(choice, index) in amountChoices.filter((ac) => !ac.isRange)" :key="index + 100">
-            <label class="checkbox-label" :class="{ selected: choice.enabled }">
-              <input v-model.number="choice.value"/>
-            </label>
-          </li>
-          <li v-if="isEditingAmountChoices" v-for="(choice, index) in amountChoices.filter((ac) => ac.isRange)" :key="index + 200">
-            <label class="checkbox-label" :class="{ selected: choice.enabled }">
-              <input class="medium-number" v-model.number="choice.min"/>
-              to
-              <input class="medium-number" v-model.number="choice.max"/>
-            </label>
-            <label class="checkbox-label">
-              <div class="decimals">
-                Decimals:
-                <input type="number" class="small-number" v-model.number="choice.decimals"/>
-              </div>
-            </label>
-          </li>
-        </ul>
-        <button @click="isEditingAmountChoices = !isEditingAmountChoices" class="edit-button">
-          {{ isEditingAmountChoices ? 'Stop editing' : 'Edit amounts' }}
-        </button>
-      </div>
-    </div>
-
     <!-- Token selection list -->
     <div class="form-group">
       <p @click="shouldDiplayTokenForm = !shouldDiplayTokenForm" class="text-center">
         Tokens
         <span class="tips"> {{ tokens.filter((token) => token.enabled).length }} selected </span>
-        <span class="tips"> {{ randomTokenSelection ? '+ random' : '' }} </span>
         <img :src="chevronDownImage" class="chevron-down" :class="{ rotated : shouldDiplayTokenForm }"></img>
       </p>
       <div v-if="shouldDiplayTokenForm">
@@ -102,13 +32,6 @@
               </label>
             </li>
           </ul>
-          <!-- Option for random token selection -->
-          <div>
-            <label class="checkbox-label token-random-choice" :class="{ bold: randomTokenSelection }">
-              <input type="checkbox" v-model="randomTokenSelection" />
-              <span>Random choice amongst the selected</span>
-            </label>
-          </div>
         </div>
         <!-- EDITING -->
         <div v-else>
@@ -143,7 +66,6 @@
 <script>
 import { ref, reactive, watch, onMounted } from 'vue';
 import GasPrice from './GasPrice.vue';
-import timeImage from '@/../assets/time.png';
 import gasImage from '@/../assets/gas.png';
 import chevronDownImage from '@/../assets/chevron-down.svg';
 import deleteImage from '@/../assets/delete.svg';
@@ -163,67 +85,44 @@ export default {
   },
   emits: ['update:settings', 'update:gasPrice'],
   setup(props, { emit } ) {
-    const haveSettingsBeenModifiedSinceRunning = ref(false);
-    // Parameters
-    const minuteDelayMin = ref(0);
-    const minuteDelayMax = ref(0);
-    const delayMin = ref(1);
-    const delayMax = ref(2);
-
     const maxGasPrice = ref(2);
 
     const shouldDiplayAmountForm = ref(true);
-    const isEditingAmountChoices = ref(false);
-    // Token amount choices: 6 fixed and 1 range option.
-    const amountChoices = reactive([
-      { value: 100, enabled: true, isRange: false },
-      { value: 1, enabled: false, isRange: false },
-      { value: 1220, enabled: false, isRange: false },
-      { value: 0.15, enabled: true, isRange: false },
-      { value: 25, enabled: true, isRange: false },
-      { value: 13, enabled: false, isRange: false },
-      { min: 0.5, max: 5000, decimals: 3, enabled: true, isRange: true },
-    ]);
 
     const shouldDiplayTokenForm = ref(true);
     const isEditingTokens = ref(false);
     // Token selection list with on/off toggles.
     const tokens = reactive([
-      { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', enabled: true },
-      { address: '', symbol: '', enabled: false },
-      { address: '', symbol: '', enabled: false },
-      { address: '', symbol: '', enabled: false },
-      { address: '', symbol: '', enabled: false },
-      { address: '', symbol: '', enabled: false },
-      { address: '', symbol: '', enabled: false },
-      { address: '', symbol: '', enabled: false },
-      { address: '', symbol: '', enabled: false },
-      { address: '', symbol: '', enabled: false },
-      { address: '', symbol: '', enabled: false },
-      { address: '', symbol: '', enabled: false },
+      { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', isSource: true, isDestination: false },
+      { address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', symbol: 'WETH', isSource: false, isDestination: true },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '', symbol: '', isSource: false, isDestination: false },
     ]);
-    const randomTokenSelection = ref(false);
 
     const emitSettings = () => {
-      if (props.isProcessRunning) {
-        haveSettingsBeenModifiedSinceRunning.value = true;
-      }
       const settings = {
-        delayMin: delayMin.value + (minuteDelayMin.value ? minuteDelayMin.value * 60 : 0),
-        delayMax: delayMax.value + (minuteDelayMax.value ? minuteDelayMax.value * 60 : 0),
         maxGasPrice: Number(maxGasPrice.value) * 1000000000,
-        amounts: amountChoices.filter((ac) => ac.enabled && (ac.value || ac.isRange)).map((ac) => ({...ac})),
         tokens: tokens.filter((token) => token.enabled && token.symbol && token.address && isAddress(token.address)).map((token) => ({...token})),
-        isRandomToken: randomTokenSelection.value,
       };
 
       emit('update:settings', settings);
       
-      settings.minuteDelayMin = minuteDelayMin.value;
-      settings.delayMin = delayMin.value;
-      settings.minuteDelayMax = minuteDelayMax.value;
-      settings.delayMax = delayMax.value;
-      settings.amounts = [...amountChoices];
       settings.tokens = [...tokens];
       settings.maxGasPrice = maxGasPrice.value;
       window.electronAPI.saveSettings(JSON.parse(JSON.stringify(settings)));
@@ -232,17 +131,7 @@ export default {
     onMounted(async () => {
       const settings = await window.electronAPI.loadSettings();
       if (settings) {
-        if (settings.minuteDelayMin) minuteDelayMin.value = settings.minuteDelayMin;
-        if (settings.delayMin) delayMin.value = settings.delayMin;
-        if (settings.minuteDelayMax) minuteDelayMax.value = settings.minuteDelayMax;
-        if (settings.delayMax) delayMax.value = settings.delayMax;
         if (settings.maxGasPrice) maxGasPrice.value = settings.maxGasPrice;
-        if (settings.isRandomToken) randomTokenSelection.value = settings.isRandomToken;
-        if (settings.amounts) {
-          for (let i = 0 ; i < settings.amounts.length ; i++ ) {
-            amountChoices[i] = settings.amounts[i];
-          }
-        }
         if (settings.tokens) {
           for (let i = 0 ; i < settings.tokens.length ; i++ ) {
             tokens[i] = settings.tokens[i];
@@ -254,16 +143,7 @@ export default {
 
     watch(amountChoices, () => emitSettings(), {deep: true});
     watch(tokens, () => emitSettings(), {deep: true});
-    watch(minuteDelayMin, () => emitSettings());
-    watch(delayMin, () => emitSettings());
-    watch(minuteDelayMax, () => emitSettings());
-    watch(delayMax, () => emitSettings());
     watch(maxGasPrice, () => emitSettings());
-    watch(randomTokenSelection, () => emitSettings());
-
-    watch(props.isProcessRunning, (value, oldValue) => {
-      haveSettingsBeenModifiedSinceRunning.value = false;
-    })
 
     const erc20Abi = [
       "function symbol() view returns (string)"
@@ -299,15 +179,8 @@ export default {
     };
 
     return {
-      minuteDelayMin,
-      minuteDelayMax,
-      delayMin,
-      delayMax,
       maxGasPrice,
-      amountChoices,
       tokens,
-      randomTokenSelection,
-      timeImage,
       gasImage,
       chevronDownImage,
       deleteImage,
@@ -319,7 +192,6 @@ export default {
       findSymbol,
       deleteToken,
       setGasPrice,
-      haveSettingsBeenModifiedSinceRunning,
     };
   }
 };

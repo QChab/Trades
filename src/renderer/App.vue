@@ -32,32 +32,21 @@
           </div>
 
           <div class="files">
-            <FileManager 
-              @file:new="readSourceAddresses"
-              file-type="A"
-              :title="'Source addresses (' + sourceAddresses.length + ')'"
-              :extensions="'xls xlsx csv'"
-              :no-preview="true"
-              :otherPreview="sourceAddresses.join(' ')"
-              :error="errorMessageSourceAddresses"
-              id="1"
-            />
-            
             <div class="private-keys" >
               <p class="title" @click="shouldShowPKForm = !shouldShowPKForm">
-                Private keys
+                Trading Addresses
                 <img :src="chevronDownImage" class="chevron-down" :class="{ rotated : shouldShowPKForm }"></img>
               </p>
               <div v-if="shouldShowPKForm && !hasUnlockedPrivateKeys">
                 <p class="text-center" v-if="!isFileDetected">First set your password</p>
-                <p class="text-center" v-if="isFileDetected">Enter your password to load the private keys</p>
+                <p class="text-center" v-if="isFileDetected">Enter your password to load the addresses</p>
                 <form
                   @submit.prevent="() => isFileDetected ? loadPrivateKeys() : readPrivateKeyFile()"
                 >
                   <input class="center" v-model="password" type="password" required/>
                   <div v-if="!isFileDetected">
                     <p class="text-center">
-                      Then submit a file with the private keys of the source addresses
+                      Then submit a Excel or CSV file with the addresses and private keys of the trading addresses
                     </p>
                     <FileManager 
                       @file:new="storePrivateKeyArgs"
@@ -79,22 +68,11 @@
                 <span class="action" v-if="isFileDetected" @click="hasUnlockedPrivateKeys = false, isFileDetected = false">Import another file</span>
               </div>
               <div v-if="shouldShowPKForm && hasUnlockedPrivateKeys">
-                <p>Your private keys are loaded.</p>
+                <p>Your addresses are loaded.</p>
                 <span class="action" @click="hasUnlockedPrivateKeys = false, isFileDetected = false">Import another file</span>
               </div>
 
             </div>
-
-            <FileManager
-              @file:new="readDestinationAddresses" 
-              file-type="B" 
-              :title="'Destination addresses (' + destinationAddresses.length + ')'" 
-              :extensions="'rtf'"
-              :no-preview="true"
-              :other-preview="destinationAddresses.join(' ')"
-              :error="errorMessageDestinationAddresses"
-              id="3"
-            />
           </div>
         </div>
 
@@ -111,7 +89,7 @@
       <!-- Bottom Section: History and Live Visualization -->
       <div class="bottom-section">
         <div class="history-section">
-          <TransferControl
+          <!-- <TransferControl
             :settings="currentSettings"
             :sourceAddresses="sourceAddresses"
             :destinationAddresses="destinationAddresses"
@@ -122,7 +100,7 @@
             @update:isProcessRunning="setIsProcessRunning"
             @deleteHistory="emptyTransfers"
             :infuraKeys="infuraKeys"
-          />
+          /> -->
           <TransferHistory 
             :transfers="transfers"
           />
