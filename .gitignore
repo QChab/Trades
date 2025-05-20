@@ -1,0 +1,12 @@
+.env
+node_modules/
+dist/
+vue-dist/
+
+.DS_Store
+*/.DS_Store
+
+certificates/
+releases/
+
+p.crypt
