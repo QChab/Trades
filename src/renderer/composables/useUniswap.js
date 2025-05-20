@@ -154,56 +154,56 @@ export function useUniswapV4(rpcUrl) {
       }
     }
 
-    // Three-hop: find paths via two intermediates
-    // Fetch all pools for A
-    const allPoolsA = twoHop.poolsA;
-    // Build adjacency: token -> pools
-    const adj = {};
-    allPoolsA.forEach(p => {
-      [p.currency0,p.currency1].forEach(tok => {
-        const t = tok.toLowerCase();
-        adj[t] = adj[t] || [];
-        adj[t].push(p);
-      });
-    });
-    // For each intermediate1 of A
-    for (const inter1 in adj) {
-      if (inter1 === a || inter1 === b) continue;
-      const pools1 = adj[inter1];
-      // Fetch pools for inter1 to any token that also connects to b
-      const poolsInterQuery = gql`
-        query InterPools($i: String!, $b: String!) {
-          byInter: pools(where: { or: [{ currency0: $i },{ currency1: $i }] }, first: 50) {
-            currency0, currency1, fee, tickSpacing, hooks
-          }
-          byB: pools(where: { or: [{ currency0: $b },{ currency1: $b }] }, first: 50) {
-            currency0, currency1, fee, tickSpacing, hooks
-          }
-        }`;
-      const result = await request(SUBGRAPH_URL, poolsInterQuery, { i: inter1, b });
-      // Build map for second intermediate
-      const mapInter = {};
-      result.byInter.forEach(p => {
-        const other = p.currency0.toLowerCase() === inter1 ? p.currency1 : p.currency0;
-        if (other !== a && other !== b) mapInter[other.toLowerCase()] = p;
-      });
-      for (const p of result.byB) {
-        const other2 = p.currency0.toLowerCase() === b ? p.currency1 : p.currency0;
-        if (mapInter[other2.toLowerCase()]) {
-          // Found chain A->inter1->inter2->B
-          const p1 = pools1[0];
-          const p2 = mapInter[other2.toLowerCase()];
-          const p3 = p;
-          return [
-            { poolKey: p1, zeroForOne: p1.currency0.toLowerCase() === a },
-            { poolKey: p2, zeroForOne: p2.currency0.toLowerCase() === inter1 },
-            { poolKey: p3, zeroForOne: p3.currency0.toLowerCase() === other2 }
-          ];
-        }
-      }
-    }
+    // // Three-hop: find paths via two intermediates
+    // // Fetch all pools for A
+    // const allPoolsA = twoHop.poolsA;
+    // // Build adjacency: token -> pools
+    // const adj = {};
+    // allPoolsA.forEach(p => {
+    //   [p.currency0,p.currency1].forEach(tok => {
+    //     const t = tok.toLowerCase();
+    //     adj[t] = adj[t] || [];
+    //     adj[t].push(p);
+    //   });
+    // });
+    // // For each intermediate1 of A
+    // for (const inter1 in adj) {
+    //   if (inter1 === a || inter1 === b) continue;
+    //   const pools1 = adj[inter1];
+    //   // Fetch pools for inter1 to any token that also connects to b
+    //   const poolsInterQuery = gql`
+    //     query InterPools($i: String!, $b: String!) {
+    //       byInter: pools(where: { or: [{ currency0: $i },{ currency1: $i }] }, first: 50) {
+    //         currency0, currency1, fee, tickSpacing, hooks
+    //       }
+    //       byB: pools(where: { or: [{ currency0: $b },{ currency1: $b }] }, first: 50) {
+    //         currency0, currency1, fee, tickSpacing, hooks
+    //       }
+    //     }`;
+    //   const result = await request(SUBGRAPH_URL, poolsInterQuery, { i: inter1, b });
+    //   // Build map for second intermediate
+    //   const mapInter = {};
+    //   result.byInter.forEach(p => {
+    //     const other = p.currency0.toLowerCase() === inter1 ? p.currency1 : p.currency0;
+    //     if (other !== a && other !== b) mapInter[other.toLowerCase()] = p;
+    //   });
+    //   for (const p of result.byB) {
+    //     const other2 = p.currency0.toLowerCase() === b ? p.currency1 : p.currency0;
+    //     if (mapInter[other2.toLowerCase()]) {
+    //       // Found chain A->inter1->inter2->B
+    //       const p1 = pools1[0];
+    //       const p2 = mapInter[other2.toLowerCase()];
+    //       const p3 = p;
+    //       return [
+    //         { poolKey: p1, zeroForOne: p1.currency0.toLowerCase() === a },
+    //         { poolKey: p2, zeroForOne: p2.currency0.toLowerCase() === inter1 },
+    //         { poolKey: p3, zeroForOne: p3.currency0.toLowerCase() === other2 }
+    //       ];
+    //     }
+    //   }
+    // }
 
-    throw new Error('No path found up to 3 hops');
+    throw new Error('No path found up to 2 hops');
   }
 
   /**
