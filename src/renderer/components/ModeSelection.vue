@@ -1,6 +1,6 @@
 <template>
   <div class="mode-selection">
-    <h3>Settings</h3>
+    <h3>Manual trading</h3>
 
     <!-- Max Gas Input -->
     <div class="form-group">
@@ -16,28 +16,41 @@
 
     <!-- Token selection list -->
     <div class="form-group">
-      <p @click="shouldDiplayTokenForm = !shouldDiplayTokenForm" class="text-center">
-        Tokens
-        <span class="tips"> {{ tokens.filter((token) => token.enabled).length }} selected </span>
-        <img :src="chevronDownImage" class="chevron-down" :class="{ rotated : shouldDiplayTokenForm }"></img>
-      </p>
-      <div v-if="shouldDiplayTokenForm">
+      <div>
         <div v-if="!isEditingTokens">
-          <ul class="two-column-list">
-            <li v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )" :key="index">
-              <!-- Wrap input and text in a label to make entire area clickable -->
-              <label class="checkbox-label" :class="{ selected: token.enabled }">
-                <input type="checkbox" v-model="token.enabled" :disabled="!isAddress(token.address)"/>
-                <span>{{ token.symbol }} {{ token.address.substring(0, 8) }}... </span>
-              </label>
-            </li>
-          </ul>
+          <span class="text-center">
+            Swap
+          </span>
+          <input type="tel"/>
+          <select id="from-token" v-model="fromTokenAddress">
+            <option 
+              v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
+              :key="'fromToken-' + index" 
+              :value="token.address"
+            >
+              {{ token.symbol }}
+            </option>
+          </select>
+          <span class="text-center">
+            for 
+          </span>
+          <input type="tel"/>
+          <select id="to-token" v-model="toTokenAddress">
+            <option 
+              v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
+              :key="'toToken-' + index" 
+              :value="token.address"
+            >
+              {{ token.symbol }}
+            </option>
+          </select>
         </div>
         <!-- EDITING -->
         <div v-else>
+          <p class="text-center">Editing Tokens</p>
           <ul class="two-column-list">
             <li v-for="(token, index) in tokens" :key="index">
-              <label class="checkbox-label edit-label" :class="{ selected: token.enabled }">
+              <label class="checkbox-label edit-label">
                 <!-- First line: Token address and delete icon -->
                 <div class="line">
                   <input v-model="token.address" @input="findSymbol(index, token.address)" placeholder="Address" />
@@ -85,40 +98,45 @@ export default {
   },
   emits: ['update:settings', 'update:gasPrice'],
   setup(props, { emit } ) {
-    const maxGasPrice = ref(2);
+    const maxGasPrice = ref(3);
 
-    const shouldDiplayAmountForm = ref(true);
-
-    const shouldDiplayTokenForm = ref(true);
     const isEditingTokens = ref(false);
+    const fromTokenAddress = ref(null);
+    const toTokenAddress = ref(null);
+
     // Token selection list with on/off toggles.
     const tokens = reactive([
-      { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', isSource: true, isDestination: false },
-      { address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', symbol: 'WETH', isSource: false, isDestination: true },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
-      { address: '', symbol: '', isSource: false, isDestination: false },
+      { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT'},
+      { address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', symbol: 'WETH'},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
+      { address: '', symbol: ''},
     ]);
+
+    watch(() => tokens, (tokensValue) => {
+      if (!fromTokenAddress.value) fromTokenAddress.value = tokensValue[0].address;
+      if (!toTokenAddress.value) toTokenAddress.value = tokensValue[1].address;
+    }, {immediate: true});
 
     const emitSettings = () => {
       const settings = {
         maxGasPrice: Number(maxGasPrice.value) * 1000000000,
-        tokens: tokens.filter((token) => token.enabled && token.symbol && token.address && isAddress(token.address)).map((token) => ({...token})),
+        tokens: tokens.filter((token) => token.symbol && token.address && isAddress(token.address)).map((token) => ({...token})),
       };
 
       emit('update:settings', settings);
@@ -134,14 +152,14 @@ export default {
         if (settings.maxGasPrice) maxGasPrice.value = settings.maxGasPrice;
         if (settings.tokens) {
           for (let i = 0 ; i < settings.tokens.length ; i++ ) {
-            tokens[i] = settings.tokens[i];
+            if (settings.tokens[i]?.address?.length && settings.tokens[i]?.symbol?.length)
+              tokens[i] = settings.tokens[i];
           }
         }
       }
       emitSettings();
     });
 
-    watch(amountChoices, () => emitSettings(), {deep: true});
     watch(tokens, () => emitSettings(), {deep: true});
     watch(maxGasPrice, () => emitSettings());
 
@@ -160,17 +178,25 @@ export default {
     };
 
     const findSymbol = async (index, contractAddress) => {
-      if (isAddress(contractAddress))
-        tokens[index].symbol = await getTokenSymbol(contractAddress);
-      else
-        tokens[index].enabled = false;
+      try {
+        if (isAddress(contractAddress))
+          tokens[index].symbol = await getTokenSymbol(contractAddress);
+        else
+          null;
+          // TODO: throw error
+        if (!tokens[index].symbol)
+          tokens[index].symbol = '';
+
+      } catch (err) {
+        console.error(err);
+        tokens[index].symbol = '';
+      }
     };
 
     const deleteToken = (index) => {
       const token = tokens[index];
       token.address = '';
       token.symbol = '';
-      token.enabled = false;
     };
 
     const setGasPrice = (gasPrice) => {
@@ -184,14 +210,13 @@ export default {
       gasImage,
       chevronDownImage,
       deleteImage,
-      shouldDiplayAmountForm,
-      isEditingAmountChoices,
-      shouldDiplayTokenForm,
       isEditingTokens,
       isAddress,
       findSymbol,
       deleteToken,
       setGasPrice,
+      fromTokenAddress,
+      toTokenAddress,
     };
   }
 };
@@ -216,7 +241,6 @@ input[type="number"] {
 
 p {
   font-weight: 600;
-  cursor: pointer;
   user-select: none; /* Standard syntax */
   -webkit-user-select: none; /* Safari */
   -moz-user-select: none; /* Old Firefox */
