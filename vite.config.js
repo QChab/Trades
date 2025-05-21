@@ -9,6 +9,7 @@ export default defineConfig({
   build: {
     outDir: '../../vue-dist',
     emptyOutDir: true,
+    sourcemap: true,
   },
   resolve: {
     alias: {

@@ -78,7 +78,7 @@
 
         <!-- Middle Column: Modes (paramétrage avancé) -->
         <div class="middle-column">
-          <ModeSelection
+          <ManualTrading
             @update:settings="setCurrentSettings"
             @update:gasPrice="setGasPrice"
             :isProcessRunning="isProcessRunning"
@@ -112,19 +112,19 @@
   <script>
   import TransferControl from './components/TransferControl.vue';
   import FileManager from './components/FileManager.vue';
-  import ModeSelection from './components/ModeSelection.vue';
+  import ManualTrading from './components/ManualTrading.vue';
   import TransferHistory from './components/TransferHistory.vue';
   import { onMounted, reactive, ref } from 'vue';
   import * as XLSX from 'xlsx';
   import chevronDownImage from '@/../assets/chevron-down.svg';
-import { isAddress } from 'ethers';
+  import { isAddress } from 'ethers';
 
   export default {
     name: 'App',
     components: {
       TransferControl,
       FileManager,
-      ModeSelection,
+      ManualTrading,
       TransferHistory,
     },
     setup() {
