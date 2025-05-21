@@ -2,18 +2,6 @@
   <div class="manual-trading">
     <h3>Manual trading</h3>
 
-    <!-- Max Gas Input -->
-    <div class="form-group">
-      <img class="icon-line" :src="gasImage" width="30"/>
-      <label>
-        Max gas price:
-        <input class="medium-number" type="number" v-model.number="maxGasPrice" placeholder="Max Gas" /> gwei
-      </label>
-      <GasPrice 
-        @update:gas-price="setGasPrice"
-      />
-    </div>
-
     <!-- Token selection list -->
     <div class="form-group">
       <button @click="isEditingTokens = !isEditingTokens" class="edit-button">
@@ -25,31 +13,35 @@
             <p>
               Sell
             </p>
-            <input type="tel"/>
-            <select id="from-token" v-model="fromTokenAddress">
-              <option 
-                v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
-                :key="'fromToken-' + index" 
-                :value="token.address"
-              >
-                {{ token.symbol }}
-              </option>
-            </select>
+            <div class="amount-token">
+              <input type="tel"/>
+              <select id="from-token" v-model="fromTokenAddress">
+                <option 
+                  v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
+                  :key="'fromToken-' + index" 
+                  :value="token.address"
+                >
+                  {{ token.symbol }}
+                </option>
+              </select>
+            </div>
           </div>
           <div class="to-swap">
             <p>
               Buy 
             </p>
-            <input type="tel"/>
-            <select id="to-token" v-model="toTokenAddress">
-              <option 
-                v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
-                :key="'toToken-' + index" 
-                :value="token.address"
-              >
-                {{ token.symbol }}
-              </option>
-            </select>
+            <div class="amount-token">
+              <input type="tel"/>
+              <select id="to-token" v-model="toTokenAddress">
+                <option 
+                  v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
+                  :key="'toToken-' + index" 
+                  :value="token.address"
+                >
+                  {{ token.symbol }}
+                </option>
+              </select>
+            </div>
           </div>
           <button @click="" class="swap-button">
             Swap
@@ -85,8 +77,6 @@
 
 <script>
 import { ref, reactive, watch, onMounted } from 'vue';
-import GasPrice from './GasPrice.vue';
-import gasImage from '@/../assets/gas.png';
 import chevronDownImage from '@/../assets/chevron-down.svg';
 import deleteImage from '@/../assets/delete.svg';
 import { isAddress, Contract } from 'ethers';
@@ -96,7 +86,6 @@ import { useUniswapV4 } from '../composables/useUniswap';
 export default {
   name: 'ManualTrading',
   components: {
-    GasPrice,
   },
   props: {
     isProcessRunning: {
@@ -104,10 +93,8 @@ export default {
       default: false,
     },
   },
-  emits: ['update:settings', 'update:gasPrice'],
+  emits: ['update:settings'],
   setup(props, { emit } ) {
-    const maxGasPrice = ref(3);
-
     const { findAndSelectBestPath } = useUniswapV4();
 
     const isEditingTokens = ref(false);
@@ -148,21 +135,18 @@ export default {
 
     const emitSettings = () => {
       const settings = {
-        maxGasPrice: Number(maxGasPrice.value) * 1000000000,
         tokens: tokens.filter((token) => token.symbol && token.address && isAddress(token.address)).map((token) => ({...token})),
       };
 
       emit('update:settings', settings);
       
       settings.tokens = [...tokens];
-      settings.maxGasPrice = maxGasPrice.value;
       window.electronAPI.saveSettings(JSON.parse(JSON.stringify(settings)));
     };
 
     onMounted(async () => {
       const settings = await window.electronAPI.loadSettings();
       if (settings) {
-        if (settings.maxGasPrice) maxGasPrice.value = settings.maxGasPrice;
         if (settings.tokens) {
           for (let i = 0 ; i < settings.tokens.length ; i++ ) {
             if (settings.tokens[i]?.address?.length && settings.tokens[i]?.symbol?.length)
@@ -174,7 +158,6 @@ export default {
     });
 
     watch(tokens, () => emitSettings(), {deep: true});
-    watch(maxGasPrice, () => emitSettings());
 
     const erc20Abi = [
       "function symbol() view returns (string)"
@@ -212,22 +195,14 @@ export default {
       token.symbol = '';
     };
 
-    const setGasPrice = (gasPrice) => {
-      window.electronAPI.setGasPrice(gasPrice);
-      emit('update:gasPrice', gasPrice);
-    };
-
     return {
-      maxGasPrice,
       tokens,
-      gasImage,
       chevronDownImage,
       deleteImage,
       isEditingTokens,
       isAddress,
       findSymbol,
       deleteToken,
-      setGasPrice,
       fromTokenAddress,
       toTokenAddress,
     };
@@ -451,6 +426,7 @@ input.token-name {
 
 .from-swap p, .to-swap p {
   margin: 0;
+  font-weight: 400;
 }
 .from-swap input, .to-swap input {
   background-color: #aaa;
@@ -466,6 +442,12 @@ input.token-name {
   padding: 5px;
   border: none;
   margin-left: 5px;
+  font-weight: 700;
 }
-
+.amount-token {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  width: 270px;
+}
 </style>

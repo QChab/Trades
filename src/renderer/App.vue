@@ -3,35 +3,35 @@
       <div class="main-content">
         <div class="left-column">
           <label>Test mode: <input type="checkbox" v-model="isTestMode"/></label>
-          <div class="infura-keys">
-            <!-- The title that toggles the infura keys section -->
-            <p class="title" @click="toggleInfuraKeys">
-              RPCs ({{ infuraKeys.length }})
-              <!-- Icon that rotates when the section is toggled open/closed -->
-              <img :src="chevronDownImage" class="chevron-down" :class="{ rotated: showInfuraKeys }" />
-            </p>
-            <!-- The section that shows the list of Infura API keys and an input to add new keys -->
-            <div v-if="showInfuraKeys" class="infura-keys-content">
-              <!-- Loop over the infuraKeys array to display each key -->
-              <div v-for="(key, index) in infuraKeys" :key="index" class="infura-key-entry">
-                <span class="rpc-url">{{ key }}</span>
-                <!-- Delete button to remove a specific key -->
-                <button @click="deleteInfuraKey(index)">Delete</button>
-              </div>
-              <!-- Section to add a new Infura API key -->
-              <div class="add-infura-key">
-                <form @submit.prevent="addInfuraKey">
-                  <!-- Two-way binding with newInfuraKey -->
-                  <input v-model="newInfuraKey" placeholder="http..." @input="errorInfuraKey = ''"/>
-                  <!-- Clicking this button adds the new key to the list -->
-                  <button type="submit">+</button>
-                </form>
-              </div>
-              <p class="error-message">{{ errorInfuraKey }}</p>
-            </div>
-          </div>
 
           <div class="files">
+            <div class="infura-keys">
+              <!-- The title that toggles the infura keys section -->
+              <p class="title" @click="toggleInfuraKeys">
+                RPCs ({{ infuraKeys.length }})
+                <!-- Icon that rotates when the section is toggled open/closed -->
+                <img :src="chevronDownImage" class="chevron-down" :class="{ rotated: showInfuraKeys }" />
+              </p>
+              <!-- The section that shows the list of Infura API keys and an input to add new keys -->
+              <div v-if="showInfuraKeys" class="infura-keys-content">
+                <!-- Loop over the infuraKeys array to display each key -->
+                <div v-for="(key, index) in infuraKeys" :key="index" class="infura-key-entry">
+                  <span class="rpc-url">{{ key }}</span>
+                  <!-- Delete button to remove a specific key -->
+                  <button @click="deleteInfuraKey(index)">Delete</button>
+                </div>
+                <!-- Section to add a new Infura API key -->
+                <div class="add-infura-key">
+                  <form @submit.prevent="addInfuraKey">
+                    <!-- Two-way binding with newInfuraKey -->
+                    <input v-model="newInfuraKey" placeholder="http..." @input="errorInfuraKey = ''"/>
+                    <!-- Clicking this button adds the new key to the list -->
+                    <button type="submit">+</button>
+                  </form>
+                </div>
+                <p class="error-message">{{ errorInfuraKey }}</p>
+              </div>
+            </div>
             <div class="private-keys" >
               <p class="title" @click="shouldShowPKForm = !shouldShowPKForm">
                 Trading Addresses
@@ -71,7 +71,17 @@
                 <p>Your addresses are loaded.</p>
                 <span class="action" @click="hasUnlockedPrivateKeys = false, isFileDetected = false">Import another file</span>
               </div>
-
+            </div>
+            <!-- Max Gas Input -->
+            <div class="form-group">
+              <img class="icon-line" :src="gasImage" width="30"/>
+              <label>
+                Max gas price:
+                <input class="medium-number" type="number" v-model.number="maxGasPrice" placeholder="Max Gas" /> gwei
+              </label>
+              <GasPrice 
+                @update:gas-price="setGasPrice"
+              />
             </div>
           </div>
         </div>
@@ -118,6 +128,8 @@
   import * as XLSX from 'xlsx';
   import chevronDownImage from '@/../assets/chevron-down.svg';
   import { isAddress } from 'ethers';
+  import GasPrice from './components/GasPrice.vue';
+  import gasImage from '@/../assets/gas.png';
 
   export default {
     name: 'App',
@@ -126,6 +138,7 @@
       FileManager,
       ManualTrading,
       TransferHistory,
+      GasPrice,
     },
     setup() {
       const currentSettings = ref({});
@@ -140,6 +153,8 @@
 
       const isTestMode = ref(false);
 
+      const maxGasPrice = ref(3);
+
       const setCurrentSettings = (settings) => {
         currentSettings.value = {
           ...settings,
@@ -149,6 +164,7 @@
       const gasPrice = ref(1000000000);
       const setGasPrice = (currentGasPrice) => {
         gasPrice.value = currentGasPrice;
+        window.electronAPI.setGasPrice(gasPrice);
       }
 
       const addTransfer = (transfer) => {
@@ -395,6 +411,8 @@
         toggleInfuraKeys,
         addInfuraKey,
         errorInfuraKey,
+        gasImage,
+        maxGasPrice,
       }
     }
   };
