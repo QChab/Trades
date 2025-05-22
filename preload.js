@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkPrivateKeys: (addresses) => ipcRenderer.invoke('check-private-keys', addresses),
   isFileDetected: () => ipcRenderer.invoke('is-file-detected'),
   openURL: (url) => ipcRenderer.invoke('open-url', url),
-  getTransfers: () => ipcRenderer.invoke('get-transfers'),
+  getTrades: () => ipcRenderer.invoke('get-trades'),
   loadSettings: () => ipcRenderer.invoke('load-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   deleteHistory: () => ipcRenderer.invoke('delete-history'),

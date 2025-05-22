@@ -1,8 +1,14 @@
 <template>
   <div class="manual-trading">
-    <h3>Manual trading</h3>
-
     <!-- Token selection list -->
+    <div class="form-group address-form">
+      <p>Addresses</p>
+      <ul>
+        <li v-for="address in addresses">
+          {{ address }}
+        </li>
+      </ul>
+    </div>
     <div class="form-group">
       <button @click="isEditingTokens = !isEditingTokens" class="edit-button">
         {{ isEditingTokens ? 'Stop editing' : 'Edit tokens' }}
@@ -14,7 +20,7 @@
               Sell
             </p>
             <div class="amount-token">
-              <input type="tel"/>
+              <input type="tel" placeholder="0" v-model.number="fromAmount"/>
               <select id="from-token" v-model="fromTokenAddress">
                 <option 
                   v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
@@ -31,7 +37,7 @@
               Buy 
             </p>
             <div class="amount-token">
-              <input type="tel"/>
+              <input type="tel" placeholder="0" v-model.number="toAmount"/>
               <select id="to-token" v-model="toTokenAddress">
                 <option 
                   v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
@@ -92,14 +98,20 @@ export default {
       type: Boolean,
       default: false,
     },
+    addresses: {
+      type: Array,
+      default: () => ([]),
+    },
   },
   emits: ['update:settings'],
   setup(props, { emit } ) {
     const { findAndSelectBestPath } = useUniswapV4();
 
     const isEditingTokens = ref(false);
+    const fromAmount = ref(null);
     const fromTokenAddress = ref(null);
     const toTokenAddress = ref(null);
+    const toAmount = ref(null);
 
     // Token selection list with on/off toggles.
     const tokens = reactive([
@@ -203,6 +215,8 @@ export default {
       isAddress,
       findSymbol,
       deleteToken,
+      fromAmount,
+      toAmount,
       fromTokenAddress,
       toTokenAddress,
     };
@@ -217,10 +231,39 @@ export default {
   border-radius: 5px;
   padding: 20px;
   background-color: #fff;
+  display: flex;
+  flex-direction: row;
+  position: relative;
+  padding-top: 40px;
 }
 
 .form-group {
   margin-bottom: 15px;
+}
+.address-form {
+  width: 450px;
+  margin-right: 100px;
+}
+.address-form p {
+  margin: 0;
+}
+.address-form ul {
+  max-height: 400px;
+  overflow-y: auto;
+  background-color: #eee;
+  padding-left: 0;
+}
+.address-form li {
+  padding: 10px;
+  cursor: pointer;
+  list-style: none;
+  text-align: center;
+}
+.address-form li:hover {
+  background-color: #ddd !important;
+}
+.address-form li:nth-child(odd) {
+  background-color: #f9f9f9;     /* ensure odd rows keep the light bg */
 }
 input[type="number"] {
   width: 70px;
@@ -290,19 +333,6 @@ input.small-number {
   padding: 5px;
 }
 
-input.medium-number {
-  width: 70px;
-  margin: 0 5px;
-  text-align: center;
-  padding: 5px;
-}
-
-.icon-line {
-  position: relative;
-  top: 10px;
-  margin-right: 10px;
-}
-
 .tips {
   color: #444;
   font-weight: 400;
@@ -319,19 +349,26 @@ input.medium-number {
 }
 
 .edit-button {
+  cursor: pointer;
   padding: 5px;
   border-radius: 5px;
-  border: 1px solid #000;
+  border: 1px solid #777;
   margin: 20px auto;
   display: block;
   user-select: none; /* Standard syntax */
   -webkit-user-select: none; /* Safari */
   -moz-user-select: none; /* Old Firefox */
   -ms-user-select: none; /* Internet Explorer/Edge */
+  position: absolute;
+  right: 20px;
+  top: 0px;
 }
 
 .swap-button {
-  padding: 5px;
+  cursor: pointer;
+  background-color: #333388;
+  color: white;
+  padding: 15px;
   border-radius: 5px;
   border: 1px solid #000;
   margin: 5px auto;
@@ -340,10 +377,24 @@ input.medium-number {
   -webkit-user-select: none; /* Safari */
   -moz-user-select: none; /* Old Firefox */
   -ms-user-select: none; /* Internet Explorer/Edge */
+  font-weight: 700;
+
+  -webkit-box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  -moz-box-shadow:    0 2px 5px rgba(0, 0, 0, 0.2);
+  box-shadow:         0 2px 5px rgba(0, 0, 0, 0.2);
+  transition: box-shadow 0.3s ease, background-color 0.3s ease;
+}
+.swap-button:hover {
+  -webkit-box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);  /* slightly larger, darker */
+  -moz-box-shadow:    0 4px 10px rgba(0, 0, 0, 0.4);
+  box-shadow:         0 4px 10px rgba(0, 0, 0, 0.4);
 }
 
 .edit-button:hover {
   background-color: #ccc;
+}
+.swap-button:hover {
+  background-color: #009;
 }
 
 .decimals {
@@ -414,40 +465,88 @@ input.token-name {
 }
 
 .from-swap, .to-swap {
-  background-color: #999;
-  border-radius: 5px;
+  border-radius: 15px;
   padding: 5px;
   max-width: 300px;
   margin-left: auto;
   margin-right: auto;
-  border: 1px solid black;
+  border: 1px solid #ccc;
   margin-bottom: 2px;
+  transition: border 0.3s ease;
+  padding-bottom: 15px;
+  padding-left: 10px;
 }
-
+.from-swap:hover, .to-swap:hover {
+  border: 1px solid #999;
+}
 .from-swap p, .to-swap p {
   margin: 0;
   font-weight: 400;
 }
 .from-swap input, .to-swap input {
-  background-color: #aaa;
+  background-color: #fff;
   width: 150px;
   border: none;
-  text-align: center;
+  text-align: left;
   padding: 5px;
+  font-weight: 500;
+  font-size: 22px;
+}
+.from-swap input:selected, .to-swap input:selected {
+  border: 0px solid white;
 }
 .from-swap select, .to-swap select {
-  background-color: #aaa;
-  width: 100px;
+  border: 1px solid #ccc;
+  width: 80px;
   text-align: center;
   padding: 5px;
   border: none;
   margin-left: 5px;
   font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  -moz-box-shadow:    0 2px 5px rgba(0, 0, 0, 0.2);
+  box-shadow:         0 2px 5px rgba(0, 0, 0, 0.2);
+  transition: box-shadow 0.3s ease, background-color 0.3s ease;
+}
+.from-swap select:hover,
+.to-swap select:hover {
+  -webkit-box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);  /* slightly larger, darker */
+  -moz-box-shadow:    0 4px 10px rgba(0, 0, 0, 0.25);
+  box-shadow:         0 4px 10px rgba(0, 0, 0, 0.25);
+  background-color: #eee;
 }
 .amount-token {
   display: block;
   margin-left: auto;
   margin-right: auto;
   width: 270px;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;         /* kill the default focus ring (orange in Firefox/macOS) */
+  box-shadow: none;      /* remove any built-in focus shadow */
+}
+
+/* ============================================================================
+   Firefox-specific: suppress its “focus ring” pseudoclass outline
+   ============================================================================
+*/
+input:-moz-focusring,
+textarea:-moz-focusring,
+select:-moz-focusring {
+  outline: none;         /* override Firefox’s orange glow on focus */
+}
+
+/* ============================================================================
+   WebKit-specific: remove the inner focus border on buttons/inputs
+   ============================================================================
+*/
+input::-webkit-focus-inner,
+button::-webkit-focus-inner {
+  border: 0;             /* strip the inner border WebKit adds on focus */
+  padding: 0;            /* reset padding if that inner border was taking space */
 }
 </style>

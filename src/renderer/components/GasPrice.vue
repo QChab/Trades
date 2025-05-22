@@ -77,8 +77,9 @@ export default {
 <style scoped>
 /* Basic styling for the gas price display component */
 .gas-price-container {
-  display: inline-block;
-  text-align: right;
+  display: block;
+  text-align: center;
+  padding: 5px;
   color: #555;
   margin-left: 10px;
   font-size: 0.9em;

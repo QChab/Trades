@@ -1,90 +1,88 @@
   <template>
-    <div class="app-container">
-      <div class="main-content">
-        <div class="left-column">
-          <label>Test mode: <input type="checkbox" v-model="isTestMode"/></label>
-
-          <div class="files">
-            <div class="infura-keys">
-              <!-- The title that toggles the infura keys section -->
-              <p class="title" @click="toggleInfuraKeys">
-                RPCs ({{ infuraKeys.length }})
-                <!-- Icon that rotates when the section is toggled open/closed -->
-                <img :src="chevronDownImage" class="chevron-down" :class="{ rotated: showInfuraKeys }" />
-              </p>
-              <!-- The section that shows the list of Infura API keys and an input to add new keys -->
-              <div v-if="showInfuraKeys" class="infura-keys-content">
-                <!-- Loop over the infuraKeys array to display each key -->
-                <div v-for="(key, index) in infuraKeys" :key="index" class="infura-key-entry">
-                  <span class="rpc-url">{{ key }}</span>
-                  <!-- Delete button to remove a specific key -->
-                  <button @click="deleteInfuraKey(index)">Delete</button>
-                </div>
-                <!-- Section to add a new Infura API key -->
-                <div class="add-infura-key">
-                  <form @submit.prevent="addInfuraKey">
-                    <!-- Two-way binding with newInfuraKey -->
-                    <input v-model="newInfuraKey" placeholder="http..." @input="errorInfuraKey = ''"/>
-                    <!-- Clicking this button adds the new key to the list -->
-                    <button type="submit">+</button>
-                  </form>
-                </div>
-                <p class="error-message">{{ errorInfuraKey }}</p>
-              </div>
+    <div class="header">
+      <div class="settings">
+        <label>Test mode: <input type="checkbox" v-model="isTestMode"/></label>
+        <div class="infura-keys">
+          <!-- The title that toggles the infura keys section -->
+          <p class="title" @click="toggleInfuraKeys">
+            RPCs ({{ infuraKeys.length }})
+            <!-- Icon that rotates when the section is toggled open/closed -->
+            <img :src="chevronDownImage" class="chevron-down" :class="{ rotated: showInfuraKeys }" />
+          </p>
+          <!-- The section that shows the list of Infura API keys and an input to add new keys -->
+          <div v-if="showInfuraKeys" class="infura-keys-content">
+            <!-- Loop over the infuraKeys array to display each key -->
+            <div v-for="(key, index) in infuraKeys" :key="index" class="infura-key-entry">
+              <span class="rpc-url">{{ key }}</span>
+              <!-- Delete button to remove a specific key -->
+              <button @click="deleteInfuraKey(index)">Delete</button>
             </div>
-            <div class="private-keys" >
-              <p class="title" @click="shouldShowPKForm = !shouldShowPKForm">
-                Trading Addresses
-                <img :src="chevronDownImage" class="chevron-down" :class="{ rotated : shouldShowPKForm }"></img>
-              </p>
-              <div v-if="shouldShowPKForm && !hasUnlockedPrivateKeys">
-                <p class="text-center" v-if="!isFileDetected">First set your password</p>
-                <p class="text-center" v-if="isFileDetected">Enter your password to load the addresses</p>
-                <form
-                  @submit.prevent="() => isFileDetected ? loadPrivateKeys() : readPrivateKeyFile()"
-                >
-                  <input class="center" v-model="password" type="password" required/>
-                  <div v-if="!isFileDetected">
-                    <p class="text-center">
-                      Then submit a Excel or CSV file with the addresses and private keys of the trading addresses
-                    </p>
-                    <FileManager 
-                      @file:new="storePrivateKeyArgs"
-                      :noPreview="true"
-                      file-type="C"
-                      :extensions="'xls xlsx csv'"
-                      id="2"
-                      :shouldHideNoFile="false"
-                    />
-                  </div>
-                  <p v-if="errorMessagePK" class="error-message"> {{ errorMessagePK }} </p>
-                  <button 
-                    type="submit"
-                    class="submit-button"
-                  >
-                    {{ isFileDetected ? 'Load' : 'Submit' }}
-                  </button>
-                </form>
-                <span class="action" v-if="isFileDetected" @click="hasUnlockedPrivateKeys = false, isFileDetected = false">Import another file</span>
-              </div>
-              <div v-if="shouldShowPKForm && hasUnlockedPrivateKeys">
-                <p>Your addresses are loaded.</p>
-                <span class="action" @click="hasUnlockedPrivateKeys = false, isFileDetected = false">Import another file</span>
-              </div>
+            <!-- Section to add a new Infura API key -->
+            <div class="add-infura-key">
+              <form @submit.prevent="addInfuraKey">
+                <!-- Two-way binding with newInfuraKey -->
+                <input v-model="newInfuraKey" placeholder="http..." @input="errorInfuraKey = ''"/>
+                <!-- Clicking this button adds the new key to the list -->
+                <button type="submit">+</button>
+              </form>
             </div>
-            <!-- Max Gas Input -->
-            <div class="form-group">
-              <img class="icon-line" :src="gasImage" width="30"/>
-              <label>
-                Max gas price:
-                <input class="medium-number" type="number" v-model.number="maxGasPrice" placeholder="Max Gas" /> gwei
-              </label>
-              <GasPrice 
-                @update:gas-price="setGasPrice"
-              />
-            </div>
+            <p class="error-message">{{ errorInfuraKey }}</p>
           </div>
         </div>
+        <div class="private-keys" >
+          <p class="title" @click="shouldShowPKForm = !shouldShowPKForm">
+            Trading Addresses ({{ laodedAddresses.length }})
+            <img :src="chevronDownImage" class="chevron-down" :class="{ rotated : shouldShowPKForm }"></img>
+          </p>
+          <div v-if="shouldShowPKForm && !hasUnlockedPrivateKeys">
+            <p class="text-center" v-if="!isFileDetected">First set your password</p>
+            <p class="text-center" v-if="isFileDetected">Enter your password to load the addresses</p>
+            <form
+              @submit.prevent="() => isFileDetected ? loadPrivateKeys() : readPrivateKeyFile()"
+            >
+              <input class="center" v-model="password" type="password" required/>
+              <div v-if="!isFileDetected">
+                <p class="text-center">
+                  Then submit a Excel or CSV file with the addresses and private keys of the trading addresses
+                </p>
+                <FileManager 
+                  @file:new="storePrivateKeyArgs"
+                  :noPreview="true"
+                  file-type="C"
+                  :extensions="'xls xlsx csv'"
+                  id="2"
+                  :shouldHideNoFile="false"
+                />
+              </div>
+              <p v-if="errorMessagePK" class="error-message"> {{ errorMessagePK }} </p>
+              <button 
+                type="submit"
+                class="submit-button"
+              >
+                {{ isFileDetected ? 'Load' : 'Submit' }}
+              </button>
+            </form>
+            <span class="action" v-if="isFileDetected" @click="hasUnlockedPrivateKeys = false, isFileDetected = false">Import another file</span>
+          </div>
+          <div v-if="shouldShowPKForm && hasUnlockedPrivateKeys">
+            <span class="action" @click="hasUnlockedPrivateKeys = false, isFileDetected = false">Import another file</span>
+          </div>
+        </div>
+        <!-- Max Gas Input -->
+        <div class="form-group">
+          <img class="icon-line" :src="gasImage" width="30"/>
+          <label>
+            Max 
+            <input class="medium-number" type="number" v-model.number="maxGasPrice" placeholder="Max Gas" /> gwei
+          </label>
+          <GasPrice 
+            @update:gas-price="setGasPrice"
+          />
+        </div>
+      </div>
+    </div>
+    <div class="app-container">
+      <div class="main-content">
 
         <!-- Middle Column: Modes (paramétrage avancé) -->
         <div class="middle-column">
@@ -92,6 +90,7 @@
             @update:settings="setCurrentSettings"
             @update:gasPrice="setGasPrice"
             :isProcessRunning="isProcessRunning"
+            :addresses="laodedAddresses"
           />
         </div>
 
@@ -112,7 +111,7 @@
             :infuraKeys="infuraKeys"
           /> -->
           <TransferHistory 
-            :transfers="transfers"
+            :transfers="trades"
           />
         </div>
       </div>
@@ -142,10 +141,8 @@
     },
     setup() {
       const currentSettings = ref({});
-      const transfers = reactive([]);
+      const trades = reactive([]);
       const password = ref('');
-      const sourceAddresses = ref([]);
-      const destinationAddresses = ref([]);
 
       const shouldShowPKForm = ref(true);
       const isFileDetected = ref(false);
@@ -167,9 +164,9 @@
         window.electronAPI.setGasPrice(gasPrice);
       }
 
-      const addTransfer = (transfer) => {
-        transfers.unshift({
-          ...transfer,
+      const addTrade = (trade) => {
+        trades.unshift({
+          ...trade,
           timestamp: new Date(),
         });
       }
@@ -208,61 +205,9 @@
         return stringArray;
       }
 
-      const errorMessageSourceAddresses = ref('');
-      const readSourceAddresses = async (args) => {
-        try {
-          const data = await readDataFromString(args);
-          let index;
-          const firstLine = data.splice(0, 1)[0];
-
-          for (index = 0 ; index < firstLine.length ; ++index) {
-            if (!firstLine[index]) continue;
-            if (firstLine[index].toLowerCase().startsWith('address') || firstLine[index].toLowerCase().startsWith('adress')) break;
-          }
-
-          sourceAddresses.value = data.filter((line) => line && line.length > 0).map((line) => line[index].trim()).filter((address) => isAddress(address));
-          if (sourceAddresses.value.length === 0) throw new Error('No address found');
-
-          errorMessageSourceAddresses.value = '';
-
-          window.electronAPI.saveAddresses(JSON.parse(JSON.stringify(sourceAddresses.value)), true);
-        } catch (err) {
-          if (err.toString)
-            errorMessageSourceAddresses.value = err.toString();
-          else
-            errorMessageSourceAddresses.value = err;
-          console.error(err);
-        }
-      }
-
-      const errorMessageDestinationAddresses = ref('');
-      const readDestinationAddresses = async (args) => {
-        try {
-          const data = await readDataFromString(args);
-          const evmAddressRegex = /\/[0-9]+[,]?(0x[a-fA-F0-9]{40})/g;
-          const matches = data.matchAll(evmAddressRegex);
-          const addresses = []
-          for (const match of matches) {
-            if (match[0] && match[1])
-              addresses.push(match[1])
-          }
-          destinationAddresses.value = addresses.map((address) => address.trim()).filter((address) => isAddress(address));
-          if (destinationAddresses.value.length === 0) throw new Error('No address found');
-
-          errorMessageDestinationAddresses.value = '';
-
-          window.electronAPI.saveAddresses(JSON.parse(JSON.stringify(destinationAddresses.value)), false);
-        } catch (err) {
-          if (err.toString)
-            errorMessageDestinationAddresses.value = err.toString();
-          else
-            errorMessageDestinationAddresses.value = err;
-          console.error(err);
-        }
-      }
-
       const errorMessagePK = ref('');
       const privateKeyArgs = ref();
+      const laodedAddresses = ref([]);
 
       const storePrivateKeyArgs = (args) => {
         privateKeyArgs.value = {...args};
@@ -291,6 +236,9 @@
             pk: line[indexPK],
             address: line[indexAddress],
           }));
+          
+          laodedAddresses.value = privateKeys.map((pk) => pk.address);
+
           const result = await window.electronAPI.savePrivateKeys({privateKeys, password: password.value});
           if (!result?.success) throw new Error('Private keys not saved, error: ' + result?.error);
 
@@ -302,6 +250,7 @@
           isFileDetected.value = true;
           hasUnlockedPrivateKeys.value = true;
         } catch (err) {
+          laodedAddresses.value = [];
           if (err.toString)
             errorMessagePK.value = err.toString()
           else
@@ -315,8 +264,13 @@
           if (!password.value) throw new Error('No password');
           const result = await window.electronAPI.loadPrivateKeys(password.value);
           if (!result.success) throw new Error('Private keys not loaded, error: ' + result.error);
+          laodedAddresses.value = result.addresses;
+
+          shouldShowPKForm.value = false;
           hasUnlockedPrivateKeys.value = true;
           password.value = '';
+
+          return 
         } catch (err) {
           if (err.toString)
             errorMessagePK.value = err.toString()
@@ -335,10 +289,7 @@
       onMounted(async () => {
         isFileDetected.value = await window.electronAPI.isFileDetected();
         
-        transfers.push(...(await window.electronAPI.getTransfers()).data);
-
-        sourceAddresses.value = await window.electronAPI.readAddresses(true);
-        destinationAddresses.value = await window.electronAPI.readAddresses(false);
+        trades.push(...(await window.electronAPI.getTrades()).data);
 
         infuraKeys.value = await window.electronAPI.getInfuraKeys();
       });
@@ -348,8 +299,8 @@
         isProcessRunning.value = bool;
       }
 
-      const emptyTransfers = () => {
-        transfers.splice(0, transfers.length);
+      const emptyTrades = () => {
+        trades.splice(0, trades.length);
       }
 
       // Toggles the display of the Infura API keys section when the title is clicked
@@ -381,21 +332,15 @@
       return {
         setCurrentSettings,
         currentSettings,
-        addTransfer,
-        transfers,
+        addTrade,
+        trades,
         password,
-        readSourceAddresses,
-        sourceAddresses,
-        readDestinationAddresses,
-        destinationAddresses,
         storePrivateKeyArgs,
         readPrivateKeyFile,
         chevronDownImage,
         shouldShowPKForm,
         isFileDetected,
         errorMessagePK,
-        errorMessageSourceAddresses,
-        errorMessageDestinationAddresses,
         loadPrivateKeys,
         hasUnlockedPrivateKeys,
         gasPrice,
@@ -403,7 +348,7 @@
         isTestMode,
         isProcessRunning,
         setIsProcessRunning,
-        emptyTransfers,
+        emptyTrades,
         infuraKeys,
         newInfuraKey,
         showInfuraKeys,
@@ -413,24 +358,34 @@
         errorInfuraKey,
         gasImage,
         maxGasPrice,
+        laodedAddresses,
       }
     }
   };
   </script>
 
   <style scoped>
+  .header {
+    background-color: #fff;
+    margin: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
   /* Flex column layout for overall application */
   .app-container {
     display: flex;
     flex-direction: column;
     height: 150vh;
+    width: 100%;
     background-color: #f7f7f7;
   }
 
   /* The controller section at the top takes minimal height */
   .main-content {
     display: flex;
-    flex: 0 0 30%; /* Middle section: min 30% of the window height */
+    width: 100%;
   }
 
   /* Columns in the main content area */
@@ -443,13 +398,22 @@
     max-width: 400px;
   }
 
-  .files {
+  .settings {
     border-radius: 4px;
     box-shadow: 0 6px 8px rgba(0, 0, 0, 0.2);
     border-radius: 5px;
-    padding: 20px;
+    padding: 5px;
     background-color: #fff;
+    display: flex;        /* horizontal layout of panels */
+    align-items: center;  /* vertical centering */
+    gap: 15px;            /* space between each panel */
+    width: 100%;
+    justify-content: space-around;
   }
+  .header .settings .form-group {
+    gap: 5px;                     /* small gap between icon, label, input */
+  }
+  
   /* Bottom section for history and live visualization */
   .bottom-section {
     display: flex;
@@ -627,5 +591,20 @@
     text-overflow: ellipsis;
     display: block;
     overflow: hidden;
+  }
+
+  input.medium-number {
+    width: 70px;
+    margin: 0 5px;
+    text-align: center;
+    padding: 5px;
+    border: none;
+    font-size: 17px;
+  }
+
+  .icon-line {
+    position: relative;
+    top: 10px;
+    margin-right: 10px;
   }
 </style>

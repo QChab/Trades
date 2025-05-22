@@ -25,7 +25,7 @@ import { ethers } from 'ethers';  // v6 style
 let db;
 
 function initDatabase() {
-  const dbPath = path.join(userDataPath, 'transfers.db');
+  const dbPath = path.join(userDataPath, 'trades.db');
 
   // Create or open the DB
   db = new sqlite3.Database(dbPath, (err) => {
@@ -35,36 +35,44 @@ function initDatabase() {
       console.log('Connected to the SQLite database at', dbPath);
 
       db.run(`
-        CREATE TABLE IF NOT EXISTS transfers (
+        CREATE TABLE IF NOT EXISTS trades (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          fromAddress TEXT NOT NULL,
-          toAddress TEXT NOT NULL,
-          tokenSymbol TEXT,
-          amount TEXT,
+          fromTokenAddress TEXT NOT NULL,
+          toTokenAddress TEXT NOT NULL,
+          fromTokenSymbol TEXT,
+          toTokenSymbol TEXT,
+          fromAmount TEXT,
+          toAmount TEXT,
+          expectedToAmount TEXT,
+          slippage TEXT,
           txId TEXT,
+          fromAddress TEXT,
+          toAddress TEXT,
+          gasPrice TEXT,
+          protocol TEXT,
           timestamp DATETIME DEFAULT (datetime('now', 'localtime'))
         )
       `, (tableErr) => {
         if (tableErr) {
-          console.error('Failed to create transfers table:', tableErr);
+          console.error('Failed to create trades table:', tableErr);
         } else {
-          console.log('Transfers table ready or already exists.');
+          console.log('trades table ready or already exists.');
         }
       });
     }
   });
 }
 
-async function saveTransferInDB(transfer) {
+async function saveTradeInDB(transfer) {
   try {
     const sql = `
-      INSERT INTO transfers (fromAddress, toAddress, tokenSymbol, amount, txId)
+      INSERT INTO trades (fromAddress, toAddress, tokenSymbol, amount, txId)
       VALUES (?, ?, ?, ?, ?)
     `;
 
     db.run(sql, [transfer.from, transfer.to, transfer.token.symbol || '', transfer.amount || '', transfer.txId], function (err) {
       if (err) {
-        console.error('Failed to insert transfer:', err);
+        console.error('Failed to insert trade:', err);
       }
     });
   } catch (err) {
@@ -72,14 +80,14 @@ async function saveTransferInDB(transfer) {
   }
 }
 
-function deleteAllTransfers() {
-  const sql = `DELETE FROM transfers;`;
+function deleteAllTrades() {
+  const sql = `DELETE FROM trades;`;
 
   db.run(sql, function (err) {
     if (err) {
-      console.error('❌ Failed to delete transfers:', err);
+      console.error('❌ Failed to delete trades:', err);
     } else {
-      console.log(`✅ All transfers deleted (affected rows: ${this.changes})`);
+      console.log(`✅ All trades deleted (affected rows: ${this.changes})`);
     }
   });
 }
@@ -117,7 +125,7 @@ function refreshProviders () {
   provider = new ethers.FallbackProvider(providersList, 1);  
 }
 
-async function sendTransfer(transfer) {
+async function sendTransaction(transfer) {
   if (!privateKeys) return {success: false, error: 'No private keys found'}
   const warnings = [];
 
@@ -157,7 +165,7 @@ async function sendTransfer(transfer) {
     if (!transfer.isTestMode) {
       txResponse = await wallet.sendTransaction(txData);
     }
-    saveTransferInDB({...transfer, txId: txResponse?.hash});
+    saveTradeInDB({...transfer, txId: txResponse?.hash});
 
     return {success: true, warnings, txId: txResponse?.hash};
   } catch (err) {
@@ -369,7 +377,7 @@ function createWindow() {
 
         privateKeys.push({address: values[0], pk: values[1]});
       }
-      return {success: true}
+      return {addresses: privateKeys.map((pk) => pk.address), success: true};
     } catch (err) {
       console.error(err);
       if (err.toString().includes('BAD_DECRYPT'))
@@ -408,8 +416,8 @@ function createWindow() {
     return {success: true, addressWithoutPrivateKey: undefined};
   });
 
-  ipcMain.handle('send-transfer', (event, transfer) => {
-    return sendTransfer(transfer);
+  ipcMain.handle('send-transaction', (event, transaction) => {
+    return sendTransaction(transaction);
   });
 
   ipcMain.handle('save-addresses', (event, addresses, isSource) => {
@@ -435,7 +443,7 @@ function createWindow() {
   });
 
   ipcMain.handle('delete-history', (event) => {
-    return deleteAllTransfers();
+    return deleteAllTrades();
   });
 
   ipcMain.handle('open-url', (event, url) => {
@@ -462,12 +470,12 @@ function createWindow() {
     fs.writeFileSync(settingsPath, JSON.stringify(settings));
   });
 
-  ipcMain.handle('get-transfers', async (event) => {
+  ipcMain.handle('get-trades', async (event) => {
     return new Promise((resolve, reject) => {
-      const sql = `SELECT * FROM transfers ORDER BY id DESC LIMIT 100`;
+      const sql = `SELECT * FROM trades ORDER BY id DESC LIMIT 100`;
       db.all(sql, [], (err, rows) => {
         if (err) {
-          console.error('Failed to fetch transfers:', err);
+          console.error('Failed to fetch trades:', err);
           reject({ success: false, error: err.message });
         } else {
           resolve({ success: true, data: rows });
