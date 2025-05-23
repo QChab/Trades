@@ -45,7 +45,7 @@
               Buy 
             </p>
             <div class="amount-token">
-              <span> {{ toAmount || 0 }} </span>
+              <span> {{ toAmount }} </span>
               <select id="to-token" v-model="toTokenAddress">
                 <option 
                   v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
@@ -197,7 +197,17 @@ export default {
       emitSettings();
     });
 
-    watch(tokens, () => emitSettings(), {deep: true});
+    watch(() => tokens, () => emitSettings(), {deep: true});
+    watch(() => fromTokenAddress.value, (fromTokenAddressValue, oldFromTokenAddressValue) => {
+      if (toTokenAddress.value === fromTokenAddressValue) {
+        toTokenAddress.value = oldFromTokenAddressValue
+      }
+    })
+    watch(() => toTokenAddress.value, (toTokenAddressValue, oldToTokenAddressValue) => {
+      if (fromTokenAddress.value === toTokenAddressValue) {
+        fromTokenAddress.value = oldToTokenAddressValue
+      }
+    })
 
     const erc20Abi = [
       "function symbol() view returns (string)"
@@ -658,7 +668,7 @@ button::-webkit-focus-inner {
 
 .down-arrow-image {
   width: 30px;
-  background-color: #ddd;
+  background-color: #f2f2f2;
   border-radius: 5px;
   border: 1px solid #ccc;
   top: -15px;
