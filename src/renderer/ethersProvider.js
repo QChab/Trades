@@ -8,7 +8,6 @@ import { JsonRpcProvider, FallbackProvider } from 'ethers';
 const rpcUrls = [
   "https://eth.llamarpc.com",
   "https://eth-mainnet.public.blastapi.io",
-  "https://virginia.rpc.blxrbdn.com",
   "https://api.securerpc.com/v1",
   "https://eth1.lava.build",
   "https://rpc.mevblocker.io/fullprivacy",

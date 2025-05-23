@@ -1,20 +1,27 @@
 <template>
   <div class="manual-trading">
     <!-- Token selection list -->
-    <div class="form-group address-form">
-      <p>Addresses</p>
-      <ul>
-        <li v-for="address in addresses">
-          {{ address }}
-        </li>
-      </ul>
-    </div>
     <div class="form-group">
+      <h3>Manual trade</h3>
       <button @click="isEditingTokens = !isEditingTokens" class="edit-button">
         {{ isEditingTokens ? 'Stop editing' : 'Edit tokens' }}
       </button>
       <div>
         <div v-if="!isEditingTokens">
+          <div class="price-form">
+            <div class="tabs-price">
+              <div :class="{active: tabPrice === 'market'}" @click="tabPrice = 'market'">Market price</div>
+              <div :class="{active: tabPrice === 'limit'}" @click="tabPrice = 'limit'">Set limit</div>
+            </div>
+            <div v-if="tabPrice === 'limit'">
+              <p>
+                when 1 {{ tokensByAddresses[fromTokenAddress]?.symbol }} = 
+                <input v-model.number="priceLimit" placeholder="0"/> 
+                {{ tokensByAddresses[toTokenAddress]?.symbol }}
+                <img :src="reverseImage" class="reverse-image"/>
+              </p>
+            </div>
+          </div>
           <div class="from-swap">
             <p>
               Sell
@@ -33,11 +40,12 @@
             </div>
           </div>
           <div class="to-swap">
+            <img :src="downArrowImage" class="down-arrow-image"/>
             <p>
               Buy 
             </p>
             <div class="amount-token">
-              <input type="tel" placeholder="0" v-model.number="toAmount"/>
+              <span> {{ toAmount || 0 }} </span>
               <select id="to-token" v-model="toTokenAddress">
                 <option 
                   v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
@@ -48,6 +56,14 @@
                 </option>
               </select>
             </div>
+          </div>
+          <div class="address-form">
+            <p>with</p>
+            <select id="sender-address" v-model="senderAddress">
+              <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address">
+                {{ address }}
+              </option>
+            </select>
           </div>
           <button @click="" class="swap-button">
             Swap
@@ -84,6 +100,8 @@
 <script>
 import { ref, reactive, watch, onMounted } from 'vue';
 import chevronDownImage from '@/../assets/chevron-down.svg';
+import reverseImage from '@/../assets/reverse.svg';
+import downArrowImage from '@/../assets/down-arrow.svg';
 import deleteImage from '@/../assets/delete.svg';
 import { isAddress, Contract } from 'ethers';
 import provider from '@/ethersProvider';
@@ -112,6 +130,8 @@ export default {
     const fromTokenAddress = ref(null);
     const toTokenAddress = ref(null);
     const toAmount = ref(null);
+    const senderAddress = ref(null);
+    const tabPrice = ref('market');
 
     // Token selection list with on/off toggles.
     const tokens = reactive([
@@ -137,12 +157,20 @@ export default {
       { address: '', symbol: ''},
     ]);
 
+    const tokensByAddresses = ref({});
+
     watch(() => tokens, (tokensValue) => {
       if (!fromTokenAddress.value) fromTokenAddress.value = tokensValue[0].address;
       if (!toTokenAddress.value) toTokenAddress.value = tokensValue[1].address;
+
       setTimeout( async () => {
         console.log(await findAndSelectBestPath(fromTokenAddress.value, toTokenAddress.value, 100));
       }, 5000)
+
+      tokensByAddresses.value = {};
+      for (const token of tokensValue) {
+        tokensByAddresses.value[token.address] = token;
+      }
     }, {immediate: true});
 
     const emitSettings = () => {
@@ -211,6 +239,8 @@ export default {
       tokens,
       chevronDownImage,
       deleteImage,
+      reverseImage,
+      downArrowImage,
       isEditingTokens,
       isAddress,
       findSymbol,
@@ -219,6 +249,9 @@ export default {
       toAmount,
       fromTokenAddress,
       toTokenAddress,
+      senderAddress,
+      tabPrice,
+      tokensByAddresses,
     };
   }
 };
@@ -239,39 +272,38 @@ export default {
 
 .form-group {
   margin-bottom: 15px;
+  width: 100%;
 }
 .address-form {
-  width: 450px;
+  width: 100%;
   margin-right: 100px;
 }
 .address-form p {
-  margin: 0;
-}
-.address-form ul {
-  max-height: 400px;
-  overflow-y: auto;
-  background-color: #eee;
-  padding-left: 0;
-}
-.address-form li {
-  padding: 10px;
-  cursor: pointer;
-  list-style: none;
   text-align: center;
 }
-.address-form li:hover {
-  background-color: #ddd !important;
+.address-form select {
+  padding: 15px;
+  font-size: 18px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  cursor: pointer;
+  width: 450px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  -webkit-box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  -moz-box-shadow:    0 2px 5px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  margin-bottom: 50px;
 }
-.address-form li:nth-child(odd) {
-  background-color: #f9f9f9;     /* ensure odd rows keep the light bg */
-}
+
 input[type="number"] {
   width: 70px;
   margin-right: 10px;
 }
 
 p {
-  font-weight: 600;
+  font-weight: 500;
   user-select: none; /* Standard syntax */
   -webkit-user-select: none; /* Safari */
   -moz-user-select: none; /* Old Firefox */
@@ -476,6 +508,9 @@ input.token-name {
   padding-bottom: 15px;
   padding-left: 10px;
 }
+.to-swap {
+  position: relative;
+}
 .from-swap:hover, .to-swap:hover {
   border: 1px solid #999;
 }
@@ -483,7 +518,7 @@ input.token-name {
   margin: 0;
   font-weight: 400;
 }
-.from-swap input, .to-swap input {
+.from-swap input, .to-swap span {
   background-color: #fff;
   width: 150px;
   border: none;
@@ -491,6 +526,7 @@ input.token-name {
   padding: 5px;
   font-weight: 500;
   font-size: 22px;
+  display: inline-block;
 }
 .from-swap input:selected, .to-swap input:selected {
   border: 0px solid white;
@@ -548,5 +584,74 @@ input::-webkit-focus-inner,
 button::-webkit-focus-inner {
   border: 0;             /* strip the inner border WebKit adds on focus */
   padding: 0;            /* reset padding if that inner border was taking space */
+}
+
+.price-form {
+  text-align: center;
+  margin: 10px;
+}
+.price-form p {
+  position: relative;
+}
+.price-form input {
+  padding: 5px;
+  border: none;
+  font-size: 16px;
+  border-radius: 5px;
+  text-align: center;
+  width: 120px;
+  font-weight: 600;
+}
+
+.tabs-price {
+  margin-top: 15px;
+  display: flex;
+  justify-content: space-around;
+  width: 300px;
+  align-content: center;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.tabs-price div {
+  background-color: #b4bddf;
+  width: 100px;
+  margin-left: auto;
+  margin-right: auto;
+  border-radius: 8px;
+  padding: 15px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  -webkit-box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  -moz-box-shadow:    0 2px 5px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  font-weight: 500;
+}
+.tabs-price div:hover {
+  background-color: #a0a9d0;
+}
+.tabs-price .active {
+  background-color: #a0a9d0;
+  font-weight: 600;
+}
+
+.reverse-image {
+  width: 30px;
+  display: inline-block;
+  margin-left: 20px;
+  cursor: pointer;
+  margin-top: 10px;
+  position: absolute;
+  top: -11px;
+}
+
+.down-arrow-image {
+  width: 30px;
+  background-color: #ddd;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  top: -15px;
+  left: 45%;
+  position: absolute;
 }
 </style>
