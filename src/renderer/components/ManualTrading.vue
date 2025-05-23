@@ -15,10 +15,10 @@
             </div>
             <div v-if="tabPrice === 'limit'">
               <p>
-                when 1 {{ tokensByAddresses[fromTokenAddress]?.symbol }} = 
+                when 1 {{ !shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }} = 
                 <input v-model.number="priceLimit" placeholder="0"/> 
-                {{ tokensByAddresses[toTokenAddress]?.symbol }}
-                <img :src="reverseImage" class="reverse-image"/>
+                {{ shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }}
+                <img :src="reverseImage" class="reverse-image" @click="shouldSwitchTokensForLimit = !shouldSwitchTokensForLimit"/>
               </p>
             </div>
           </div>
@@ -40,7 +40,7 @@
             </div>
           </div>
           <div class="to-swap">
-            <img :src="downArrowImage" class="down-arrow-image"/>
+            <img :src="downArrowImage" class="down-arrow-image" @click="switchTokens"/>
             <p>
               Buy 
             </p>
@@ -235,6 +235,15 @@ export default {
       token.symbol = '';
     };
 
+    const switchTokens = () => {
+      let buffer = toTokenAddress.value;
+      toTokenAddress.value = fromTokenAddress.value;
+      fromTokenAddress.value = buffer;
+      shouldSwitchTokensForLimit.value = !shouldSwitchTokensForLimit.value;
+    }
+
+    const shouldSwitchTokensForLimit = ref(false);
+
     return {
       tokens,
       chevronDownImage,
@@ -252,6 +261,8 @@ export default {
       senderAddress,
       tabPrice,
       tokensByAddresses,
+      switchTokens,
+      shouldSwitchTokensForLimit,
     };
   }
 };
