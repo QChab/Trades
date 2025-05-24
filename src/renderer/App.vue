@@ -43,7 +43,7 @@
               <input class="center" v-model="password" type="password" required/>
               <div v-if="!isFileDetected">
                 <p class="text-center">
-                  Then submit a Excel or CSV file with the addresses and private keys of the trading addresses
+                  Then submit a Excel or CSV file with the addresses, private keys and names of the trading addresses
                 </p>
                 <FileManager 
                   @file:new="storePrivateKeyArgs"
@@ -119,7 +119,7 @@
   </template>
 
   <script>
-  import TransferControl from './components/TransferControl.vue';
+  // import TransferControl from './components/TransferControl.vue';
   import FileManager from './components/FileManager.vue';
   import ManualTrading from './components/ManualTrading.vue';
   import TransferHistory from './components/TransferHistory.vue';
@@ -133,7 +133,7 @@
   export default {
     name: 'App',
     components: {
-      TransferControl,
+      // TransferControl,
       FileManager,
       ManualTrading,
       TransferHistory,
@@ -231,13 +231,17 @@
           let indexAddress;
           for (indexAddress = 0 ; indexAddress < firstLine.length ; ++indexAddress)
             if (firstLine[indexAddress].toLowerCase().startsWith('address')) break;
+          let indexName;
+          for (indexName = 0 ; indexName < firstLine.length ; ++indexName)
+            if (firstLine[indexName].toLowerCase().startsWith('name')) break;
 
           const privateKeys = data.map((line) => ({
             pk: line[indexPK],
             address: line[indexAddress],
+            name: line[indexName],
           }));
           
-          laodedAddresses.value = privateKeys.map((pk) => pk.address);
+          laodedAddresses.value = privateKeys.map((pk) => ({address: pk.address, name: pk.name})).filter((pk) => pk.address && pk.name);
 
           const result = await window.electronAPI.savePrivateKeys({privateKeys, password: password.value});
           if (!result?.success) throw new Error('Private keys not saved, error: ' + result?.error);

@@ -60,8 +60,8 @@
           <div class="address-form">
             <p>with</p>
             <select id="sender-address" v-model="senderAddress">
-              <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address">
-                {{ address }}
+              <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address.address">
+                {{ address.name || address.address }}
               </option>
             </select>
           </div>
@@ -103,9 +103,11 @@ import chevronDownImage from '@/../assets/chevron-down.svg';
 import reverseImage from '@/../assets/reverse.svg';
 import downArrowImage from '@/../assets/down-arrow.svg';
 import deleteImage from '@/../assets/delete.svg';
-import { isAddress, Contract } from 'ethers';
+import { Contract, isAddress } from 'ethers';
 import provider from '@/ethersProvider';
 import { useUniswapV4 } from '../composables/useUniswap';
+// import fetchV4Quote from '../composables/useUniswapWithoutGraph';
+import { ethers } from 'ethers';
 
 export default {
   name: 'ManualTrading',
@@ -123,7 +125,12 @@ export default {
   },
   emits: ['update:settings'],
   setup(props, { emit } ) {
-    const { findAndSelectBestPath } = useUniswapV4();
+    const {
+      findAndSelectBestPath,
+      swapTokenForTokenV4,
+      priceHistory
+    } = useUniswapV4();
+    // const { findBestPoolSingleHop } = useUniswapWithoutGraph();
 
     const isEditingTokens = ref(false);
     const fromAmount = ref(null);
@@ -135,26 +142,26 @@ export default {
 
     // Token selection list with on/off toggles.
     const tokens = reactive([
-      { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT'},
-      { address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', symbol: 'WETH'},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
-      { address: '', symbol: ''},
+      { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6},
+      { address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', symbol: 'WETH', decimals: 18},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
+      { address: '', symbol: '', decimals: null},
     ]);
 
     const tokensByAddresses = ref({});
@@ -164,7 +171,13 @@ export default {
       if (!toTokenAddress.value) toTokenAddress.value = tokensValue[1].address;
 
       setTimeout( async () => {
-        console.log(await findAndSelectBestPath(fromTokenAddress.value, toTokenAddress.value, 100));
+        const decimalsA = tokensByAddresses.value[fromTokenAddress.value].decimals;
+        const amountIn = ethers.parseUnits('100', decimalsA);
+        // console.log(await fetchV4Quote(fromTokenAddress.value, toTokenAddress.value, amountIn));
+        console.log(await findAndSelectBestPath(fromTokenAddress.value, toTokenAddress.value, amountIn));
+        console.log(priceHistory.value);
+        // const bestPoolId = path[0].poolKey.poolIdHex; // if you extended getPoolKey to return poolIdHex
+        // await swapTokenForTokenV4(bestPoolId, amountIn, amountOut, yourAddress);
       }, 5000)
 
       tokensByAddresses.value = {};
@@ -208,9 +221,13 @@ export default {
         fromTokenAddress.value = oldToTokenAddressValue
       }
     })
+    watch(() => props.addresses, (addressesValue) => {
+      senderAddress.value = props.addresses[0];
+    }, {immediate: true})
 
     const erc20Abi = [
-      "function symbol() view returns (string)"
+      "function symbol() view returns (string)",
+      "function decimals() view returns (uint256)",
     ];
 
     const getTokenSymbol = async (contractAddress) => {
@@ -223,26 +240,38 @@ export default {
       return symbol;
     };
 
+    const getTokenDecimals = async (contractAddress) => {
+      // Create a Contract instance pointing to your ERC20
+      const contract = new Contract(contractAddress, erc20Abi, provider);
+      
+      // Call the 'symbol()' method
+      const decimals = await contract.decimals();
+      console.log("ERC20 decimals:", decimals);
+      return decimals;
+    };
+
     const findSymbol = async (index, contractAddress) => {
       try {
-        if (isAddress(contractAddress))
+        if (isAddress(contractAddress)) {
+          tokens[index].decimals = await getTokenDecimals(contractAddress);
           tokens[index].symbol = await getTokenSymbol(contractAddress);
-        else
+        } else
           null;
           // TODO: throw error
         if (!tokens[index].symbol)
-          tokens[index].symbol = '';
+          tokens[index].symbol = null;
 
       } catch (err) {
         console.error(err);
-        tokens[index].symbol = '';
+        tokens[index].symbol = null;
       }
     };
 
     const deleteToken = (index) => {
       const token = tokens[index];
-      token.address = '';
-      token.symbol = '';
+      token.address = null;
+      token.symbol = null;
+      token.decimals = null;
     };
 
     const switchTokens = () => {
@@ -261,7 +290,7 @@ export default {
       reverseImage,
       downArrowImage,
       isEditingTokens,
-      isAddress,
+      isAddress: isAddress,
       findSymbol,
       deleteToken,
       fromAmount,
@@ -316,6 +345,7 @@ export default {
   -moz-box-shadow:    0 2px 5px rgba(0, 0, 0, 0.2);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
   margin-bottom: 50px;
+  text-align: center;
 }
 
 input[type="number"] {
@@ -405,7 +435,7 @@ input.small-number {
   cursor: pointer;
   padding: 5px;
   border-radius: 5px;
-  border: 1px solid #777;
+  border: 1px solid #acacac;
   margin: 20px auto;
   display: block;
   user-select: none; /* Standard syntax */
@@ -647,6 +677,7 @@ button::-webkit-focus-inner {
   -moz-box-shadow:    0 2px 5px rgba(0, 0, 0, 0.2);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
   font-weight: 500;
+  font-family: Titillium Web, serif;
 }
 .tabs-price div:hover {
   background-color: #a0a9d0;

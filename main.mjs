@@ -366,18 +366,18 @@ function createWindow() {
       const firstLine = lines.splice(0, 1)[0];
       const columns = firstLine.split(',');
 
-      if (columns[0] !== 'address' || columns[1] !== 'pk') return {success: false, error: 'Not the good columns in saved pk'}
+      if (columns[0] !== 'address' || columns[1] !== 'pk' || columns[2] !== 'name') return {success: false, error: 'Not the good columns in saved pk'}
 
       privateKeys = []
       for (const line of lines) {
         if (line === '') continue
         const values = line.split(',');
-        if (values.length !== 2) return {success: false, error: 'Not the good values in saved pk'}
-        if (!values[0] || !values[1]) continue;
+        if (values.length !== 3) return {success: false, error: 'Not the good values in saved pk'}
+        if (!values[0] || !values[1] || !values[2]) continue;
 
-        privateKeys.push({address: values[0], pk: values[1]});
+        privateKeys.push({address: values[0], pk: values[1], name: values[2]});
       }
-      return {addresses: privateKeys.map((pk) => pk.address), success: true};
+      return {addresses: privateKeys.map((pk) => ({address: pk.address, name: pk.name})), success: true};
     } catch (err) {
       console.error(err);
       if (err.toString().includes('BAD_DECRYPT'))
@@ -390,9 +390,10 @@ function createWindow() {
   // Save the file and load the private keys locally
   ipcMain.handle('save-private-keys', (event, args) => {
     try {
-      let csvData = 'address,pk\n'
+      let csvData = 'address,pk,name\n'
       for (const pk of args.privateKeys) {
-        csvData += pk.address + ',' + pk.pk + '\n'
+        if (!pk.address || !pk.pk) continue;
+        csvData += pk.address + ',' + pk.pk + ',' + pk.name + '\n'
       }
       const cipheredData = aes256Ecb(csvData, args.password, true);
       fs.writeFileSync(privateKeysPath, cipheredData);

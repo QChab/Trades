@@ -1,10 +1,7 @@
-// This file configures a global ethers.js provider that uses multiple RPC endpoints.
-// We use ethers.providers.FallbackProvider to automatically try each RPC endpoint
-// in case one fails, providing redundancy and potentially better performance.
-
 import { JsonRpcProvider, FallbackProvider } from 'ethers';
 
-// Define an array of RPC endpoint URLs. Replace these URLs with your own endpoints.
+// -- 1. Define your RPC endpoints:
+//    Replace these URLs with whichever Ethereum mainnet RPC endpoints you prefer.
 const rpcUrls = [
   "https://eth.llamarpc.com",
   "https://eth-mainnet.public.blastapi.io",
@@ -15,15 +12,28 @@ const rpcUrls = [
   "https://eth.merkle.io",
 ];
 
-// Map the URLs to ethers.js JsonRpcProvider instances.
-const providersList = rpcUrls.map((url) => 
-  new JsonRpcProvider(url,{ chainId: 1, name: 'homestead' })
+// -- 2. Map each URL to a JsonRpcProvider instance:
+//    - We pass the URL string and an options object indicating the chain.
+//    - `chainId: 1` means Ethereum mainnet, and `name: 'homestead'` is the ethers.js
+//      internal name for mainnet.
+const providersList = rpcUrls.map((url) => {
+  return new JsonRpcProvider(
+    url,
+    {
+      chainId: 1,
+      name: 'homestead',
+    }
+  );
+});
+
+// -- 3. Create a FallbackProvider:
+//    - Takes an array of ethers.providers.
+//    - The second argument is the quorum: how many providers must respond
+//      successfully for a call to be considered successful (default = 1).
+//    - Here we set it explicitly to 1 so that any single healthy endpoint suffices.
+const provider = new FallbackProvider(
+  providersList,
+  1 // quorum: 1
 );
 
-// Create a FallbackProvider from the list of providers.
-// The fallback provider will automatically switch between providers if one fails.
-// Optionally, you can specify a quorum value as the second argument (default is 1).
-const provider = new FallbackProvider(providersList, 1);
-
-// Export the fallbackProvider for global use throughout your application.
 export default provider;
