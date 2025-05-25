@@ -99,17 +99,6 @@ export function useUniswapV4() {
       if (!pool.liquidity || pool.liquidity === "0" || Number(pool.totalValueLockedUSD) < 10000) continue // TOOD: skip if liquidity very low
       console.log(pool);
 
-      paths.push([{ poolKey: {
-        currency0: pool.token0?.id,
-        currency1: pool.token1?.id,
-        fee: pool.feeTier,
-        tickSpacing: pool.tickSpacing,
-        hooks: pool.hooks,
-        id: pool.id,
-        token0Price: Number(pool.token0Price),
-        token1Price: Number(pool.token1Price),
-      }, zeroForOne: pool.token0?.id.toLowerCase() === tokenIn }]);
-
       let token0, token1;
       if (pool.token0?.id.toLowerCase() !== tokenA.address.toLowerCase()) {
         console.log('inverting')
@@ -124,46 +113,8 @@ export function useUniswapV4() {
 
       const { tick: safeTick, sqrt: sqrtAligned } =
         alignTickAndPrice(pool.sqrtPrice, Number(pool.tickSpacing));
-
-      // console.log(token0, 
-      //   token1, 
-      //   Number(pool.feeTier), 
-      //   Number(pool.tickSpacing), 
-      //   pool.hooks,
-      //   sqrtAligned,
-      //   JSBI.BigInt(pool.liquidity),
-      //   safeTick,
-      //   sanitiseTicks(pool.ticks, Number(pool.tickSpacing)),
-      // )
-      /**  true ⇢ value is a JSBI bigint  */
-      const JSBI_PROTO = Object.getPrototypeOf(JSBI.BigInt(0))
-
-      /** true ⇢ v is the boxed BigInt created by JSBI.BigInt(..)  */
-      function isJSBI(v) {
-        return Object.getPrototypeOf(v) === JSBI_PROTO;
-      }
-
-      function assertJSBI(label, v) {
-        if (!isJSBI(v)) console.warn(`⚠️  ${label} is **NOT** JSBI →`, v);
-      }
-
-      // assertJSBI('sqrtRatioX96', sqrtAligned);            // must warn = string
-      // assertJSBI('liquidity',    JSBI.BigInt(pool.liquidity));
-      // sanitiseTicks(pool.ticks, Number(pool.tickSpacing)).forEach((t, i) => {
-      //   assertJSBI(`ticks[${i}].liquidityGross`, t.liquidityGross);
-      //   assertJSBI(`ticks[${i}].liquidityNet`,   t.liquidityNet);
-      // });
       
       const cleanedTicks  = sanitiseTicks(pool.ticks, Number(pool.tickSpacing))
-      if (!cleanedTicks.some(t => t.index === safeTick)) {
-        console.log('adding safeTick')
-        cleanedTicks.push({
-          index:          safeTick,
-          liquidityGross: JSBI.BigInt(0),   // sentinel 0-liquidity
-          liquidityNet:   JSBI.BigInt(0)
-        })
-        cleanedTicks.sort((a, b) => a.index - b.index)
-      }
       const tickProvider  = new TickListDataProvider(cleanedTicks, Number(pool.tickSpacing))
 
       const poolInstance = new Pool(
@@ -173,23 +124,18 @@ export function useUniswapV4() {
         Number(pool.tickSpacing), 
         pool.hooks,
         sqrtAligned,
-        // JSBI.BigInt(pool.sqrtPrice),
         JSBI.BigInt(pool.liquidity),
         safeTick,
-        // pool.tick,
         tickProvider,
       );
       console.log(poolInstance);
       console.log(pool.id + ' built')
       pools.push(poolInstance);
-      return [poolInstance]
     }
-    console.log(pools);
     return pools;
   }
 
   function alignTickAndPrice(sqrtPriceDecStr, spacing) {
-    console.log(sqrtPriceDecStr)
     const exactTick  = TickMath.getTickAtSqrtRatio(JSBI.BigInt(sqrtPriceDecStr));
     const aligned    = Math.floor(exactTick / spacing) * spacing;
     const sqrtAtTick = TickMath.getSqrtRatioAtTick(aligned);
@@ -203,9 +149,7 @@ export function useUniswapV4() {
     for (const t of raw) {
       const idx = Number(t.tickIdx);
 
-      // keep only multiples of spacing and within range
       if (idx % spacing !== 0) continue;
-      // if (idx < MIN_TICK60 || idx > MAX_TICK60) continue;
 
       if (!seen.has(idx)) {
         ticks.push({
@@ -234,7 +178,6 @@ export function useUniswapV4() {
 
     // const route = new Route(pools, tokenInObject.address, tokenOutObject.address);
     // const amountIn = CurrencyAmount.fromRawAmount(tokenInObject.address, inputAmountWei);
-    console.log({rawIn, s: rawIn.toString()})
 
     const tokenA = new Token(chainId, tokenInObject.address, tokenInObject.decimals, tokenInObject.symbol);
     const tokenB = new Token(chainId, tokenOutObject.address, tokenOutObject.decimals, tokenOutObject.symbol);
@@ -246,13 +189,13 @@ export function useUniswapV4() {
         if (
           p.involvesToken(tokenA) &&
           p.involvesToken(tokenB) &&
-          (await isPoolUsable(p, tokenA, tokenB, amountIn))
+          (await isPoolUsable(p, amountIn))
         ) {
           sanePools.push(p);
         }
       }
 
-      console.log(sanePools.length);
+      console.log('Remaining pools: ' + sanePools.length);
       if (!sanePools.length) return []
 
       trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
@@ -273,12 +216,10 @@ export function useUniswapV4() {
     return await selectBestPath(tokenInObject, tokenOutObject, pools, amountIn);
   }
 
-  async function isPoolUsable(pool, tokenIn, tokenOut, amountIn) {
+  async function isPoolUsable(pool, amountIn) {
     try {
       // getOutputAmount throws if liquidity == 0 or if price/tick are inconsistent
-      console.log({pool, tokenIn, tokenOut, amountIn})
       const [amountOut] = await pool.getOutputAmount(amountIn);
-      console.log(amountOut);
       return !JSBI.equal(amountOut.quotient, JSBI.BigInt(0));
     } catch (err) {
       console.warn('⚠️  pool skipped:', pool.poolId.toString(), err.message);
