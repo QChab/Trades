@@ -83,7 +83,10 @@ export function useUniswapV4() {
           token1 {
             id
           }
-          ticks(where: { liquidityGross_not: "0" }) {
+          ticks(
+            where: { liquidityGross_not: "0" },
+            first: 100000
+          ) {
             tickIdx
             liquidityNet
             liquidityGross
@@ -124,8 +127,10 @@ export function useUniswapV4() {
         Number(pool.tickSpacing), 
         pool.hooks,
         sqrtAligned,
+        // JSBI.BigInt(pool.sqrtPrice),
         JSBI.BigInt(pool.liquidity),
         safeTick,
+        // pool.tick,
         tickProvider,
       );
       console.log(poolInstance);
@@ -136,6 +141,7 @@ export function useUniswapV4() {
   }
 
   function alignTickAndPrice(sqrtPriceDecStr, spacing) {
+    console.log(sqrtPriceDecStr)
     const exactTick  = TickMath.getTickAtSqrtRatio(JSBI.BigInt(sqrtPriceDecStr));
     const aligned    = Math.floor(exactTick / spacing) * spacing;
     const sqrtAtTick = TickMath.getSqrtRatioAtTick(aligned);
@@ -149,7 +155,9 @@ export function useUniswapV4() {
     for (const t of raw) {
       const idx = Number(t.tickIdx);
 
+      // keep only multiples of spacing and within range
       if (idx % spacing !== 0) continue;
+      if (idx < TickMath.MIN_TICK || idx > TickMath.MAX_TICK) continue;
 
       if (!seen.has(idx)) {
         ticks.push({
@@ -178,6 +186,7 @@ export function useUniswapV4() {
 
     // const route = new Route(pools, tokenInObject.address, tokenOutObject.address);
     // const amountIn = CurrencyAmount.fromRawAmount(tokenInObject.address, inputAmountWei);
+    console.log({rawIn, s: rawIn.toString()})
 
     const tokenA = new Token(chainId, tokenInObject.address, tokenInObject.decimals, tokenInObject.symbol);
     const tokenB = new Token(chainId, tokenOutObject.address, tokenOutObject.decimals, tokenOutObject.symbol);
@@ -189,13 +198,13 @@ export function useUniswapV4() {
         if (
           p.involvesToken(tokenA) &&
           p.involvesToken(tokenB) &&
-          (await isPoolUsable(p, amountIn))
+          (await isPoolUsable(p, tokenA, tokenB, amountIn))
         ) {
           sanePools.push(p);
         }
       }
 
-      console.log('Remaining pools: ' + sanePools.length);
+      console.log(sanePools.length);
       if (!sanePools.length) return []
 
       trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
@@ -216,10 +225,12 @@ export function useUniswapV4() {
     return await selectBestPath(tokenInObject, tokenOutObject, pools, amountIn);
   }
 
-  async function isPoolUsable(pool, amountIn) {
+  async function isPoolUsable(pool, tokenIn, tokenOut, amountIn) {
     try {
       // getOutputAmount throws if liquidity == 0 or if price/tick are inconsistent
+      console.log({pool, tokenIn, tokenOut, amountIn})
       const [amountOut] = await pool.getOutputAmount(amountIn);
+      console.log(amountOut);
       return !JSBI.equal(amountOut.quotient, JSBI.BigInt(0));
     } catch (err) {
       console.warn('⚠️  pool skipped:', pool.poolId.toString(), err.message);
