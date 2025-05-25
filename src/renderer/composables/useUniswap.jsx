@@ -85,7 +85,7 @@ export function useUniswapV4() {
           }
           ticks(
             where: { liquidityGross_not: "0" },
-            first: 100000
+            first: 1000
           ) {
             tickIdx
             liquidityNet
