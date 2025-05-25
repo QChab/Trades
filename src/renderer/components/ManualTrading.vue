@@ -103,11 +103,10 @@ import chevronDownImage from '@/../assets/chevron-down.svg';
 import reverseImage from '@/../assets/reverse.svg';
 import downArrowImage from '@/../assets/down-arrow.svg';
 import deleteImage from '@/../assets/delete.svg';
-import { Contract, isAddress } from 'ethers';
+import { Contract, ethers } from 'ethers';
 import provider from '@/ethersProvider';
 import { useUniswapV4 } from '../composables/useUniswap';
 // import fetchV4Quote from '../composables/useUniswapWithoutGraph';
-import { ethers } from 'ethers';
 
 export default {
   name: 'ManualTrading',
@@ -142,9 +141,9 @@ export default {
 
     // Token selection list with on/off toggles.
     const tokens = reactive([
+      { address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18},
       { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6},
       { address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', symbol: 'WETH', decimals: 18},
-      { address: '', symbol: '', decimals: null},
       { address: '', symbol: '', decimals: null},
       { address: '', symbol: '', decimals: null},
       { address: '', symbol: '', decimals: null},
@@ -172,13 +171,13 @@ export default {
 
       setTimeout( async () => {
         const decimalsA = tokensByAddresses.value[fromTokenAddress.value].decimals;
-        const amountIn = ethers.parseUnits('100', decimalsA);
+        const amountIn = ethers.utils.parseUnits('1', decimalsA);
         // console.log(await fetchV4Quote(fromTokenAddress.value, toTokenAddress.value, amountIn));
-        console.log(await findAndSelectBestPath(fromTokenAddress.value, toTokenAddress.value, amountIn));
+        console.log(await findAndSelectBestPath(tokensByAddresses.value[fromTokenAddress.value], tokensByAddresses.value[toTokenAddress.value], amountIn));
         console.log(priceHistory.value);
         // const bestPoolId = path[0].poolKey.poolIdHex; // if you extended getPoolKey to return poolIdHex
         // await swapTokenForTokenV4(bestPoolId, amountIn, amountOut, yourAddress);
-      }, 5000)
+      }, 1000)
 
       tokensByAddresses.value = {};
       for (const token of tokensValue) {
@@ -188,7 +187,7 @@ export default {
 
     const emitSettings = () => {
       const settings = {
-        tokens: tokens.filter((token) => token.symbol && token.address && isAddress(token.address)).map((token) => ({...token})),
+        tokens: tokens.filter((token) => token.symbol && token.address && ethers.utils.isAddress(token.address)).map((token) => ({...token})),
       };
 
       emit('update:settings', settings);
@@ -252,7 +251,7 @@ export default {
 
     const findSymbol = async (index, contractAddress) => {
       try {
-        if (isAddress(contractAddress)) {
+        if (ethers.utils.isAddress(contractAddress)) {
           tokens[index].decimals = await getTokenDecimals(contractAddress);
           tokens[index].symbol = await getTokenSymbol(contractAddress);
         } else
@@ -290,7 +289,7 @@ export default {
       reverseImage,
       downArrowImage,
       isEditingTokens,
-      isAddress: isAddress,
+      isAddress: ethers.utils.isAddress,
       findSymbol,
       deleteToken,
       fromAmount,

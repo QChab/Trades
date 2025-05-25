@@ -126,7 +126,6 @@
   import { onMounted, reactive, ref } from 'vue';
   import * as XLSX from 'xlsx';
   import chevronDownImage from '@/../assets/chevron-down.svg';
-  import { isAddress } from 'ethers';
   import GasPrice from './components/GasPrice.vue';
   import gasImage from '@/../assets/gas.png';
 

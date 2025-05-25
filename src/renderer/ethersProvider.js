@@ -1,4 +1,4 @@
-import { JsonRpcProvider, FallbackProvider } from 'ethers';
+import { ethers } from 'ethers';
 
 // -- 1. Define your RPC endpoints:
 //    Replace these URLs with whichever Ethereum mainnet RPC endpoints you prefer.
@@ -17,7 +17,7 @@ const rpcUrls = [
 //    - `chainId: 1` means Ethereum mainnet, and `name: 'homestead'` is the ethers.js
 //      internal name for mainnet.
 const providersList = rpcUrls.map((url) => {
-  return new JsonRpcProvider(
+  return new ethers.providers.JsonRpcProvider(
     url,
     {
       chainId: 1,
@@ -31,7 +31,7 @@ const providersList = rpcUrls.map((url) => {
 //    - The second argument is the quorum: how many providers must respond
 //      successfully for a call to be considered successful (default = 1).
 //    - Here we set it explicitly to 1 so that any single healthy endpoint suffices.
-const provider = new FallbackProvider(
+const provider = new ethers.providers.FallbackProvider(
   providersList,
   1 // quorum: 1
 );

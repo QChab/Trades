@@ -9,7 +9,7 @@
 <script>
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import provider from '@/ethersProvider';
-import { formatUnits } from 'ethers';
+import { ethers } from 'ethers';
 
 export default {
   name: 'GasPrice',
@@ -60,7 +60,7 @@ export default {
     const formattedGasPrice = computed(() => {
       if (gasPrice.value) {
         // formatUnits converts the BigNumber value from wei to gwei
-        return formatUnits(gasPrice.value, 'gwei').substring(0, 6);
+        return ethers.utils.formatUnits(gasPrice.value, 'gwei').substring(0, 6);
       }
       // Return a placeholder while the gas price is being fetched
       return '...';

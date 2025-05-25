@@ -1,192 +1,163 @@
 // fetchV4Quote.js
-// Multi‐pool single‐hop quote on Uniswap V4 using @uniswap/v4-sdk + ethers v5
-// npm install @uniswap/v4-sdk @uniswap/sdk-core ethers@^5.0.0
+// Single-hop quote on Uniswap V4 using @uniswap/v4-sdk + ethers v5
+// npm install @uniswap/v4-sdk ethers@^5.0.0
 
 // -- 1. Ethers v5 imports:
-import { Contract, constants, utils } from 'ethers';
-import provider from './../ethersProvider'; // your configured JsonRpcProvider
+//    - `providers` namespace for all provider types (JsonRpcProvider, etc.)
+//    - `Contract` class to interact with on-chain contracts
+//    - `utils` namespace for hashing, encoding, unit parsing, CREATE2, etc.
+//    - `constants` for common addresses like AddressZero
+import { Contract, utils, constants } from 'ethers';
+import provider from './../ethersProvider'
 
 // -- 2. Uniswap v4 SDK imports:
-//    - Pool: V4 pool abstraction
-//    - Trade: Trade entity with static helper bestTradeExactIn
-//    - TradeType: EXACT_INPUT vs EXACT_OUTPUT
+//    - Core types (ChainId, Token, Pool, Route, Trade, TradeType, FeeAmount)
+//    - Factory address & init code hash constants
 import {
   Pool,
+  Route,
   Trade,
-  TradeType
+  TradeType,
 } from '@uniswap/v4-sdk';
 
-const FACTORY_ADDRESS = '0x000000000004444c5dc75cB358380D2e3dE08A90';
-const FeeAmount = {
-  LOWEST: 100,
-  LOW:    500,
-  MEDIUM: 3000,
-  HIGH:   10000
-}
-// -- 4. Core SDK imports:
-//    - ChainId, Token: wrap raw addresses into SDK tokens
-//    - CurrencyAmount: wrap raw BigNumber into SDK amounts
+// NOTE: this import of constant doesnt work because the constants file doesn't seem to exist in uniswap
 import {
-  ChainId,
-  Token,
-  CurrencyAmount
-} from '@uniswap/sdk-core';
+  FeeAmount,
+  POOL_FACTORY_ADDRESS,
+  POOL_INIT_CODE_HASH
+} from '@uniswap/v4-sdk/dist/constants'
 
-// -- 5. Minimal ABI for Uniswap V4 pool interactions
+
+import { ChainId, Token } from '@uniswap/sdk-core'
+
+// -- 3. Minimal ABI for Uniswap V4 pool interactions
 const IUniswapV4PoolABI = [
-  // core pool parameters
   'function token0() view returns (address)',
   'function token1() view returns (address)',
   'function fee() view returns (uint24)',
   'function tickSpacing() view returns (int24)',
   'function hooks() view returns (address)',
-  // liquidity & price
   'function liquidity() view returns (uint128)',
-  'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16, uint16, uint16, uint8, bool)'
+  'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 , uint16 , uint16 , uint8 , bool )'
 ];
 
-// -- 6. Minimal ABI for the V4 factory's getPool call
-const IUniswapV4FactoryABI = [
-  'function getPool(address tokenA, address tokenB, uint24 fee) view returns (address pool)'
-];
-
-// -- 7. Destructure ethers constants & utils we still need:
+// -- 4. Destructure commonly used utilities & constants:
+//    - keccak256: for CREATE2 salt hashing
+//    - getCreate2Address: compute pool address
+//    - defaultAbiCoder: encode constructor salt values
+//    - parseUnits: convert human input to BigNumber wei
+//    - AddressZero: canonical zero address
+const { keccak256, getCreate2Address, defaultAbiCoder, parseUnits } = utils;
 const { AddressZero } = constants;
-const { parseUnits }     = utils;
 
 /**
  * fetchV4Quote
  * -------------
- * Fetches the best single‐hop swap quote on Uniswap V4 for a given token pair and input amount,
- * automatically aggregating across all available fee tiers by calling getPool on‐chain.
+ * Fetches the best single-hop swap quote on Uniswap V4 for a given token pair and input amount.
  *
+ * @param {string} rpcUrl            - RPC endpoint URL for Ethereum mainnet
  * @param {string} tokenInAddress    - ERC20 token address to swap from
  * @param {string} tokenOutAddress   - ERC20 token address to swap to
  * @param {string|number} amountInRaw- Human-readable input amount (e.g. "1.5" or 2)
  *
  * @returns {Trade}                  - Best Trade object from @uniswap/v4-sdk
- * @throws {Error}                   - If no pool with liquidity is found
+ *
+ * @throws {Error}                   - If no pool with liquidity is found for any fee tier
  */
 export async function fetchV4Quote(tokenInAddress, tokenOutAddress, amountInRaw) {
-  console.log({tokenInAddress, tokenOutAddress, amountInRaw})
-  // A) Wrap raw addresses as SDK Token instances on Mainnet
+  // -- B. Define the chain & wrap the token addresses into SDK Token instances
   const chainId  = ChainId.MAINNET;
   const tokenIn  = new Token(chainId, tokenInAddress, 18);
   const tokenOut = new Token(chainId, tokenOutAddress, 18);
 
-  // B) Fee tiers to probe, from lowest to highest
-  const feesToTry = [
-    FeeAmount.LOWEST,  // 0.01%
-    FeeAmount.LOW,     // 0.05%
-    FeeAmount.MEDIUM,  // 0.30%
-    FeeAmount.HIGH     // 1.00%
-  ];
+  // -- C. Fee tiers to probe, from lowest to highest
+  const feesToTry = [FeeAmount.LOW, FeeAmount.MEDIUM, FeeAmount.HIGH];
 
-  // C) Instantiate the factory contract once
-  const factoryContract = new Contract(
-    FACTORY_ADDRESS,
-    IUniswapV4FactoryABI,
-    provider
-  );
+  // Track best trade found so far (highest output amount)
+  let bestTrade = null;
 
-  // D) Collect all on‐chain pools that actually exist and have liquidity
-  const pools = [];
+  // -- D. Iterate fee tiers
   for (const fee of feesToTry) {
-    // 1) Ensure token order matches Uniswap's pool key conventions
-    const [tokenA, tokenB] = tokenIn.sortsBefore(tokenOut)
+    // 1) Compute the pool address deterministically via CREATE2
+    const factoryAddr  = POOL_FACTORY_ADDRESS[chainId];
+    const initCodeHash = POOL_INIT_CODE_HASH[chainId];
+
+    // Sort tokens by address to match Uniswap convention
+    const [A, B] = tokenIn.sortsBefore(tokenOut)
       ? [tokenIn, tokenOut]
       : [tokenOut, tokenIn];
 
-    // 2) Ask the factory for this fee tier's pool address
-    let poolAddress;
-    try {
-      poolAddress = await factoryContract.getPool(
-        tokenA.address,
-        tokenB.address,
-        fee
-      );
-      console.log(poolAddress);
-    } catch (err) {
-      console.error(err);
-      // If the factory call reverts or fails, skip this tier
-      continue;
-    }
+    // Encode the pool salt fields: token0, token1, fee, tickSpacing, hooks
+    const encoded = defaultAbiCoder.encode(
+      ['address','address','uint24','int24','address'],
+      [A.address, B.address, fee, Pool.getTickSpacing(fee), AddressZero]
+    );
+    // Hash for CREATE2 salt
+    const salt = keccak256(encoded);
+    // Compute pool address
+    const poolAddress = getCreate2Address(factoryAddr, salt, initCodeHash);
 
-    // 3) If no pool deployed for this tier, skip
-    if (!poolAddress || poolAddress === AddressZero) continue;
-
-    // 4) Instantiate a minimal ethers Contract for the pool
+    // 2) Fetch on-chain pool state via ethers.Contract
     const pc = new Contract(poolAddress, IUniswapV4PoolABI, provider);
-
+    let immutables, state;
     try {
-      // 5) Read immutables & state in parallel
-      const [t0, t1, f, spacing, hooks] = await Promise.all([
+      // Read immutable params in parallel
+      immutables = await Promise.all([
         pc.token0(),
         pc.token1(),
         pc.fee(),
         pc.tickSpacing(),
         pc.hooks()
       ]);
-      const [liquidity, slot0] = await Promise.all([
-        pc.liquidity(),
-        pc.slot0()
-      ]);
-
-      // 6) Build the SDK Pool object
-      const pool = new Pool({
-        token0:       new Token(chainId, t0, 18),
-        token1:       new Token(chainId, t1, 18),
-        fee:          Number(f),
-        tickSpacing:  Number(spacing),
-        hooks,
-        sqrtPriceX96: slot0.sqrtPriceX96,
+      // Read dynamic state: liquidity & current sqrtPrice/tick
+      const liquidity = await pc.liquidity();
+      const slot0     = await pc.slot0();
+      state = {
         liquidity,
+        sqrtPriceX96: slot0.sqrtPriceX96,
         tick:         slot0.tick
-      });
-
-      // 7) Only include pools with non-zero liquidity
-      if (pool.liquidity.gt(0)) {
-        pools.push(pool);
-      }
-    } catch (err) {
-      console.error(err);
-      // on-chain read failed → assume no usable pool
+      };
+    } catch {
+      // Pool doesn't exist or no liquidity → skip this fee tier
       continue;
     }
-  }
 
-  // E) If we found no pools at all, bail out
-  if (pools.length === 0) {
-    throw new Error('No V4 pools with liquidity found for provided tokens.');
-  }
+    // 3) Instantiate an SDK Pool object
+    const pool = new Pool({
+      token0:       new Token(chainId, immutables[0], 18),
+      token1:       new Token(chainId, immutables[1], 18),
+      fee:          Number(immutables[2]),
+      tickSpacing:  Number(immutables[3]),
+      hooks:        immutables[4],
+      sqrtPriceX96: state.sqrtPriceX96,
+      liquidity:    state.liquidity,
+      tick:         state.tick
+    });
 
-  // F) Convert human input into a CurrencyAmount
-  const rawAmountInBn = parseUnits(amountInRaw.toString(), tokenIn.decimals);
-  const amountIn = CurrencyAmount.fromRawAmount(
-    tokenIn,
-    rawAmountInBn.toString()
-  );
+    // 4) Build a Route + exact-input Trade
+    const route    = new Route([pool], tokenIn, tokenOut);
+    const amountIn = parseUnits(amountInRaw.toString(), tokenIn.decimals);
+    const trade    = await Trade.fromRoute(route, amountIn, TradeType.EXACT_INPUT);
 
-  // G) Use Uniswap's built-in bestTradeExactIn to pick the top single-hop quote
-  const [bestTrade] = Trade.bestTradeExactIn(
-    pools,
-    amountIn,
-    tokenOut,
-    {
-      maxNumResults: 1, // only top result
-      maxHops:       1  // single-hop only
+    // 5) Update bestTrade if this one yields more output
+    if (!bestTrade || trade.outputAmount.quotient.gt(bestTrade.outputAmount.quotient)) {
+      bestTrade = trade;
     }
-  );
-
-  if (!bestTrade) {
-    throw new Error('No route could be constructed for an exact-in swap.');
   }
 
-  // H) Debug logging
-  console.log(`→ Best fee tier: ${bestTrade.swaps[0].route.pools[0].fee / 10000}%`);
+  // If no trade was found across any fee tier, error out
+  if (!bestTrade) {
+    throw new Error('No V4 pool with liquidity found for provided tokens.');
+  }
+
+  // Log details for debugging
+  console.log(`→ Best fee tier: ${bestTrade.route.pools[0].fee / 10000}%`);
   console.log(`→ Expected output: ${bestTrade.outputAmount.toExact()}`);
 
   return bestTrade;
 }
 
-export default fetchV4Quote;
+// -- 5. Exports:
+//    - Named export for selective imports
+//    - Default export for simpler import syntax
+export default fetchV4Quote

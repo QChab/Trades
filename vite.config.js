@@ -14,6 +14,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src/renderer'),
+      jsbi: 'jsbi/dist/jsbi.mjs'
     }
   },
+  optimizeDeps: {
+    // esbuild must pre-bundle it so the SDKs see the same instance
+    include: ['jsbi']
+  }
 });
