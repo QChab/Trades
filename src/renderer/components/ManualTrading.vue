@@ -22,6 +22,9 @@
               </p>
             </div>
           </div>
+          {{ trade }}
+          {{ trade?.amountOut?.quotient }}
+          {{ trade?.amountOut?.quotient?.toString() }}
           <div class="from-swap">
             <p>
               Sell
@@ -126,9 +129,8 @@ export default {
   setup(props, { emit } ) {
     const {
       findAndSelectBestPath,
-      swapTokenForTokenV4,
-      priceHistory
     } = useUniswapV4();
+    const trade = ref();
     // const { findBestPoolSingleHop } = useUniswapWithoutGraph();
 
     const isEditingTokens = ref(false);
@@ -173,8 +175,7 @@ export default {
         const decimalsA = tokensByAddresses.value[fromTokenAddress.value].decimals;
         const amountIn = ethers.utils.parseUnits('1', decimalsA);
         // console.log(await fetchV4Quote(fromTokenAddress.value, toTokenAddress.value, amountIn));
-        console.log(await findAndSelectBestPath(tokensByAddresses.value[fromTokenAddress.value], tokensByAddresses.value[toTokenAddress.value], amountIn));
-        console.log(priceHistory.value);
+        trade.value = await findAndSelectBestPath(tokensByAddresses.value[fromTokenAddress.value], tokensByAddresses.value[toTokenAddress.value], amountIn);
         // const bestPoolId = path[0].poolKey.poolIdHex; // if you extended getPoolKey to return poolIdHex
         // await swapTokenForTokenV4(bestPoolId, amountIn, amountOut, yourAddress);
       }, 1000)
@@ -301,6 +302,7 @@ export default {
       tokensByAddresses,
       switchTokens,
       shouldSwitchTokensForLimit,
+      trade,
     };
   }
 };

@@ -13,7 +13,13 @@ import { ref } from 'vue';
 import { ethers, BigNumber } from 'ethers';
 import { request, gql } from 'graphql-request';
 import provider from '@/ethersProvider';
-const abiCoder = ethers.utils.defaultAbiCoder;
+
+import CommandsJSON from '@uniswap/universal-router/artifacts/contracts/libraries/Commands.sol/Commands.json'
+import ActionsJSON  from '@uniswap/v4-periphery/foundry-out/Actions.sol/Actions.json'
+
+// Pull the enum‐maps out of the compiled JSON
+const Commands = (CommandsJSON).values
+const Actions  = (ActionsJSON).values
 
 const nativeAddress = '0x0000000000000000000000000000000000000000';
 const chainId = 1;
@@ -59,7 +65,6 @@ export function useUniswapV4() {
     const tokenIn = tokenInObject.address.toLowerCase();
     const tokenOut = tokenOutObject.address.toLowerCase();
 
-    const paths = [];
     // Direct pools
     const directPoolsQuery = gql`
       query($a: String!, $b: String!){
@@ -127,21 +132,19 @@ export function useUniswapV4() {
         Number(pool.tickSpacing), 
         pool.hooks,
         sqrtAligned,
-        // JSBI.BigInt(pool.sqrtPrice),
         JSBI.BigInt(pool.liquidity),
         safeTick,
-        // pool.tick,
         tickProvider,
       );
       console.log(poolInstance);
       console.log(pool.id + ' built')
       pools.push(poolInstance);
+      return [poolInstance]
     }
     return pools;
   }
 
   function alignTickAndPrice(sqrtPriceDecStr, spacing) {
-    console.log(sqrtPriceDecStr)
     const exactTick  = TickMath.getTickAtSqrtRatio(JSBI.BigInt(sqrtPriceDecStr));
     const aligned    = Math.floor(exactTick / spacing) * spacing;
     const sqrtAtTick = TickMath.getSqrtRatioAtTick(aligned);
@@ -184,10 +187,6 @@ export function useUniswapV4() {
       throw new Error('[selectBestPath] “pools” array is empty – cannot route');
     }
 
-    // const route = new Route(pools, tokenInObject.address, tokenOutObject.address);
-    // const amountIn = CurrencyAmount.fromRawAmount(tokenInObject.address, inputAmountWei);
-    console.log({rawIn, s: rawIn.toString()})
-
     const tokenA = new Token(chainId, tokenInObject.address, tokenInObject.decimals, tokenInObject.symbol);
     const tokenB = new Token(chainId, tokenOutObject.address, tokenOutObject.decimals, tokenOutObject.symbol);
     const amountIn = CurrencyAmount.fromRawAmount(tokenA, rawIn.toString());
@@ -198,13 +197,13 @@ export function useUniswapV4() {
         if (
           p.involvesToken(tokenA) &&
           p.involvesToken(tokenB) &&
-          (await isPoolUsable(p, tokenA, tokenB, amountIn))
+          (await isPoolUsable(p, amountIn))
         ) {
           sanePools.push(p);
         }
       }
 
-      console.log(sanePools.length);
+      console.log('Sane pools: ' + sanePools.length);
       if (!sanePools.length) return []
 
       trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
@@ -225,16 +224,131 @@ export function useUniswapV4() {
     return await selectBestPath(tokenInObject, tokenOutObject, pools, amountIn);
   }
 
-  async function isPoolUsable(pool, tokenIn, tokenOut, amountIn) {
+  async function isPoolUsable(pool, amountIn) {
     try {
       // getOutputAmount throws if liquidity == 0 or if price/tick are inconsistent
-      console.log({pool, tokenIn, tokenOut, amountIn})
       const [amountOut] = await pool.getOutputAmount(amountIn);
-      console.log(amountOut);
       return !JSBI.equal(amountOut.quotient, JSBI.BigInt(0));
     } catch (err) {
       console.warn('⚠️  pool skipped:', pool.poolId.toString(), err.message);
       return false;
+    }
+  }
+
+  async function executeSwapExactInSingle(trade, slippageBips = 50) {
+    loading.value = true
+    error.value   = null
+
+    try {
+      // 1) Pull out the route and amounts from the SDK Trade
+      const route       = trade.route
+      const amountIn    = trade.inputAmount         // CurrencyAmount
+      const amountOut   = trade.outputAmount        // CurrencyAmount
+
+      // 2) Build the PoolKey struct to identify our v4 pool
+      const poolKey = {
+        currency0: route.pools[0].token0.address,      // lower-sorted token
+        currency1: route.pools[0].token1.address,      // higher-sorted token
+        fee:       route.pools[0].fee,                 // e.g. 3000
+        tickSpacing: route.pools[0].tickSpacing,       // e.g. 60
+        hooks:     route.pools[0].hooks                // usually the zero-address
+      }
+
+      // 3) Compute minimumAmountOut based on slippage tolerance
+      //    (e.g. amountOut * (1 - slippageBips/10_000))
+      const minAmountOut = BigNumber.from(amountOut.quotient.toString())
+        .mul(BigNumber.from(10_000 - slippageBips))
+        .div(BigNumber.from(10_000))
+
+      // 4) Encode the single byte command V4_SWAP
+      //    (Commands.V4_SWAP === the 5-bit command ID for v4 swaps) :contentReference[oaicite:2]{index=2}
+      const commands = ethers.utils.solidityPack(
+        ['uint8'],
+        [Commands.V4_SWAP]
+      )
+
+      // 5) Encode the V4Router actions: SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL
+      //    (this tells the router exactly which steps to run) :contentReference[oaicite:3]{index=3}
+      const actions = ethers.utils.solidityPack(
+        ['uint8','uint8','uint8'],
+        [
+          Actions.SWAP_EXACT_IN_SINGLE,
+          Actions.SETTLE_ALL,
+          Actions.TAKE_ALL
+        ]
+      )
+
+      // 6) Prepare the three sets of parameters matching those actions:
+      //    0: ExactInputSingleParams, 1: settle (tokenIn, amountIn), 2: take (tokenOut, minOut)
+      const params = [
+        // --- 0) swap config ---
+        ethers.utils.defaultAbiCoder.encode(
+          [
+            `(tuple(
+               address currency0,
+               address currency1,
+               uint24 fee,
+               int24 tickSpacing,
+               address hooks
+             ) poolKey,
+             bool zeroForOne,
+             uint128 amountIn,
+             uint128 amountOutMinimum,
+             bytes hookData)`
+          ],
+          [
+            {
+              poolKey,
+              zeroForOne: route.pools[0].token0.address.toLowerCase()
+                           === trade.inputAmount.currency.address.toLowerCase(),
+              amountIn:    BigNumber.from(amountIn.quotient.toString()),
+              amountOutMinimum: minAmountOut,
+              hookData:    '0x'
+            }
+          ]
+        ),
+
+        // --- 1) SETTLE_ALL params: pull `amountIn` of currency0 from user via Permit2 ---
+        ethers.utils.defaultAbiCoder.encode(
+          ['address','uint256'],
+          [ poolKey.currency0, amountIn.quotient.toString() ]
+        ),
+
+        // --- 2) TAKE_ALL params: send at least `minAmountOut` of currency1 to user ---
+        ethers.utils.defaultAbiCoder.encode(
+          ['address','uint256'],
+          [ poolKey.currency1, minAmountOut.toString() ]
+        )
+      ]
+
+      // 7) Finally, bundle actions+params into the single `inputs[0]`
+      //    (the Universal Router expects inputs[i] = abi.encode(actions, params)) :contentReference[oaicite:4]{index=4}
+      const inputs = [
+        ethers.utils.defaultAbiCoder.encode(
+          ['bytes','bytes[]'],
+          [ actions, params ]
+        )
+      ]
+
+      // 8) Build a tight deadline (now + 20s) to protect from stale execution
+      const deadline = Math.floor(Date.now() / 1_000) + 20
+
+      // 9) Call the router — include ETH value if swapping native token → ERC20
+      const useNative = trade.inputAmount.currency.isNative
+      const tx = await router.execute(
+        commands,
+        inputs,
+        deadline,
+        { value: useNative ? amountIn.quotient.toString() : 0 }
+      )
+
+      // 10) Track and await confirmation
+      txHash.value = tx.hash
+      await tx.wait()
+    } catch (e) {
+      error.value = e
+    } finally {
+      loading.value = false
     }
   }
 
@@ -246,5 +360,6 @@ export function useUniswapV4() {
     findPossiblePaths,
     selectBestPath,
     findAndSelectBestPath,
+    executeSwapExactInSingle,
   };
 }
