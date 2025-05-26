@@ -57,17 +57,17 @@
               </select>
             </div>
           </div>
-          {{ priceFetchingMessage }}
+          <p class="details-message">{{ priceFetchingMessage }}</p>
           <div class="address-form">
-            <p>{{ trade?.swaps?.length }} trade</p>
+            <p>{{ trade?.swap?.swaps?.length }} trade</p>
             <p>with</p>
             <select id="sender-address" v-model="senderAddress">
               <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address.address">
-                {{ address.name || address.address }}
+                {{ address.name }} ({{ address?.address.substring(0, 10) }}...)
               </option>
             </select>
           </div>
-          {{ swapMessage }}
+          <p class="details-message">{{ swapMessage }}</p>
           <button @click="triggerTrade()" :disabled="isSwapButtonDisabled || isFetchingPrice" class="swap-button">
             Swap
           </button>
@@ -103,15 +103,21 @@
           </ul>
         </div>
       </div>
-    </div>
-    <div class="trades">
-      <ul>
-        <li v-for="t in trades">
-          {{ t.isConfirmed }}
-          {{ t.fromAmount }} {{ t.fromToken?.symbol }} -> {{ t.toAmount }} {{ t.toToken?.symbol }}
-          from {{ t.sender }} on {{ t.sentDate }}
-        </li>
-      </ul>
+      <p v-if="trade && trade.txId === 'pending' && !trade.isConfirmed">
+        Swapping
+        {{ trade.fromAmount }} {{ trade.fromTokenName || trade.fromToken?.symbol }} -> {{ trade.toAmount }} {{ trade.toTokenName || trade.toToken?.symbol }}
+        from {{ trade.fromAddress || trade.sender?.name }} on {{ (new Date(trade.sentDate || trade.timestamp)).toLocaleString() }} ...
+      </p>
+      <!-- <div class="trades">
+        Pending trades
+        <ul>
+          <li v-for="t in trades">
+            {{ t.isConfirmed || !t.sender ? '✅' : '⏳' }}
+            {{ t.fromAmount }} {{ t.fromTokenName || t.fromToken?.symbol }} -> {{ t.toAmount }} {{ t.toTokenName || t.toToken?.symbol }}
+            from {{ t.fromAddress || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
+          </li>
+        </ul>
+      </div> -->
     </div>
   </div>
 </template>
@@ -135,8 +141,12 @@ export default {
       type: Array,
       default: () => ([]),
     },
+    gasPrice: {
+      type: Number,
+      default: 2000000000,
+    }
   },
-  emits: ['update:settings'],
+  emits: ['update:settings', 'update:trade'],
   setup(props, { emit } ) {
     const {
       findAndSelectBestPath,
@@ -184,13 +194,16 @@ export default {
 
     let debounceTimer = null;
     watch(
-      [() => fromTokenAddress.value, () => toTokenAddress.value, () => fromAmount.value], 
+      [() => fromTokenAddress.value, () => toTokenAddress.value, () => fromAmount.value, () => trades.value], 
       async ([fromTokenAddressValue, toTokenAddressValue, fromAmountValue]) => {
          if (debounceTimer) {
           clearTimeout(debounceTimer)
         }
         
-        if (!fromAmountValue || !fromTokenAddressValue || !toTokenAddressValue) {
+        priceFetchingMessage.value = '';
+        swapMessage.value = '';
+
+        if (!fromAmountValue || !fromTokenAddressValue || !toTokenAddressValue || fromAmountValue === '.') {
           toAmount.value = 0;
           isFetchingPrice.value = false;
           return;
@@ -205,6 +218,7 @@ export default {
               tokensByAddresses.value[toTokenAddressValue],
               fromAmount
             );
+            isSwapButtonDisabled.value = false;
 
             trade.value = {
               swap: bestTrade,
@@ -214,6 +228,7 @@ export default {
               toAmount: bestTrade?.outputAmount?.toSignificant(6),
             }
           } catch (err) {
+            isSwapButtonDisabled.value = true;
             priceFetchingMessage.value = err;
             console.error(err);
           }
@@ -269,6 +284,10 @@ export default {
     })
     watch(() => props.addresses, (addressesValue) => {
       senderAddress.value = props.addresses[0];
+    }, {immediate: true})
+
+    watch(() => senderAddress.value, (senderAddressValue) => {
+      if (!senderAddressValue) isSwapButtonDisabled.value = true;
     }, {immediate: true})
 
     const erc20Abi = [
@@ -341,12 +360,22 @@ export default {
         swapMessage.value = '';
         trade.value.sender = senderAddress.value;
         trade.value.sentDate = new Date();
-        const {success, tx, warnings} = await executeSwapExactInSingle(trade.value, senderAddress.value , 50);
+        trade.value.txId = 'pending';
+
+        const {success, tx, warnings, error} = await executeSwapExactInSingle(trade.value, senderAddress.value , 50, props.gasPrice);
         if (!success || !tx) {
-          console.log({success, tx});
+          if (error)
+            console.error(error)
+
+          trade.value.sender = null;
+          trade.value.sentDate = null;
+          trade.value.txId = null;
+          swapMessage.value = error;
+          console.log({success, tx, warnings});
           return false;
         }
-        trades.value.push(trade.value);
+        trade.value.txId = tx?.hash;
+        emit('update:trade', trade.value);
         checkTx(tx, trade.value);
       } catch (err) {
         swapMessage.value = err;
@@ -356,9 +385,73 @@ export default {
     }
 
     const checkTx = async (tx, trade) => {
-      await tx.wait()
+      while (!tx.isConfirmed) {
+        await new Promise((r) => setTimeout(r, 3000));
+        console.log(tx.hash)
+        const receipt = await provider.getTransactionReceipt(tx.hash)
+        if (receipt)
+          tx.isConfirmed = true;
+          trades.value.unshift(trade);
+//         {
+//     "to": "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af",
+//     "from": "0x67d0Df6735122F4F9758F9ee54ed233746681A7f",
+//     "contractAddress": null,
+//     "transactionIndex": 284,
+//     "gasUsed": {
+//         "type": "BigNumber",
+//         "hex": "0x01a822"
+//     },
+//     "logsBloom": "0x00000000000000000000000000000000000000000000000000000001000000000000000020080000001000000000010000000000040000000000000000000000000000000000000000000008004000000020000000000020000000000000000000000000000000000000000000000000000000000000000000000010000000000000000800000000000000000000000000000000000000000000080000100000000000000000000000000080100000000000000000000000000000000000000000000802100000000000000000000000000400400000000000000000000000000000000000000000004080000000000000000000000000000000000000040000",
+//     "blockHash": "0xe18341965a878f6cc529785c372cd2a4d6bc679d2c7ab91e0fbe0f3dbe23712f",
+//     "transactionHash": "0x74c21fdf04806332b8fd15db43fa0509707baf26fca1a263f8759a763893b4bb",
+//     "logs": [
+//         {
+//             "transactionIndex": 284,
+//             "blockNumber": 22570228,
+//             "transactionHash": "0x74c21fdf04806332b8fd15db43fa0509707baf26fca1a263f8759a763893b4bb",
+//             "address": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+//             "topics": [
+//                 "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f",
+//                 "0x72331fcb696b0151904c03584b66dc8365bc63f8a144d89a773384e3a579ca73",
+//                 "0x00000000000000000000000066a9893cc07d91d95644aedd05d03f95e1dba8af"
+//             ],
+//             "data": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffa50cef85c000000000000000000000000000000000000000000000000000000000000003e6860000000000000000000000000000000000000000000350743b0a8a2a67bb5e7d000000000000000000000000000000000000000000000000111503750bd7e9cdfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffcfb2300000000000000000000000000000000000000000000000000000000000001f4",
+//             "logIndex": 492,
+//             "blockHash": "0xe18341965a878f6cc529785c372cd2a4d6bc679d2c7ab91e0fbe0f3dbe23712f"
+//         },
+//         {
+//             "transactionIndex": 284,
+//             "blockNumber": 22570228,
+//             "transactionHash": "0x74c21fdf04806332b8fd15db43fa0509707baf26fca1a263f8759a763893b4bb",
+//             "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+//             "topics": [
+//                 "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+//                 "0x000000000000000000000000000000000004444c5dc75cb358380d2e3de08a90",
+//                 "0x00000000000000000000000067d0df6735122f4f9758f9ee54ed233746681a7f"
+//             ],
+//             "data": "0x000000000000000000000000000000000000000000000000000000000003e686",
+//             "logIndex": 493,
+//             "blockHash": "0xe18341965a878f6cc529785c372cd2a4d6bc679d2c7ab91e0fbe0f3dbe23712f"
+//         }
+//     ],
+//     "blockNumber": 22570228,
+//     "confirmations": 1,
+//     "cumulativeGasUsed": {
+//         "type": "BigNumber",
+//         "hex": "0x0135905a"
+//     },
+//     "effectiveGasPrice": {
+//         "type": "BigNumber",
+//         "hex": "0x2331ce80"
+//     },
+//     "status": 1,
+//     "type": 2,
+//     "byzantium": true
+// }
+      }
       if (trade) {
         trade.isConfirmed = true;
+        // trade.gasCost = 
         // TODO: display real final amount
       }
     }
@@ -383,6 +476,7 @@ export default {
       switchTokens,
       shouldSwitchTokensForLimit,
       trade,
+      trades,
       triggerTrade,
       isFetchingPrice,
       isSwapButtonDisabled,
@@ -559,7 +653,7 @@ input.small-number {
   box-shadow:         0 4px 10px rgba(0, 0, 0, 0.4);
 }
 
-.swap-button:disabled {
+.swap-button:disabled, .swap-button:disabled:hover {
   background-color: #85858b;
   opacity: 0.9;
 }
@@ -649,6 +743,7 @@ input.token-name {
   transition: border 0.3s ease;
   padding-bottom: 15px;
   padding-left: 10px;
+  height: 90px;
 }
 .to-swap {
   position: relative;
@@ -699,7 +794,6 @@ input.token-name {
   display: block;
   margin-left: auto;
   margin-right: auto;
-  width: 270px;
 }
 input:focus,
 textarea:focus {
@@ -810,5 +904,13 @@ button::-webkit-focus-inner {
   border-radius: 6px;
 }
 
+.details-message {
+  text-align: center;
+  width: 500px;
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
+  word-break: break-all;
+}
 
 </style>

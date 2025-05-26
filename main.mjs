@@ -30,7 +30,7 @@ const UNIVERSAL_ROUTER_ABI       = [
 let db;
 
 function initDatabase() {
-  const dbPath = path.join(userDataPath, 'trades.db');
+  const dbPath = path.join(userDataPath, 'trades_final.db');
 
   // Create or open the DB
   db = new sqlite3.Database(dbPath, (err) => {
@@ -55,6 +55,7 @@ function initDatabase() {
           toAddress TEXT,
           gasPrice TEXT,
           protocol TEXT,
+          senderName TEXT,
           timestamp DATETIME DEFAULT (datetime('now', 'localtime'))
         )
       `, (tableErr) => {
@@ -71,12 +72,12 @@ function initDatabase() {
 async function saveTradeInDB(trade) {
   try {
     const sql = `
-      INSERT INTO trades (fromAddress, fromTokenSymbol, toTokenAddress, toTokenSymbol, fromAmount, toAmount, txId, protocol)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO trades (fromAddress, fromTokenSymbol, fromTokenAddress, toTokenSymbol, toTokenAddress, fromAmount, toAmount, txId, protocol, senderName)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     db.run(sql, [
-      trade.sender,
+      trade.sender?.address,
       trade.fromToken?.symbol,
       trade.fromToken?.address,
       trade.toToken?.symbol,
@@ -85,6 +86,7 @@ async function saveTradeInDB(trade) {
       trade.toAmount,
       trade.txId,
       'uniswap-v4',
+      trade.sender?.name,
     ], function (err) {
       if (err) {
         console.error('Failed to insert trade:', err);
@@ -116,16 +118,6 @@ function decryptRTF(rtf) {
   return qw.rawText;
 }
 
-// import { FeeMarketEIP1559Transaction } from '@ethereumjs/tx';
-
-// const rawTx = '0x02f8b10181a58401ab3f00843567e00083030d409491c65c2a9a3adfe2424ecc4a4890b8334c3a821280b844a9059cbb00000000000000000000000060f8b969d81abbd1378b359ca71a8a96f61749080000000000000000000000000000000000000000000000878678326eac900000c001a0b92262b4b8170022a53de7a3e516a5397a4434bd6a923286336acbe926891965a053596a674444203b1bd8a00a38d6826fd631af44e0ef13049ac38fce47cf5b93'
-// const txData = Buffer.from(rawTx.slice(2), 'hex');
-// const tx = FeeMarketEIP1559Transaction.fromSerializedTx(txData);
-// const txDetails = tx.toJSON();
-// console.log("Parsed Transaction Details:", txDetails);
-// const senderAddress = tx.getSenderAddress().toString();
-// console.log("Sender Address:", senderAddress);
-
 let rpcUrls = [];
 let providersList;
 let provider 
@@ -135,9 +127,9 @@ function refreshProviders () {
 
   rpcUrls = infuraKeys;
   providersList = rpcUrls.map((url) => 
-    new ethers.JsonRpcProvider(url,{ chainId: 1, name: 'homestead' })
+    new ethers.providers.JsonRpcProvider(url,{ chainId: 1, name: 'homestead' })
   );
-  provider = new ethers.FallbackProvider(providersList, 1);  
+  provider = new ethers.providers.FallbackProvider(providersList, 1);  
 }
 
 async function sendTransaction(transfer) {
@@ -145,7 +137,7 @@ async function sendTransaction(transfer) {
   const warnings = [];
 
   try {
-    const from = transfer.from;
+    const from = transfer.sender;
     const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from.toLowerCase());
     const PRIVATE_KEY = pk.pk;
     
@@ -156,7 +148,7 @@ async function sendTransaction(transfer) {
     
     if (!transfer.isTestMode) {
       const balance = await provider.getBalance(from);
-      const balanceEth = Number(ethers.formatEther(balance));
+      const balanceEth = Number(ethers.utils.formatEther(balance));
       if (balanceEth < 0.001)
         throw new Error(`Eth Balance of address ${from} too low (< 0.001)`)
       else if (balanceEth < 0.01)
@@ -170,12 +162,12 @@ async function sendTransaction(transfer) {
     const erc20Contract = new ethers.Contract(tokenAddress, erc20Abi, provider);
 
     const recipient = transfer.to;
-    const amount = ethers.parseUnits(transfer.amount.toString(), transfer.token.decimals);
+    const amount = ethers.utils.parseUnits(transfer.amount.toString(), transfer.token.decimals);
 
     const txData = await erc20Contract['transfer'].populateTransaction(recipient, amount);
     txData.gasLimit = 500000;
-    txData.maxFeePerGas = ethers.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9);
-    txData.maxPriorityFeePerGas = ethers.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9);
+    txData.maxFeePerGas = ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9);
+    txData.maxPriorityFeePerGas = ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9);
     console.log(txData);
     let txResponse;
     if (!transfer.isTestMode) {
@@ -186,42 +178,45 @@ async function sendTransaction(transfer) {
     return {success: true, warnings, txId: txResponse?.hash};
   } catch (err) {
     console.error(err);
+    console.log(err);
     return {success: false, error: err.toString(), warnings};
   }
 }
 
-async function triggerTrade({tradeDetails, args}) {
+async function sendTrade({tradeDetailsString, args}) {
   if (!privateKeys) return {success: false, error: 'No private keys found'}
   const warnings = [];
 
   try {
-    const from = tradeDetails.from;
-    const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from.toLowerCase());
+    console.log('before')
+    const tradeDetails = JSON.parse(tradeDetailsString);
+    console.log('after parse')
+    const from = tradeDetails.sender?.address?.toLowerCase();
+    const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from);
     const PRIVATE_KEY = pk.pk;
     
     const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    if (!wallet || !wallet.address || wallet.address.toLowerCase() !== trade.from.toLowerCase()) {
+    if (!wallet || !wallet.address || wallet.address.toLowerCase() !== from) {
       throw new Error(`Incorrect private key for address ${transfer.from}`)
     }
     const router = new ethers.Contract(UNIVERSAL_ROUTER_ADDRESS, UNIVERSAL_ROUTER_ABI, wallet);
     
-    if (!transfer.isTestMode) {
-      const balance = await provider.getBalance(from);
-      const balanceEth = Number(ethers.formatEther(balance));
-      if (balanceEth < 0.001)
-        throw new Error(`Eth Balance of address ${from} too low (< 0.001)`)
-      else if (balanceEth < 0.01)
-        warnings.push(`Beware eth Balance of address ${from} low (< 0.01)`)
-    }
+    const balance = await provider.getBalance(from);
+    const balanceEth = Number(ethers.utils.formatEther(balance));
+    if (balanceEth < 0.001)
+      throw new Error(`Eth Balance of address ${from} too low (< 0.001)`)
+    else if (balanceEth < 0.01)
+      warnings.push(`Beware eth Balance of address ${from} low (< 0.01)`)
     
     const tx = await router.execute(
       ...args,
     )
     saveTradeInDB({...tradeDetails, txId: tx?.hash});
 
-    return {success: true, warnings, tx};
+    return {success: true, warnings, tx: JSON.parse(JSON.stringify(tx))};
   } catch (err) {
     console.error(err);
+    console.log(err);
     return {success: false, error: err.toString(), warnings};
   }
 }
@@ -473,7 +468,7 @@ function createWindow() {
     return sendTransaction(transaction);
   });
 
-  ipcMain.handle('send-trade', (event, transaction) => {
+  ipcMain.handle('send-trade', (event, trade) => {
     return sendTrade(trade);
   });
 

@@ -2,8 +2,11 @@
   <div class="transfer-history">
     <!-- Wrap the list in a transition-group to animate new items -->
     <transition-group name="transfer" tag="ul">
-      <li v-for="(transfer, index) in transfers" :key="transfer.timestamp" @click="openTxDetails(transfer.txId)">
-        {{ formatTimestamp(transfer.timestamp) }} | {{ transfer.amount }} {{ transfer.tokenSymbol ? transfer.tokenSymbol : transfer.token?.symbol }} from {{ transfer.fromAddress ? transfer.fromAddress : transfer.from }} to {{ transfer.toAddress ? transfer.toAddress : transfer.to }}
+      <li v-for="(t, index) in transfers" :key="t.timestamp" @click="openTxDetails(t.txId)">
+        {{ t.isConfirmed || !t.sender ? '✅' : '⏳' }}
+            {{ t.fromAmount }} {{ t.fromTokenSymbol || t.fromToken?.symbol }} -> {{ t.toAmount }} {{ t.toTokenSymbol || t.toToken?.symbol }}
+            from {{ t.senderName || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
+        <!-- {{ formatTimestamp(transfer.timestamp) }} | {{ transfer.amount }} {{ transfer.tokenSymbol ? transfer.tokenSymbol : transfer.token?.symbol }} from {{ transfer.fromAddress ? transfer.fromAddress : transfer.from }} to {{ transfer.toAddress ? transfer.toAddress : transfer.to }} -->
       </li>
     </transition-group>
   </div>

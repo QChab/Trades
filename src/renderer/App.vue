@@ -89,7 +89,9 @@
           <ManualTrading
             @update:settings="setCurrentSettings"
             @update:gasPrice="setGasPrice"
+            @update:trade="addTrade"
             :addresses="laodedAddresses"
+            :gasPrice="gasPrice"
           />
         </div>
 
@@ -159,7 +161,7 @@
       const gasPrice = ref(1000000000);
       const setGasPrice = (currentGasPrice) => {
         gasPrice.value = currentGasPrice;
-        window.electronAPI.setGasPrice(gasPrice);
+        window.electronAPI.setGasPrice(gasPrice.value);
       }
 
       const addTrade = (trade) => {

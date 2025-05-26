@@ -4,7 +4,7 @@
 // Requires: ethers.js, graphql-request
 // npm install ethers graphql-request
 import JSBI from 'jsbi';
-import { Token, CurrencyAmount } from '@uniswap/sdk-core';
+import { Token, CurrencyAmount, Ether } from '@uniswap/sdk-core';
 import { Pool, Trade } from '@uniswap/v4-sdk';
 import { TickMath, TickListDataProvider } from '@uniswap/v3-sdk';
 
@@ -14,12 +14,79 @@ import { ethers, BigNumber } from 'ethers';
 import { request, gql } from 'graphql-request';
 import provider from '@/ethersProvider';
 
-import CommandsJSON from '@uniswap/universal-router/artifacts/contracts/libraries/Commands.sol/Commands.json'
-import ActionsJSON  from '@uniswap/v4-periphery/foundry-out/Actions.sol/Actions.json'
-
 // Pull the enum‐maps out of the compiled JSON
-const Commands = (CommandsJSON).values
-const Actions  = (ActionsJSON).values
+const Commands = {
+  V3_SWAP_EXACT_IN: 0x00,
+  V3_SWAP_EXACT_OUT: 0x01,
+  PERMIT2_TRANSFER_FROM: 0x02,
+  PERMIT2_PERMIT_BATCH: 0x03,
+  SWEEP: 0x04,
+  TRANSFER: 0x05,
+  PAY_PORTION: 0x06,
+  // COMMAND_PLACEHOLDER = 0x07;
+
+  // Command Types where 0x08<=value<=0x0f, executed in the second nested-if block
+  V2_SWAP_EXACT_IN: 0x08,
+  V2_SWAP_EXACT_OUT: 0x09,
+  PERMIT2_PERMIT: 0x0a,
+  WRAP_ETH: 0x0b,
+  UNWRAP_WETH: 0x0c,
+  PERMIT2_TRANSFER_FROM_BATCH: 0x0d,
+  BALANCE_CHECK_ERC20: 0x0e,
+  // COMMAND_PLACEHOLDER = 0x0f;
+
+  // Command Types where 0x10<=value<=0x20, executed in the third nested-if block
+  V4_SWAP: 0x10,
+  V3_POSITION_MANAGER_PERMIT: 0x11,
+  V3_POSITION_MANAGER_CALL: 0x12,
+  V4_INITIALIZE_POOL: 0x13,
+  V4_POSITION_MANAGER_CALL: 0x14,
+  // COMMAND_PLACEHOLDER = 0x15 -> 0x20
+
+  // Command Types where 0x21<=value<=0x3f
+  EXECUTE_SUB_PLAN: 0x21,
+}
+const Actions  = {
+  INCREASE_LIQUIDITY: 0x00,
+  DECREASE_LIQUIDITY: 0x01,
+  MINT_POSITION: 0x02,
+  BURN_POSITION: 0x03,
+  INCREASE_LIQUIDITY_FROM_DELTAS: 0x04,
+  MINT_POSITION_FROM_DELTAS: 0x05,
+
+  // swapping
+  SWAP_EXACT_IN_SINGLE: 0x06,
+  SWAP_EXACT_IN: 0x07,
+  SWAP_EXACT_OUT_SINGLE: 0x08,
+  SWAP_EXACT_OUT: 0x09,
+
+  // donate
+  // note this is not supported in the position manager or router
+  DONATE: 0x0a,
+
+  // closing deltas on the pool manager
+  // settling
+  SETTLE: 0x0b,
+  SETTLE_ALL: 0x0c,
+  SETTLE_PAIR: 0x0d,
+  // taking
+  TAKE: 0x0e,
+  TAKE_ALL: 0x0f,
+  TAKE_PORTION: 0x10,
+  TAKE_PAIR: 0x11,
+
+  CLOSE_CURRENCY: 0x12,
+  CLEAR_OR_TAKE: 0x13,
+  SWEEP: 0x14,
+
+  WRAP: 0x15,
+  UNWRAP: 0x16,
+
+  // minting/burning 6909s to close deltas
+  // note this is not supported in the position manager or router
+  MINT_6909: 0x17,
+  BURN_6909: 0x18,
+}
 
 const nativeAddress = '0x0000000000000000000000000000000000000000';
 const chainId = 1;
@@ -53,6 +120,34 @@ export function useUniswapV4() {
   const quoter          = new ethers.Contract(QUOTER_ADDRESS, QUOTER_ABI, provider);
   const positionManager = new ethers.Contract(POSITION_MANAGER_ADDRESS, POSITION_MANAGER_ABI, provider);
 
+  const instantiateTokens = (tokenInObject, tokenOutObject) => {
+    const tokenIn = tokenInObject.address.toLowerCase();
+    const tokenOut = tokenOutObject.address.toLowerCase();
+
+    // return {
+    //   tokenA: new Token(chainId, tokenIn, tokenInObject.decimals, tokenInObject.symbol),
+    //   tokenB: new Token(chainId, tokenOut, tokenOutObject.decimals, tokenOutObject.symbol)
+    // };
+    const tokenA = tokenIn === nativeAddress
+      // ETHER is a NativeCurrency instance for chainId
+      ? Ether.onChain(chainId)
+      // WETH9[chainId] is the wrapped-ETH Token if you need it for pool construction
+      : new Token(chainId, tokenIn, tokenInObject.decimals, tokenInObject.symbol);
+
+    const tokenB = tokenOut === nativeAddress
+      ? Ether.onChain(chainId)
+      : new Token(chainId, tokenOut, tokenOutObject.decimals, tokenOutObject.symbol);
+
+    console.log(tokenA)
+    if (tokenIn === nativeAddress) {
+      tokenA.address = nativeAddress;
+    } else if (tokenOut === nativeAddress) {
+      tokenB.address = nativeAddress;
+    }
+    console.log(tokenA)
+
+    return {tokenA, tokenB}
+  }
   // --- Path finding ---
   async function findPossiblePaths(tokenInObject, tokenOutObject) {
     const tokenIn = tokenInObject.address.toLowerCase();
@@ -93,8 +188,9 @@ export function useUniswapV4() {
       }
     `;
     const { pools: directPools } = await request(SUBGRAPH_URL, directPoolsQuery, { a: tokenIn, b: tokenOut });
-    const tokenA = new Token(chainId, tokenIn, tokenInObject.decimals, tokenInObject.symbol);
-    const tokenB = new Token(chainId, tokenOut, tokenOutObject.decimals, tokenOutObject.symbol);
+    
+    const {tokenA, tokenB} = instantiateTokens(tokenInObject, tokenOutObject);
+
     const pools = [];
     for (const pool of directPools) {
       if (!pool.liquidity || pool.liquidity === "0" || Number(pool.totalValueLockedUSD) < 10) continue // TOOD: skip if liquidity very low
@@ -180,8 +276,7 @@ export function useUniswapV4() {
       throw new Error('[selectBestPath] “pools” array is empty – cannot route');
     }
 
-    const tokenA = new Token(chainId, tokenInObject.address, tokenInObject.decimals, tokenInObject.symbol);
-    const tokenB = new Token(chainId, tokenOutObject.address, tokenOutObject.decimals, tokenOutObject.symbol);
+    const {tokenA, tokenB } = instantiateTokens(tokenInObject, tokenOutObject);
     const amountIn = CurrencyAmount.fromRawAmount(tokenA, rawIn.toString());
     let trades;
     try {
@@ -228,10 +323,7 @@ export function useUniswapV4() {
     }
   }
 
-  async function executeSwapExactInSingle(tradeDetails, fromAddress, slippageBips = 50) {
-    loading.value = true
-    error.value   = null
-
+  async function executeSwapExactInSingle(tradeDetails, fromAddress, slippageBips = 50, gasPrice) {
     const trade = tradeDetails.swap;
 
     try {
@@ -329,24 +421,27 @@ export function useUniswapV4() {
       const deadline = Math.floor(Date.now() / 1_000) + 20
 
       // 9) Call the router — include ETH value if swapping native token → ERC20
+      console.log(trade);
       const useNative = trade.inputAmount.currency.isNative
-      const tx = await window.electronAPI.sendTrade({
-        tradeDetails,
+      console.log(useNative)
+      console.log('before window')
+      // it then call router.execute(...args)
+      return await window.electronAPI.sendTrade({
+        tradeDetailsString: JSON.stringify(tradeDetails),
         args: [
           commands,
           inputs,
           deadline,
-          { value: useNative ? amountIn.quotient.toString() : 0 }
+          { 
+            value: useNative ? amountIn.quotient.toString() : 0,
+            maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9),
+            maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
+          }
         ]
       })
-
-      // 10) Track and await confirmation
-      txHash.value = tx.hash
-      return tx;
     } catch (e) {
-      error.value = e
-    } finally {
-      loading.value = false
+      console.error(e);
+      return {success: false, error: e}
     }
   }
 
