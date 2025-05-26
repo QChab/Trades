@@ -11,7 +11,7 @@
           <div class="price-form">
             <div class="tabs-price">
               <div :class="{active: tabPrice === 'market'}" @click="tabPrice = 'market'">Market price</div>
-              <div :class="{active: tabPrice === 'limit'}" @click="tabPrice = 'limit'">Set limit</div>
+              <div :class="{active: tabPrice === 'limit'}" @click="tabPrice = 'limit'">Limit price</div>
             </div>
             <div v-if="tabPrice === 'limit'">
               <p>
@@ -22,9 +22,6 @@
               </p>
             </div>
           </div>
-          {{ trade }}
-          {{ trade?.amountOut?.quotient }}
-          {{ trade?.amountOut?.quotient?.toString() }}
           <div class="from-swap">
             <p>
               Sell
@@ -48,7 +45,7 @@
               Buy 
             </p>
             <div class="amount-token">
-              <span> {{ toAmount }} </span>
+              <span class="amount-out" :class="{'fetching-price': isFetchingPrice}"> {{ trade?.toAmount }}</span>
               <select id="to-token" v-model="toTokenAddress">
                 <option 
                   v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
@@ -60,7 +57,9 @@
               </select>
             </div>
           </div>
+          {{ priceFetchingMessage }}
           <div class="address-form">
+            <p>{{ trade?.swaps?.length }} trade</p>
             <p>with</p>
             <select id="sender-address" v-model="senderAddress">
               <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address.address">
@@ -68,7 +67,8 @@
               </option>
             </select>
           </div>
-          <button @click="" class="swap-button">
+          {{ swapMessage }}
+          <button @click="triggerTrade()" :disabled="isSwapButtonDisabled || isFetchingPrice" class="swap-button">
             Swap
           </button>
         </div>
@@ -77,7 +77,8 @@
           <p class="text-center">Editing Tokens</p>
           <ul class="two-column-list">
             <li v-for="(token, index) in tokens" :key="index">
-              <label class="checkbox-label edit-label">
+              <span v-if="token.symbol === 'ETH'">ETH</span>
+              <label v-else class="checkbox-label edit-label">
                 <!-- First line: Token address and delete icon -->
                 <div class="line">
                   <input v-model="token.address" @input="findSymbol(index, token.address)" placeholder="Address" />
@@ -89,7 +90,13 @@
                 <!-- Second line: Token symbol -->
                 <div class="line">
                   <span>Symbol:</span>
-                  <input v-model="token.symbol" placeholder="Token Name" class="token-name" />
+                  <span v-if="token.symbol === 'ETH'">ETH</span>
+                  <input v-else v-model="token.symbol" placeholder="Token Name" class="token-name" />
+                </div>
+              </label>
+              <label>
+                <div class="line">
+                  <span>Decimals: {{ token.decimals }}</span>
                 </div>
               </label>
             </li>
@@ -97,29 +104,33 @@
         </div>
       </div>
     </div>
+    <div class="trades">
+      <ul>
+        <li v-for="t in trades">
+          {{ t.isConfirmed }}
+          {{ t.fromAmount }} {{ t.fromToken?.symbol }} -> {{ t.toAmount }} {{ t.toToken?.symbol }}
+          from {{ t.sender }} on {{ t.sentDate }}
+        </li>
+      </ul>
+    </div>
   </div>
 </template>
 
 <script>
-import { ref, reactive, watch, onMounted } from 'vue';
+import { ref, reactive, watch, onMounted, toValue } from 'vue';
 import chevronDownImage from '@/../assets/chevron-down.svg';
 import reverseImage from '@/../assets/reverse.svg';
 import downArrowImage from '@/../assets/down-arrow.svg';
 import deleteImage from '@/../assets/delete.svg';
-import { Contract, ethers } from 'ethers';
+import { Contract, ethers, BigNumber } from 'ethers';
 import provider from '@/ethersProvider';
 import { useUniswapV4 } from '../composables/useUniswap';
-// import fetchV4Quote from '../composables/useUniswapWithoutGraph';
 
 export default {
   name: 'ManualTrading',
   components: {
   },
   props: {
-    isProcessRunning: {
-      type: Boolean,
-      default: false,
-    },
     addresses: {
       type: Array,
       default: () => ([]),
@@ -129,9 +140,10 @@ export default {
   setup(props, { emit } ) {
     const {
       findAndSelectBestPath,
+      executeSwapExactInSingle,
     } = useUniswapV4();
     const trade = ref();
-    // const { findBestPoolSingleHop } = useUniswapWithoutGraph();
+    const trades = ref([]);
 
     const isEditingTokens = ref(false);
     const fromAmount = ref(null);
@@ -140,12 +152,13 @@ export default {
     const toAmount = ref(null);
     const senderAddress = ref(null);
     const tabPrice = ref('market');
+    const isSwapButtonDisabled = ref(false);
 
     // Token selection list with on/off toggles.
     const tokens = reactive([
       { address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18},
       { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6},
-      { address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', symbol: 'WETH', decimals: 18},
+      { address: '0x514910771af9ca656af840dff83e8264ecf986ca', symbol: 'LINK', decimals: 18},
       { address: '', symbol: '', decimals: null},
       { address: '', symbol: '', decimals: null},
       { address: '', symbol: '', decimals: null},
@@ -166,29 +179,62 @@ export default {
     ]);
 
     const tokensByAddresses = ref({});
+    const isFetchingPrice = ref(false);
+    const priceFetchingMessage = ref('');
+
+    let debounceTimer = null;
+    watch(
+      [() => fromTokenAddress.value, () => toTokenAddress.value, () => fromAmount.value], 
+      async ([fromTokenAddressValue, toTokenAddressValue, fromAmountValue]) => {
+         if (debounceTimer) {
+          clearTimeout(debounceTimer)
+        }
+        
+        if (!fromAmountValue || !fromTokenAddressValue || !toTokenAddressValue) {
+          toAmount.value = 0;
+          isFetchingPrice.value = false;
+          return;
+        }
+        isFetchingPrice.value = true;      
+        debounceTimer = setTimeout(async () => {
+          try {
+            priceFetchingMessage.value = '';
+            const fromAmount = ethers.utils.parseUnits(fromAmountValue + '', tokensByAddresses.value[fromTokenAddressValue].decimals);
+            const bestTrade = await findAndSelectBestPath(
+              tokensByAddresses.value[fromTokenAddressValue],
+              tokensByAddresses.value[toTokenAddressValue],
+              fromAmount
+            );
+
+            trade.value = {
+              swap: bestTrade,
+              fromToken: tokensByAddresses.value[fromTokenAddressValue],
+              toToken: tokensByAddresses.value[toTokenAddressValue],
+              fromAmount: fromAmountValue + '',
+              toAmount: bestTrade?.outputAmount?.toSignificant(6),
+            }
+          } catch (err) {
+            priceFetchingMessage.value = err;
+            console.error(err);
+          }
+          isFetchingPrice.value = false;
+        }, 500);
+      }
+    )
 
     watch(() => tokens, (tokensValue) => {
       if (!fromTokenAddress.value) fromTokenAddress.value = tokensValue[0].address;
       if (!toTokenAddress.value) toTokenAddress.value = tokensValue[1].address;
 
-      setTimeout( async () => {
-        const decimalsA = tokensByAddresses.value[fromTokenAddress.value].decimals;
-        const amountIn = ethers.utils.parseUnits('1', decimalsA);
-        // console.log(await fetchV4Quote(fromTokenAddress.value, toTokenAddress.value, amountIn));
-        trade.value = await findAndSelectBestPath(tokensByAddresses.value[fromTokenAddress.value], tokensByAddresses.value[toTokenAddress.value], amountIn);
-        // const bestPoolId = path[0].poolKey.poolIdHex; // if you extended getPoolKey to return poolIdHex
-        // await swapTokenForTokenV4(bestPoolId, amountIn, amountOut, yourAddress);
-      }, 1000)
-
       tokensByAddresses.value = {};
       for (const token of tokensValue) {
         tokensByAddresses.value[token.address] = token;
       }
-    }, {immediate: true});
+    }, {immediate: true, deep: true});
 
     const emitSettings = () => {
       const settings = {
-        tokens: tokens.filter((token) => token.symbol && token.address && ethers.utils.isAddress(token.address)).map((token) => ({...token})),
+        tokens: tokens.filter((token) => token.symbol && token.address && (ethers.utils.isAddress(token.address) || token.address === '0x0000000000000000000000000000000000000000')).map((token) => ({...token})),
       };
 
       emit('update:settings', settings);
@@ -245,14 +291,19 @@ export default {
       const contract = new Contract(contractAddress, erc20Abi, provider);
       
       // Call the 'symbol()' method
-      const decimals = await contract.decimals();
+      let decimals = await contract.decimals();
+      if (!decimals) return 0;
+
       console.log("ERC20 decimals:", decimals);
-      return decimals;
+      return Number(decimals.toString());
     };
 
     const findSymbol = async (index, contractAddress) => {
       try {
-        if (ethers.utils.isAddress(contractAddress)) {
+        if (contractAddress === '0x0000000000000000000000000000000000000000') {
+          tokens[index].decimals = 18;
+          tokens[index].symbol = 'ETH';
+        } else if (ethers.utils.isAddress(contractAddress)) {
           tokens[index].decimals = await getTokenDecimals(contractAddress);
           tokens[index].symbol = await getTokenSymbol(contractAddress);
         } else
@@ -283,6 +334,35 @@ export default {
 
     const shouldSwitchTokensForLimit = ref(false);
 
+    const swapMessage = ref('');
+    const triggerTrade = async () => {
+      try {
+        isSwapButtonDisabled.value = true;
+        swapMessage.value = '';
+        trade.value.sender = senderAddress.value;
+        trade.value.sentDate = new Date();
+        const {success, tx, warnings} = await executeSwapExactInSingle(trade.value, senderAddress.value , 50);
+        if (!success || !tx) {
+          console.log({success, tx});
+          return false;
+        }
+        trades.value.push(trade.value);
+        checkTx(tx, trade.value);
+      } catch (err) {
+        swapMessage.value = err;
+        console.error(err);
+      }
+      isSwapButtonDisabled.value = false;
+    }
+
+    const checkTx = async (tx, trade) => {
+      await tx.wait()
+      if (trade) {
+        trade.isConfirmed = true;
+        // TODO: display real final amount
+      }
+    }
+
     return {
       tokens,
       chevronDownImage,
@@ -303,6 +383,11 @@ export default {
       switchTokens,
       shouldSwitchTokensForLimit,
       trade,
+      triggerTrade,
+      isFetchingPrice,
+      isSwapButtonDisabled,
+      priceFetchingMessage,
+      swapMessage,
     };
   }
 };
@@ -474,6 +559,11 @@ input.small-number {
   box-shadow:         0 4px 10px rgba(0, 0, 0, 0.4);
 }
 
+.swap-button:disabled {
+  background-color: #85858b;
+  opacity: 0.9;
+}
+
 .edit-button:hover {
   background-color: #ccc;
 }
@@ -551,7 +641,7 @@ input.token-name {
 .from-swap, .to-swap {
   border-radius: 15px;
   padding: 5px;
-  max-width: 300px;
+  max-width: 350px;
   margin-left: auto;
   margin-right: auto;
   border: 1px solid #ccc;
@@ -572,7 +662,7 @@ input.token-name {
 }
 .from-swap input, .to-swap span {
   background-color: #fff;
-  width: 150px;
+  width: 200px;
   border: none;
   text-align: left;
   padding: 5px;
@@ -612,12 +702,14 @@ input.token-name {
   width: 270px;
 }
 input:focus,
-textarea:focus,
-select:focus {
+textarea:focus {
   outline: none;         /* kill the default focus ring (orange in Firefox/macOS) */
   box-shadow: none;      /* remove any built-in focus shadow */
 }
 
+select:focus {
+  outline: none;
+}
 /* ============================================================================
    Firefox-specific: suppress its “focus ring” pseudoclass outline
    ============================================================================
@@ -707,4 +799,16 @@ button::-webkit-focus-inner {
   left: 45%;
   position: absolute;
 }
+
+.fetching-price {
+  background-color: #ddd !important;
+}
+
+.amount-out {
+  height: 30px;
+  display: inline-block;
+  border-radius: 6px;
+}
+
+
 </style>

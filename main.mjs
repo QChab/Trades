@@ -22,6 +22,11 @@ let infuraKeys = [];
 
 import { ethers } from 'ethers';  // v6 style
 
+const UNIVERSAL_ROUTER_ADDRESS   = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
+const UNIVERSAL_ROUTER_ABI       = [
+  'function execute(bytes commands, bytes[] inputs, uint256 deadline) external payable returns (bytes[] memory results)'
+];
+
 let db;
 
 function initDatabase() {
@@ -63,14 +68,24 @@ function initDatabase() {
   });
 }
 
-async function saveTradeInDB(transfer) {
+async function saveTradeInDB(trade) {
   try {
     const sql = `
-      INSERT INTO trades (fromAddress, toAddress, tokenSymbol, amount, txId)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO trades (fromAddress, fromTokenSymbol, toTokenAddress, toTokenSymbol, fromAmount, toAmount, txId, protocol)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
-    db.run(sql, [transfer.from, transfer.to, transfer.token.symbol || '', transfer.amount || '', transfer.txId], function (err) {
+    db.run(sql, [
+      trade.sender,
+      trade.fromToken?.symbol,
+      trade.fromToken?.address,
+      trade.toToken?.symbol,
+      trade.toToken?.address,
+      trade.fromAmount,
+      trade.toAmount,
+      trade.txId,
+      'uniswap-v4',
+    ], function (err) {
       if (err) {
         console.error('Failed to insert trade:', err);
       }
@@ -133,6 +148,7 @@ async function sendTransaction(transfer) {
     const from = transfer.from;
     const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from.toLowerCase());
     const PRIVATE_KEY = pk.pk;
+    
     const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
     if (!wallet || !wallet.address || wallet.address.toLowerCase() !== transfer.from.toLowerCase()) {
       throw new Error(`Incorrect private key for address ${transfer.from}`)
@@ -168,6 +184,42 @@ async function sendTransaction(transfer) {
     saveTradeInDB({...transfer, txId: txResponse?.hash});
 
     return {success: true, warnings, txId: txResponse?.hash};
+  } catch (err) {
+    console.error(err);
+    return {success: false, error: err.toString(), warnings};
+  }
+}
+
+async function triggerTrade({tradeDetails, args}) {
+  if (!privateKeys) return {success: false, error: 'No private keys found'}
+  const warnings = [];
+
+  try {
+    const from = tradeDetails.from;
+    const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from.toLowerCase());
+    const PRIVATE_KEY = pk.pk;
+    
+    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+    if (!wallet || !wallet.address || wallet.address.toLowerCase() !== trade.from.toLowerCase()) {
+      throw new Error(`Incorrect private key for address ${transfer.from}`)
+    }
+    const router = new ethers.Contract(UNIVERSAL_ROUTER_ADDRESS, UNIVERSAL_ROUTER_ABI, wallet);
+    
+    if (!transfer.isTestMode) {
+      const balance = await provider.getBalance(from);
+      const balanceEth = Number(ethers.formatEther(balance));
+      if (balanceEth < 0.001)
+        throw new Error(`Eth Balance of address ${from} too low (< 0.001)`)
+      else if (balanceEth < 0.01)
+        warnings.push(`Beware eth Balance of address ${from} low (< 0.01)`)
+    }
+    
+    const tx = await router.execute(
+      ...args,
+    )
+    saveTradeInDB({...tradeDetails, txId: tx?.hash});
+
+    return {success: true, warnings, tx};
   } catch (err) {
     console.error(err);
     return {success: false, error: err.toString(), warnings};
@@ -419,6 +471,10 @@ function createWindow() {
 
   ipcMain.handle('send-transaction', (event, transaction) => {
     return sendTransaction(transaction);
+  });
+
+  ipcMain.handle('send-trade', (event, transaction) => {
+    return sendTrade(trade);
   });
 
   ipcMain.handle('save-addresses', (event, addresses, isSource) => {

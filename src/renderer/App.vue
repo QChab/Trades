@@ -89,7 +89,6 @@
           <ManualTrading
             @update:settings="setCurrentSettings"
             @update:gasPrice="setGasPrice"
-            :isProcessRunning="isProcessRunning"
             :addresses="laodedAddresses"
           />
         </div>

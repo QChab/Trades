@@ -7,6 +7,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Expose a safe API to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
   sendTransaction: (transaction) => ipcRenderer.invoke('send-transaction', transaction),
+  sendTrade: (trade) => ipcRenderer.invoke('send-trade', trade),
   setGasPrice: (gasPrice) => ipcRenderer.invoke('set-gas-price', gasPrice),
   decryptRtf: (fileContent) => ipcRenderer.invoke('decrypt-rtf', fileContent),
   savePrivateKeys: (privateKeys) => ipcRenderer.invoke('save-private-keys', privateKeys),

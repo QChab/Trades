@@ -27,7 +27,6 @@ const chainId = 1;
 // ----------------------------
 // Configuration constants
 // ----------------------------
-const UNIVERSAL_ROUTER_ADDRESS   = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
 const QUOTER_ADDRESS             = '0x52f0e24d1c21c8a0cb1e5a5dd6198556bd9e1203';
 const API_KEY                    = '85a93cb8cc32fa52390e51a09125a6fc';
 const SUBGRAPH_ID                = 'DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G';
@@ -40,9 +39,6 @@ const POSITION_MANAGER_ABI       = [
   'function poolKeys(bytes25 poolId) view returns (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks)'
 ];
 
-const UNIVERSAL_ROUTER_ABI       = [
-  'function execute(bytes commands, bytes[] inputs, uint256 deadline) external payable returns (bytes[] memory results)'
-];
 const QUOTER_ABI                 = [
   'function quoteExactInput((address currencyIn, tuple(address intermediateCurrency,uint24 fee,int24 tickSpacing,address hooks,bytes hookData)[] path, uint256 exactAmount) params) external view returns (uint256 amountOut, uint256 gasEstimate)'
 ];
@@ -54,9 +50,6 @@ export function useUniswapV4() {
   const loading      = ref(false);
   const priceHistory = ref([]); // stores { timestamp, tokenIn, tokenOut, amountIn, amountOut }
 
-  // Contracts
-  const signer          = new ethers.Wallet('0xea837b966452b9968eb6d388d04823d85ddb4b2649d19c6e7615d133fcb76564', provider);
-  const router          = new ethers.Contract(UNIVERSAL_ROUTER_ADDRESS, UNIVERSAL_ROUTER_ABI, signer);
   const quoter          = new ethers.Contract(QUOTER_ADDRESS, QUOTER_ABI, provider);
   const positionManager = new ethers.Contract(POSITION_MANAGER_ADDRESS, POSITION_MANAGER_ABI, provider);
 
@@ -104,7 +97,7 @@ export function useUniswapV4() {
     const tokenB = new Token(chainId, tokenOut, tokenOutObject.decimals, tokenOutObject.symbol);
     const pools = [];
     for (const pool of directPools) {
-      if (!pool.liquidity || pool.liquidity === "0" || Number(pool.totalValueLockedUSD) < 10000) continue // TOOD: skip if liquidity very low
+      if (!pool.liquidity || pool.liquidity === "0" || Number(pool.totalValueLockedUSD) < 10) continue // TOOD: skip if liquidity very low
       console.log(pool);
 
       let token0, token1;
@@ -139,7 +132,7 @@ export function useUniswapV4() {
       console.log(poolInstance);
       console.log(pool.id + ' built')
       pools.push(poolInstance);
-      return [poolInstance]
+      // return [poolInstance]
     }
     return pools;
   }
@@ -196,8 +189,8 @@ export function useUniswapV4() {
       for (const p of pools) {
         if (
           p.involvesToken(tokenA) &&
-          p.involvesToken(tokenB) &&
-          (await isPoolUsable(p, amountIn))
+          p.involvesToken(tokenB)
+          // (await isPoolUsable(p, amountIn))
         ) {
           sanePools.push(p);
         }
@@ -235,9 +228,11 @@ export function useUniswapV4() {
     }
   }
 
-  async function executeSwapExactInSingle(trade, slippageBips = 50) {
+  async function executeSwapExactInSingle(tradeDetails, fromAddress, slippageBips = 50) {
     loading.value = true
     error.value   = null
+
+    const trade = tradeDetails.swap;
 
     try {
       // 1) Pull out the route and amounts from the SDK Trade
@@ -335,16 +330,19 @@ export function useUniswapV4() {
 
       // 9) Call the router — include ETH value if swapping native token → ERC20
       const useNative = trade.inputAmount.currency.isNative
-      const tx = await router.execute(
-        commands,
-        inputs,
-        deadline,
-        { value: useNative ? amountIn.quotient.toString() : 0 }
-      )
+      const tx = await window.electronAPI.sendTrade({
+        tradeDetails,
+        args: [
+          commands,
+          inputs,
+          deadline,
+          { value: useNative ? amountIn.quotient.toString() : 0 }
+        ]
+      })
 
       // 10) Track and await confirmation
       txHash.value = tx.hash
-      await tx.wait()
+      return tx;
     } catch (e) {
       error.value = e
     } finally {
