@@ -57,7 +57,10 @@
                 </option>
               </select>
             </div>
-            <span v-if="trade?.toAmount" class="usd-amount">${{ (Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(2)  }}</span>
+            <span v-if="trade?.toAmount && !isFetchingPrice" class="usd-amount">
+              ${{ (Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(2)  }}
+              ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price -Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(3) }}%)
+            </span>
           </div>
           <p class="details-message">{{ priceFetchingMessage }}</p>
           <div class="address-form">
