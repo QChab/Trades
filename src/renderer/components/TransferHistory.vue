@@ -9,8 +9,7 @@
         <span v-else> {{ t.toAmount || t.expectedToAmount }} </span>
         {{ t.toTokenSymbol || t.toToken?.symbol }}
         from {{ t.senderName || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
-        <span v-if="t.gasCost">; gas cost: ${{ t.gasCost.fixed(2)}} </span>
-        {{t}}
+        <span v-if="t.gasCost">; gas cost: ${{ t.gasCost.substring(0, 5)}} </span>
       </li>
     </transition-group>
   </div>
@@ -109,7 +108,7 @@ export default {
             trade.isConfirmed = true;
             const {gas, tokens} = await analyseReceipt(trade, receipt, provider)
             console.log(gas, tokens)
-            trade.gasCost = gas.paidUsd;
+            trade.gasCost = gas.paidUsd + '';
             trade.toAmount = tokens[0].amount;
             window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, tokens[0].amount);
           } else {

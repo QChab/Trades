@@ -113,6 +113,7 @@ function failTradeInDB(txId) {
 }
 
 function confirmTradeInDB (txId, gasCost, toAmount) {
+  console.log(gasCost, toAmount)
   const sql = `
     UPDATE trades
     SET    isConfirmed = 1,
@@ -510,11 +511,11 @@ function createWindow() {
     return sendTrade(trade);
   });
 
-  ipcMain.handle('fail-trade', (event, txId, gasCost, toAmount) => {
-    return failTradeInDB(txId, gasCost, toAmount);
+  ipcMain.handle('confirm-trade', (event, txId, gasCost, toAmount) => {
+    return confirmTradeInDB(txId, gasCost, toAmount);
   });
-  ipcMain.handle('confirm-trade', (event, txId) => {
-    return confirmTradeInDB(txId);
+  ipcMain.handle('fail-trade', (event, txId) => {
+    return failTradeInDB(txId);
   });
 
   ipcMain.handle('save-addresses', (event, addresses, isSource) => {
