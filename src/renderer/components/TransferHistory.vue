@@ -109,6 +109,8 @@ export default {
             trade.isConfirmed = true;
             const {gas, tokens} = await analyseReceipt(trade, receipt, provider)
             console.log(gas, tokens)
+            trade.gasCost = gas.paidUsd;
+            trade.toAmount = tokens[0].amount;
             window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, tokens[0].amount);
           } else {
             trade.hasFailed = true;
