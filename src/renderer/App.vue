@@ -31,7 +31,7 @@
         </div>
         <div class="private-keys" >
           <p class="title" @click="shouldShowPKForm = !shouldShowPKForm">
-            Trading Addresses ({{ laodedAddresses.length }})
+            Trading Addresses ({{ loadedAddresses.length }})
             <img :src="chevronDownImage" class="chevron-down" :class="{ rotated : shouldShowPKForm }"></img>
           </p>
           <div v-if="shouldShowPKForm && !hasUnlockedPrivateKeys">
@@ -90,7 +90,7 @@
             @update:settings="setCurrentSettings"
             @update:gasPrice="setGasPrice"
             @update:trade="addTrade"
-            :addresses="laodedAddresses"
+            :addresses="loadedAddresses"
             :gasPrice="gasPrice"
             :maxGasPrice="maxGasPrice * 1000000000"
           />
@@ -122,6 +122,7 @@
 
   <script>
   // import TransferControl from './components/TransferControl.vue';
+  import { watch } from 'vue';
   import FileManager from './components/FileManager.vue';
   import ManualTrading from './components/ManualTrading.vue';
   import TransferHistory from './components/TransferHistory.vue';
@@ -130,6 +131,8 @@
   import chevronDownImage from '@/../assets/chevron-down.svg';
   import GasPrice from './components/GasPrice.vue';
   import gasImage from '@/../assets/gas.png';
+  import provider from '@/ethersProvider.js';
+  import {ethers} from 'ethers';
 
   export default {
     name: 'App',
@@ -148,6 +151,7 @@
       const shouldShowPKForm = ref(true);
       const isFileDetected = ref(false);
       const hasUnlockedPrivateKeys = ref(false);
+      const loadedAddresses = ref([]);
 
       const isTestMode = ref(false);
 
@@ -171,6 +175,55 @@
           timestamp: new Date(),
         });
       }
+
+      watch(() => loadedAddresses.value, async (loadedAddressesValue) => {
+        for (const addressDetail of loadedAddressesValue) {
+          if (!currentSettings.value?.tokens) continue;
+          for (const token of currentSettings.value.tokens) {
+            if (!token.address || token.address === '') continue;
+
+            let balance;
+            try {
+              balance = await getBalance(addressDetail.address, token);
+            } catch (err) {
+              console.error(err);
+              balance = 0;
+            }
+            if (!addressDetail.balances) addressDetail.balances = {};
+            addressDetail.balances[token.address] = balance;
+            await new Promise((r) => setTimeout(r, 100))
+          }
+        }
+      })
+
+      const erc20Abi = [
+        "function symbol() view returns (string)",
+        "function decimals() view returns (uint256)",
+        "function balanceOf(address) view returns (uint256)",
+      ];
+      
+      const getBalance = async (address, token) => {
+        if (isTestMode.value) {
+          return Math.floor(Math.random() * 60);
+        }
+
+        const contract = new ethers.Contract(token.address, erc20Abi, provider);
+        if (!token.decimals)
+          token.decimals = await contract.decimals();
+
+        let balance;
+        if (token.address === '0x0000000000000000000000000000000000000000')
+          balance = await provider.getBalance(address);
+        else
+          balance = await contract.balanceOf(address)
+        if (balance.toString() === "0") return 0;
+        
+        // const balanceOffset = balanceOffsetByTokenByAddress[token.address] && balanceOffsetByTokenByAddress[token.address][address] ? balanceOffsetByTokenByAddress[token.address][address] : 0;
+        const balanceOffset = 0;
+        balance = Number(balance) * Math.pow(10, -Number(token.decimals)) - balanceOffset;
+        console.log("ERC20 balance:", Number(balance));
+        return Number(balance);
+      };
 
       const readDataFromString = async (args) => { 
         let { fileContent, ext } = args;
@@ -208,7 +261,6 @@
 
       const errorMessagePK = ref('');
       const privateKeyArgs = ref();
-      const laodedAddresses = ref([]);
 
       const storePrivateKeyArgs = (args) => {
         privateKeyArgs.value = {...args};
@@ -242,7 +294,7 @@
             name: line[indexName],
           }));
           
-          laodedAddresses.value = privateKeys.map((pk) => ({address: pk.address, name: pk.name})).filter((pk) => pk.address && pk.name);
+          loadedAddresses.value = privateKeys.map((pk) => ({address: pk.address, name: pk.name})).filter((pk) => pk.address && pk.name);
 
           const result = await window.electronAPI.savePrivateKeys({privateKeys, password: password.value});
           if (!result?.success) throw new Error('Private keys not saved, error: ' + result?.error);
@@ -255,7 +307,7 @@
           isFileDetected.value = true;
           hasUnlockedPrivateKeys.value = true;
         } catch (err) {
-          laodedAddresses.value = [];
+          loadedAddresses.value = [];
           if (err.toString)
             errorMessagePK.value = err.toString()
           else
@@ -269,7 +321,7 @@
           if (!password.value) throw new Error('No password');
           const result = await window.electronAPI.loadPrivateKeys(password.value);
           if (!result.success) throw new Error('Private keys not loaded, error: ' + result.error);
-          laodedAddresses.value = result.addresses;
+          loadedAddresses.value = result.addresses;
 
           shouldShowPKForm.value = false;
           hasUnlockedPrivateKeys.value = true;
@@ -363,7 +415,7 @@
         errorInfuraKey,
         gasImage,
         maxGasPrice,
-        laodedAddresses,
+        loadedAddresses,
       }
     }
   };

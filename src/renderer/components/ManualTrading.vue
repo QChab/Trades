@@ -34,7 +34,7 @@
                   :key="'fromToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }}
+                  {{ token.symbol }} ({{ senderDetails?.balances ? senderDetails.balances[token.address] : 0 }})
                 </option>
               </select>
             </div>
@@ -61,14 +61,15 @@
           <div class="address-form">
             <p>{{ trade?.swap?.swaps?.length }} trade</p>
             <p>with</p>
-            <select id="sender-address" v-model="senderAddress">
+            <select id="sender-address" v-model="senderDetails">
               <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address.address">
-                {{ address.name }} ({{ address?.address.substring(0, 10) }}...)
+                {{ address.name }} ({{ address?.address.substring(2, 6) }}...):
+                {{ address?.balances ? address.balances[fromTokenAddress] : 0 }} {{ tokensByAddresses[fromTokenAddress].symbol }}
               </option>
             </select>
           </div>
           <p class="details-message">{{ swapMessage }}</p>
-          <button @click="triggerTrade()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice" class="swap-button">
+          <button @click="triggerTrade()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || !trade?.swap" class="swap-button">
             Swap
           </button>
         </div>
@@ -163,7 +164,7 @@ export default {
     const fromAmount = ref(null);
     const fromTokenAddress = ref(null);
     const toTokenAddress = ref(null);
-    const senderAddress = ref(null);
+    const senderDetails = ref(null);
     const tabPrice = ref('market');
     const isSwapButtonDisabled = ref(false);
 
@@ -190,6 +191,13 @@ export default {
       { address: '', symbol: '', decimals: null},
       { address: '', symbol: '', decimals: null},
     ]);
+
+
+    const erc20Abi = [
+      "function symbol() view returns (string)",
+      "function decimals() view returns (uint256)",
+      "function balanceOf(address) view returns (uint256)",
+    ];
 
     const tokensByAddresses = ref({});
     const isFetchingPrice = ref(false);
@@ -236,6 +244,7 @@ export default {
               fromAmount: fromAmountValue + '',
               toAmount: bestTrade?.outputAmount?.toSignificant(6),
             }
+
           } catch (err) {
             isSwapButtonDisabled.value = true;
             priceFetchingMessage.value = err;
@@ -292,17 +301,12 @@ export default {
       }
     })
     watch(() => props.addresses, (addressesValue) => {
-      senderAddress.value = props.addresses[0];
+      senderDetails.value = props.addresses[0];
     }, {immediate: true})
 
-    watch(() => senderAddress.value, (senderAddressValue) => {
-      if (!senderAddressValue) isSwapButtonDisabled.value = true;
+    watch(() => senderDetails.value, (senderDetailsValue) => {
+      if (!senderDetailsValue) isSwapButtonDisabled.value = true;
     }, {immediate: true})
-
-    const erc20Abi = [
-      "function symbol() view returns (string)",
-      "function decimals() view returns (uint256)",
-    ];
 
     const getTokenSymbol = async (contractAddress) => {
       // Create a Contract instance pointing to your ERC20
@@ -370,11 +374,11 @@ export default {
       try {
         isSwapButtonDisabled.value = true;
         swapMessage.value = '';
-        trade.value.sender = senderAddress.value;
+        trade.value.sender = senderDetails.value;
         trade.value.sentDate = new Date();
         trade.value.txId = 'pending';
 
-        const {success, tx, warnings, error} = await executeSwapExactInSingle(trade.value, senderAddress.value, 50, props.gasPrice);
+        const {success, tx, warnings, error} = await executeSwapExactInSingle(trade.value, senderDetails.value, 50, props.gasPrice);
         if (!success || !tx) {
           if (error)
             console.error(error)
@@ -411,7 +415,7 @@ export default {
       fromAmount,
       fromTokenAddress,
       toTokenAddress,
-      senderAddress,
+      senderDetails,
       tabPrice,
       tokensByAddresses,
       switchTokens,
@@ -723,6 +727,9 @@ input.token-name {
   -moz-box-shadow:    0 2px 5px rgba(0, 0, 0, 0.2);
   box-shadow:         0 2px 5px rgba(0, 0, 0, 0.2);
   transition: box-shadow 0.3s ease, background-color 0.3s ease;
+}
+.from-swap select {
+  width: 110px;
 }
 .from-swap select:hover,
 .to-swap select:hover {

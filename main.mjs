@@ -202,9 +202,7 @@ async function sendTrade({tradeDetailsString, args}) {
   const warnings = [];
 
   try {
-    console.log('before')
     const tradeDetails = JSON.parse(tradeDetailsString);
-    console.log('after parse')
     const from = tradeDetails.sender?.address?.toLowerCase();
     const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from);
     const PRIVATE_KEY = pk.pk;

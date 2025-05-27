@@ -323,8 +323,17 @@ export function useUniswapV4() {
     }
   }
 
-  async function executeSwapExactInSingle(tradeDetails, fromAddress, slippageBips = 50, gasPrice) {
+  async function executeSwapExactInSingle(tradeDetails, senderDetails, slippageBips = 50, gasPrice) {
     const trade = tradeDetails.swap;
+    if (!trade.route.pools || !trade.route.pools[0])
+      return {success: false, error: new Error('Missing route pools')};
+
+    if (senderDetails?.balances) {
+      const balance = senderDetails?.balances[trade.route.pools[0].token0.address.toLowerCase()];
+      const inputAmount = Number(trade.inputAmount.quotient) / (10**trade.inputAmount.currency.decimals);
+      if (balance < inputAmount)
+        return {success: false, error: new Error('Insufficient balance of ' + trade.inputAmount.currency.symbol )}
+    }
 
     try {
       // 1) Pull out the route and amounts from the SDK Trade
