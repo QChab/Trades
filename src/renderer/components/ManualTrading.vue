@@ -68,7 +68,7 @@
             </select>
           </div>
           <p class="details-message">{{ swapMessage }}</p>
-          <button @click="triggerTrade()" :disabled="isSwapButtonDisabled || isFetchingPrice" class="swap-button">
+          <button @click="triggerTrade()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice" class="swap-button">
             Swap
           </button>
         </div>
@@ -144,7 +144,11 @@ export default {
     gasPrice: {
       type: Number,
       default: 2000000000,
-    }
+    },
+    maxGasPrice: {
+      type: Number,
+      default: 2000000000,
+    },
   },
   emits: ['update:settings', 'update:trade'],
   setup(props, { emit } ) {
@@ -159,7 +163,6 @@ export default {
     const fromAmount = ref(null);
     const fromTokenAddress = ref(null);
     const toTokenAddress = ref(null);
-    const toAmount = ref(null);
     const senderAddress = ref(null);
     const tabPrice = ref('market');
     const isSwapButtonDisabled = ref(false);
@@ -204,7 +207,8 @@ export default {
         swapMessage.value = '';
 
         if (!fromAmountValue || !fromTokenAddressValue || !toTokenAddressValue || fromAmountValue === '.') {
-          toAmount.value = 0;
+          if (trade)
+            trade.value.toAmount = 0;
           isFetchingPrice.value = false;
           return;
         }
@@ -349,6 +353,9 @@ export default {
       toTokenAddress.value = fromTokenAddress.value;
       fromTokenAddress.value = buffer;
       shouldSwitchTokensForLimit.value = !shouldSwitchTokensForLimit.value;
+      if (trade.value?.toAmount) {
+        [fromAmount.value, trade.value.toAmount] = [trade.value.toAmount, fromAmount.value];
+      }
     }
 
     const shouldSwitchTokensForLimit = ref(false);
@@ -362,7 +369,7 @@ export default {
         trade.value.sentDate = new Date();
         trade.value.txId = 'pending';
 
-        const {success, tx, warnings, error} = await executeSwapExactInSingle(trade.value, senderAddress.value , 50, props.gasPrice);
+        const {success, tx, warnings, error} = await executeSwapExactInSingle(trade.value, senderAddress.value, 50, props.gasPrice);
         if (!success || !tx) {
           if (error)
             console.error(error)
@@ -370,7 +377,10 @@ export default {
           trade.value.sender = null;
           trade.value.sentDate = null;
           trade.value.txId = null;
-          swapMessage.value = error;
+          if (error.toString().includes('insufficient funds for intrinsic transaction cost'))
+            swapMessage.value = 'Not enough ETH on the address';
+          else
+            swapMessage.value = error;
           console.log({success, tx, warnings});
           return false;
         }
@@ -394,7 +404,6 @@ export default {
       findSymbol,
       deleteToken,
       fromAmount,
-      toAmount,
       fromTokenAddress,
       toTokenAddress,
       senderAddress,
@@ -721,6 +730,7 @@ input.token-name {
   display: block;
   margin-left: auto;
   margin-right: auto;
+  width: 330px;
 }
 input:focus,
 textarea:focus {

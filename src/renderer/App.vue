@@ -92,6 +92,7 @@
             @update:trade="addTrade"
             :addresses="laodedAddresses"
             :gasPrice="gasPrice"
+            :maxGasPrice="maxGasPrice * 1000000000"
           />
         </div>
 
