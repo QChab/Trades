@@ -112,7 +112,7 @@
             :infuraKeys="infuraKeys"
           /> -->
           <TransferHistory 
-            :transfers="trades"
+            :trades="trades"
           />
         </div>
       </div>

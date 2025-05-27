@@ -30,7 +30,7 @@ const UNIVERSAL_ROUTER_ABI       = [
 let db;
 
 function initDatabase() {
-  const dbPath = path.join(userDataPath, 'trades_final.db');
+  const dbPath = path.join(userDataPath, 'trades_confirmed.db');
 
   // Create or open the DB
   db = new sqlite3.Database(dbPath, (err) => {
@@ -56,7 +56,8 @@ function initDatabase() {
           gasPrice TEXT,
           protocol TEXT,
           senderName TEXT,
-          timestamp DATETIME DEFAULT (datetime('now', 'localtime'))
+          timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
+          isConfirmed BOOLEAN
         )
       `, (tableErr) => {
         if (tableErr) {
@@ -96,6 +97,26 @@ async function saveTradeInDB(trade) {
     console.error(err);
   }
 }
+
+function confirmTradeInDB(txId) {
+  const sql = `
+    UPDATE trades
+    SET    isConfirmed = 1
+    WHERE  txId = $txId
+  `;
+
+  db.run(sql, { $txId: txId.toLowerCase() }, function (err) {
+    if (err) return console.error('❌ update failed:', err);
+
+    // 'this.changes' → number of rows that were actually updated
+    if (this.changes === 0) {
+      console.warn('⚠️  no trade found for', txId);
+    } else {
+      console.log('✅ trade confirmed for', txId);
+    }
+  });
+}
+
 
 function deleteAllTrades() {
   const sql = `DELETE FROM trades;`;
@@ -470,6 +491,10 @@ function createWindow() {
 
   ipcMain.handle('send-trade', (event, trade) => {
     return sendTrade(trade);
+  });
+
+  ipcMain.handle('confirm-trade', (event, txId) => {
+    return confirmTradeInDB(txId);
   });
 
   ipcMain.handle('save-addresses', (event, addresses, isSource) => {
