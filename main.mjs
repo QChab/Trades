@@ -30,7 +30,7 @@ const UNIVERSAL_ROUTER_ABI       = [
 let db;
 
 function initDatabase() {
-  const dbPath = path.join(userDataPath, 'trades_confirmed.db');
+  const dbPath = path.join(userDataPath, 'trades_complete.db');
 
   // Create or open the DB
   db = new sqlite3.Database(dbPath, (err) => {
@@ -58,6 +58,7 @@ function initDatabase() {
           senderName TEXT,
           timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
           isConfirmed BOOLEAN,
+          hasFailed BOOLEAN,
           gasCost TEXT
         )
       `, (tableErr) => {
@@ -99,16 +100,40 @@ async function saveTradeInDB(trade) {
   }
 }
 
-function confirmTradeInDB(txId) {
+function failTradeInDB(txId) {
   const sql = `
     UPDATE trades
-    SET    isConfirmed = 1
+    SET    hasFailed = 1
     WHERE  txId = $txId
   `;
 
   db.run(sql, { $txId: txId.toLowerCase() }, function (err) {
-    if (err) return console.error('❌ update failed:', err);
+    if (err) return console.error('❌ update fail failed:', err);
   });
+}
+
+function confirmTradeInDB (txId, gasCost, toAmount) {
+  const sql = `
+    UPDATE trades
+    SET    isConfirmed = 1,
+           gasCost  = $gasCost,
+           toAmount   = $toAmount
+    WHERE  txId        = $txId
+  `;
+
+  db.run(
+    sql,
+    {
+      $txId:    txId.toLowerCase(),
+      $gasCost: Number(gasCost),   // make sure it’s numeric
+      $toAmount: toAmount          // keep as string if you want full precision
+    },
+    function (err) {
+      if (err) {
+        console.error('❌ update confirm failed:', err);
+      }
+    }
+  );
 }
 
 
@@ -485,6 +510,9 @@ function createWindow() {
     return sendTrade(trade);
   });
 
+  ipcMain.handle('fail-trade', (event, txId, gasCost, toAmount) => {
+    return failTradeInDB(txId, gasCost, toAmount);
+  });
   ipcMain.handle('confirm-trade', (event, txId) => {
     return confirmTradeInDB(txId);
   });

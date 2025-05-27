@@ -3,9 +3,14 @@
     <!-- Wrap the list in a transition-group to animate new items -->
     <transition-group name="transfer" tag="ul">
       <li v-for="(t, index) in trades" :key="t.timestamp" @click="openTxDetails(t.txId)">
-        {{ t.isConfirmed ? '✅' : '⏳' }}
-        {{ t.fromAmount }} {{ t.fromTokenSymbol || t.fromToken?.symbol }} -> {{ t.toAmount || t.expectedToAmount }} {{ t.toTokenSymbol || t.toToken?.symbol }}
+        {{ t.hasFailed ? '❌' : (t.isConfirmed ? '✅' : '⏳') }}
+        {{ t.fromAmount }} {{ t.fromTokenSymbol || t.fromToken?.symbol }} -> 
+        <span v-if="t.toAmount"> {{ t.toAmount }} ({{ t.expectedToAmount }}) </span>
+        <span v-else> {{ t.toAmount || t.expectedToAmount }} </span>
+        {{ t.toTokenSymbol || t.toToken?.symbol }}
         from {{ t.senderName || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
+        <span v-if="t.gasCost">; gas cost: ${{ t.gasCost.fixed(2)}} </span>
+        {{t}}
       </li>
     </transition-group>
   </div>
@@ -14,6 +19,7 @@
 <script>
 import { computed, watch } from 'vue';
 import provider from '@/ethersProvider';
+import {ethers} from 'ethers';
 
 export default {
   name: 'TransferHistory',
@@ -51,7 +57,7 @@ export default {
     const toEth  = wei => Number(ethers.utils.formatEther(wei));
     const toGwei = weiBN => Number(ethers.utils.formatUnits(weiBN, 9));
 
-    const analyseReceipt = async (trace, rcpt, provider) => {
+    const analyseReceipt = async (trade, rcpt, provider) => {
       /* ── gas ─────────────────────────────── */
       const ethUsd        = props.ethPrice;
       const gasPaidWei    = rcpt.gasUsed.mul(rcpt.effectiveGasPrice);
@@ -85,10 +91,8 @@ export default {
         const [dec, sym] = await Promise.all([erc20.decimals(), erc20.symbol()]);
 
         const humanAmt    = Number(ethers.utils.formatUnits(amountRaw, dec));
-        const usdPx       = await tokenUsd(tokenAddr, ethUsd);      // price per 1 token
-        const usdValue    = humanAmt * usdPx;
 
-        tokens.push({ symbol: sym, amount: humanAmt, usdValue });
+        tokens.push({ symbol: sym, amount: humanAmt });
       }
 
       return { gas: gasInfo, tokens };
@@ -97,13 +101,19 @@ export default {
     const checkTx = async (trade) => {
       if (trade.isConfirmed) return;
 
-      while (!trade.isConfirmed && trade.txId) {
+      while (!trade.isConfirmed && trade.txId && !trade.hasFailed) {
         await new Promise((r) => setTimeout(r, 3000));
         const receipt = await provider.getTransactionReceipt(trade.txId)
         if (receipt) {
-          trade.isConfirmed = true;
-          window.electronAPI.confirmTrade(trade.txId);
-          console.log(await analyseReceipt(trade, receipt, provider))
+          if (receipt.status === '1' || receipt.status === 1) {
+            trade.isConfirmed = true;
+            const {gas, tokens} = await analyseReceipt(trade, receipt, provider)
+            console.log(gas, tokens)
+            window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, tokens[0].amount);
+          } else {
+            trade.hasFailed = true;
+            window.electronAPI.failTrade(trade.txId);
+          }
         }
       }
     }

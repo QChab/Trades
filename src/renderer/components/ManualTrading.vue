@@ -439,6 +439,7 @@ export default {
           console.log({success, tx, warnings});
           return false;
         }
+        trade.value.expectedToAmount = trade.value.toAmount;
         trade.value.txId = tx?.hash;
         emit('update:trade', trade.value);
       } catch (err) {
