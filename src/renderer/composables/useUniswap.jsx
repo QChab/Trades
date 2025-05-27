@@ -329,7 +329,7 @@ export function useUniswapV4() {
       return {success: false, error: new Error('Missing route pools')};
 
     if (senderDetails?.balances) {
-      const balance = senderDetails?.balances[trade.route.pools[0].token0.address.toLowerCase()];
+      const balance = senderDetails?.balances[trade.inputAmount.currency.address.toLowerCase()];
       const inputAmount = Number(trade.inputAmount.quotient) / (10**trade.inputAmount.currency.decimals);
       if (balance < inputAmount)
         return {success: false, error: new Error('Insufficient balance of ' + trade.inputAmount.currency.symbol )}

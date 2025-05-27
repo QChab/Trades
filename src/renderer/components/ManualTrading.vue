@@ -34,11 +34,11 @@
                   :key="'fromToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} ({{ senderDetails?.balances ? senderDetails.balances[token.address] : 0 }})
+                  {{ token.symbol }} ({{ senderDetails?.balances && senderDetails.balances[token.address] ? senderDetails.balances[token.address].toFixed(5) : 0 }})
                 </option>
               </select>
             </div>
-            <span v-if="fromAmount" class="usd-amount">${{ (fromAmount * tokensByAddresses[fromTokenAddress].price).toFixed(2)  }}</span>
+            <span v-if="fromAmount" class="usd-amount">${{ (fromAmount * tokensByAddresses[fromTokenAddress].price).toFixed(1)  }}</span>
           </div>
           <div class="to-swap">
             <img :src="downArrowImage" class="down-arrow-image" @click="switchTokens"/>
@@ -58,7 +58,7 @@
               </select>
             </div>
             <span v-if="trade?.toAmount && !isFetchingPrice" class="usd-amount">
-              ${{ (Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(2)  }}
+              ${{ (Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1)  }}
               ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price -Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(3) }}%)
             </span>
           </div>
@@ -69,7 +69,7 @@
             <select id="sender-address" v-model="senderDetails">
               <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address.address">
                 {{ address.name }} ({{ address?.address.substring(2, 6) }}...):
-                {{ address?.balances ? address.balances[fromTokenAddress] : 0 }} {{ tokensByAddresses[fromTokenAddress].symbol }}
+                {{ address?.balances && address.balances[fromTokenAddress] ? address.balances[fromTokenAddress].toFixed(5) : 0 }} {{ tokensByAddresses[fromTokenAddress].symbol }}
               </option>
             </select>
           </div>
@@ -214,7 +214,7 @@ export default {
 
     let debounceTimer = null;
     watch(
-      [() => fromTokenAddress.value, () => toTokenAddress.value, () => fromAmount.value, () => trades.value], 
+      [() => fromTokenAddress.value, () => toTokenAddress.value, () => fromAmount.value, () => trades.value, () => senderDetails.value], 
       async ([fromTokenAddressValue, toTokenAddressValue, fromAmountValue], [oldFromTokenAddressValue, oldToTokenAddressValue]) => {
          if (debounceTimer) {
           clearTimeout(debounceTimer)
