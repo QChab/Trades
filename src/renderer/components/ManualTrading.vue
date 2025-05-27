@@ -53,7 +53,7 @@
                   :key="'toToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }}
+                  {{ token.symbol }} (${{ token.price.toFixed(3) }})
                 </option>
               </select>
             </div>
@@ -761,7 +761,7 @@ input.token-name {
 }
 .from-swap select, .to-swap select {
   border: 1px solid #ccc;
-  width: 80px;
+  width: 120px;
   text-align: center;
   padding: 5px;
   border: none;
@@ -774,9 +774,6 @@ input.token-name {
   box-shadow:         0 2px 5px rgba(0, 0, 0, 0.2);
   transition: box-shadow 0.3s ease, background-color 0.3s ease;
 }
-.from-swap select {
-  width: 110px;
-}
 .from-swap select:hover,
 .to-swap select:hover {
   -webkit-box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);  /* slightly larger, darker */
@@ -788,7 +785,7 @@ input.token-name {
   display: block;
   margin-left: auto;
   margin-right: auto;
-  width: 330px;
+  width: 350px;
 }
 input:focus,
 textarea:focus {
