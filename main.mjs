@@ -57,7 +57,8 @@ function initDatabase() {
           protocol TEXT,
           senderName TEXT,
           timestamp DATETIME DEFAULT (datetime('now', 'localtime')),
-          isConfirmed BOOLEAN
+          isConfirmed BOOLEAN,
+          gasCost TEXT
         )
       `, (tableErr) => {
         if (tableErr) {
@@ -73,7 +74,7 @@ function initDatabase() {
 async function saveTradeInDB(trade) {
   try {
     const sql = `
-      INSERT INTO trades (fromAddress, fromTokenSymbol, fromTokenAddress, toTokenSymbol, toTokenAddress, fromAmount, toAmount, txId, protocol, senderName)
+      INSERT INTO trades (fromAddress, fromTokenSymbol, fromTokenAddress, toTokenSymbol, toTokenAddress, fromAmount, expectedToAmount, txId, protocol, senderName)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 

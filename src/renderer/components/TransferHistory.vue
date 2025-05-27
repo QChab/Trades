@@ -4,7 +4,7 @@
     <transition-group name="transfer" tag="ul">
       <li v-for="(t, index) in trades" :key="t.timestamp" @click="openTxDetails(t.txId)">
         {{ t.isConfirmed ? '✅' : '⏳' }}
-        {{ t.fromAmount }} {{ t.fromTokenSymbol || t.fromToken?.symbol }} -> {{ t.toAmount }} {{ t.toTokenSymbol || t.toToken?.symbol }}
+        {{ t.fromAmount }} {{ t.fromTokenSymbol || t.fromToken?.symbol }} -> {{ t.toAmount || t.expectedToAmount }} {{ t.toTokenSymbol || t.toToken?.symbol }}
         from {{ t.senderName || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
       </li>
     </transition-group>
@@ -21,6 +21,10 @@ export default {
     trades: {
       type: Array,
       default: () => ([])
+    },
+    ethPrice: {
+      type: Number,
+      default: 2500,
     }
   },
   setup(props) {
@@ -41,6 +45,55 @@ export default {
       }
     }, {immediate: true, deep: true})
 
+    const ERC20_TRANSFER_SIG =
+      '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+
+    const toEth  = wei => Number(ethers.utils.formatEther(wei));
+    const toGwei = weiBN => Number(ethers.utils.formatUnits(weiBN, 9));
+
+    const analyseReceipt = async (trace, rcpt, provider) => {
+      /* ── gas ─────────────────────────────── */
+      const ethUsd        = props.ethPrice;
+      const gasPaidWei    = rcpt.gasUsed.mul(rcpt.effectiveGasPrice);
+      const gasInfo = {
+        gasUsed:   rcpt.gasUsed.toNumber(),
+        gasPrice:  toGwei(rcpt.effectiveGasPrice),   // gwei
+        paidEth:   toEth(gasPaidWei),
+        paidUsd:   toEth(gasPaidWei) * ethUsd
+      };
+
+      /* ── ERC-20 credits to tx-sender ──────── */
+      const sender = rcpt.from.toLowerCase();
+      const iface  = new ethers.utils.Interface([
+        'function decimals() view returns (uint8)',
+        'function symbol()   view returns (string)'
+      ]);
+
+      const credits = rcpt.logs
+        .filter(l =>
+          l.topics[0].toLowerCase() === ERC20_TRANSFER_SIG &&
+          ('0x' + l.topics[2].slice(26)).toLowerCase() === sender
+        );
+
+      const tokens = [];
+      for (const log of credits) {
+        const tokenAddr   = log.address;
+        const amountRaw   = ethers.BigNumber.from(log.data);
+
+        // quick-load ERC-20 meta
+        const erc20 = new ethers.Contract(tokenAddr, iface, provider);
+        const [dec, sym] = await Promise.all([erc20.decimals(), erc20.symbol()]);
+
+        const humanAmt    = Number(ethers.utils.formatUnits(amountRaw, dec));
+        const usdPx       = await tokenUsd(tokenAddr, ethUsd);      // price per 1 token
+        const usdValue    = humanAmt * usdPx;
+
+        tokens.push({ symbol: sym, amount: humanAmt, usdValue });
+      }
+
+      return { gas: gasInfo, tokens };
+    }
+
     const checkTx = async (trade) => {
       if (trade.isConfirmed) return;
 
@@ -50,6 +103,7 @@ export default {
         if (receipt) {
           trade.isConfirmed = true;
           window.electronAPI.confirmTrade(trade.txId);
+          console.log(await analyseReceipt(trade, receipt, provider))
         }
       }
     }

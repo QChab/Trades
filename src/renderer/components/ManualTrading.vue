@@ -38,6 +38,7 @@
                 </option>
               </select>
             </div>
+            <span v-if="fromAmount" class="usd-amount">${{ (fromAmount * tokensByAddresses[fromTokenAddress].price).toFixed(2)  }}</span>
           </div>
           <div class="to-swap">
             <img :src="downArrowImage" class="down-arrow-image" @click="switchTokens"/>
@@ -56,6 +57,7 @@
                 </option>
               </select>
             </div>
+            <span v-if="trade?.toAmount" class="usd-amount">${{ (Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(2)  }}</span>
           </div>
           <p class="details-message">{{ priceFetchingMessage }}</p>
           <div class="address-form">
@@ -150,6 +152,10 @@ export default {
       type: Number,
       default: 2000000000,
     },
+    ethPrice: {
+      type: Number,
+      default: 2500,
+    }
   },
   emits: ['update:settings', 'update:trade'],
   setup(props, { emit } ) {
@@ -170,26 +176,26 @@ export default {
 
     // Token selection list with on/off toggles.
     const tokens = reactive([
-      { address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18},
-      { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6},
-      { address: '0x514910771af9ca656af840dff83e8264ecf986ca', symbol: 'LINK', decimals: 18},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
-      { address: '', symbol: '', decimals: null},
+      { price: 1, address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18},
+      { price: 1, address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6},
+      { price: 1, address: '0x514910771af9ca656af840dff83e8264ecf986ca', symbol: 'LINK', decimals: 18},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 1, address: '', symbol: '', decimals: null},
     ]);
 
 
@@ -255,7 +261,44 @@ export default {
       }
     )
 
-    watch(() => tokens, (tokensValue) => {
+    const API_KEY                    = '85a93cb8cc32fa52390e51a09125a6fc';
+    const SUBGRAPH_ID                = 'DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G';
+    const SUBGRAPH_URL               = `https://gateway.thegraph.com/api/${API_KEY}/subgraphs/id/${SUBGRAPH_ID}`;
+
+    async function tokenUsd (tokenAddr, ethUsd) {
+      const qry = `
+        query ($id: String!) {
+          token(id: $id) { derivedETH }
+        }`;
+      const body = JSON.stringify({ query: qry, variables: { id: tokenAddr.toLowerCase() } });
+
+      const { data } = await fetch(SUBGRAPH_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body
+      }).then(r => r.json());
+
+      // token not found ⇢ return 0
+      const derivedEth = data?.token?.derivedETH
+        ? Number(data.token.derivedETH)
+        : 0;
+
+      return derivedEth * ethUsd;          // USD price
+    }
+
+    const setAllTokenPrices = async () => {
+      if (!tokens) return;
+      for (const token of tokens) {
+        token.price = await tokenUsd(token.address, props.ethPrice)
+      }
+    }
+
+    setAllTokenPrices();
+    setInterval(setAllTokenPrices, 60000);
+  
+
+    watch(() => tokens, async (tokensValue) => {
+      if (!tokensValue) return;
       if (!fromTokenAddress.value) fromTokenAddress.value = tokensValue[0].address;
       if (!toTokenAddress.value) toTokenAddress.value = tokensValue[1].address;
 
@@ -862,4 +905,9 @@ button::-webkit-focus-inner {
   word-break: break-all;
 }
 
+.usd-amount {
+  font-size: 12px !important;
+  color: #666;
+  margin-left: 15px;
+}
 </style>

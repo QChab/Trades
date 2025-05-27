@@ -93,6 +93,7 @@
             :addresses="loadedAddresses"
             :gasPrice="gasPrice"
             :maxGasPrice="maxGasPrice * 1000000000"
+            :ethPrice="ethPrice"
           />
         </div>
 
@@ -114,6 +115,7 @@
           /> -->
           <TransferHistory 
             :trades="trades"
+            :ethPrice="ethPrice"
           />
         </div>
       </div>
@@ -224,6 +226,17 @@
         console.log("ERC20 balance:", Number(balance));
         return Number(balance);
       };
+      
+      const ethPrice = ref(2500);
+
+      async function getEthUsd () {
+        const url =
+          'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd';
+        const { ethereum } = await fetch(url).then(r => r.json());
+        return Number(ethereum.usd);
+      }
+      ( async () => ethPrice.value = await getEthUsd())();
+      setTimeout(async () => ethPrice.value = await getEthUsd(), 120000)
 
       const readDataFromString = async (args) => { 
         let { fileContent, ext } = args;
@@ -416,6 +429,7 @@
         gasImage,
         maxGasPrice,
         loadedAddresses,
+        ethPrice,
       }
     }
   };
