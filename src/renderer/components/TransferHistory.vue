@@ -9,7 +9,7 @@
         <span v-else> {{ t.toAmount || t.expectedToAmount }} </span>
         {{ t.toTokenSymbol || t.toToken?.symbol }}
         from {{ t.senderName || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
-        <span v-if="t.gasCost">; gas cost: ${{ t.gasCost.substring(0, 5)}} </span>
+        <span v-if="t.gasCost">; gas: ${{ t.gasCost.substring(0, 5)}} </span>
       </li>
     </transition-group>
   </div>
