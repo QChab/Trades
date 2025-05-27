@@ -198,7 +198,7 @@ export default {
     let debounceTimer = null;
     watch(
       [() => fromTokenAddress.value, () => toTokenAddress.value, () => fromAmount.value, () => trades.value], 
-      async ([fromTokenAddressValue, toTokenAddressValue, fromAmountValue]) => {
+      async ([fromTokenAddressValue, toTokenAddressValue, fromAmountValue], [oldFromTokenAddressValue, oldToTokenAddressValue]) => {
          if (debounceTimer) {
           clearTimeout(debounceTimer)
         }
@@ -207,10 +207,15 @@ export default {
         swapMessage.value = '';
 
         if (!fromAmountValue || !fromTokenAddressValue || !toTokenAddressValue || fromAmountValue === '.') {
-          if (trade)
+          if (trade.value)
             trade.value.toAmount = 0;
           isFetchingPrice.value = false;
           return;
+        }
+        if (oldFromTokenAddressValue !== fromTokenAddressValue || oldToTokenAddressValue !== toTokenAddressValue) {
+          trade.value = {
+            toAmount: 0
+          };
         }
         isFetchingPrice.value = true;      
         debounceTimer = setTimeout(async () => {

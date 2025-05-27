@@ -107,13 +107,6 @@ function confirmTradeInDB(txId) {
 
   db.run(sql, { $txId: txId.toLowerCase() }, function (err) {
     if (err) return console.error('❌ update failed:', err);
-
-    // 'this.changes' → number of rows that were actually updated
-    if (this.changes === 0) {
-      console.warn('⚠️  no trade found for', txId);
-    } else {
-      console.log('✅ trade confirmed for', txId);
-    }
   });
 }
 

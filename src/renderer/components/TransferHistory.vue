@@ -42,11 +42,17 @@ export default {
     }, {immediate: true, deep: true})
 
     const checkTx = async (trade) => {
+      if (trade.isConfirmed) return;
+
       while (!trade.isConfirmed && trade.txId) {
         await new Promise((r) => setTimeout(r, 3000));
         const receipt = await provider.getTransactionReceipt(trade.txId)
-        if (receipt)
+        if (receipt) {
           trade.isConfirmed = true;
+          window.electronAPI.confirmTrade(trade.txId);
+        }
+      }
+    }
 //         {
 //     "to": "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af",
 //     "from": "0x67d0Df6735122F4F9758F9ee54ed233746681A7f",
@@ -103,14 +109,6 @@ export default {
 //     "type": 2,
 //     "byzantium": true
 // }
-      }
-      if (trade) {
-        trade.isConfirmed = true;
-        window.electronAPI.confirmTrade(trade.txId);
-        // trade.gasCost = 
-        // TODO: display real final amount
-      }
-    }
     
     return { 
       formatTimestamp,
