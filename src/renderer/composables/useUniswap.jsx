@@ -426,8 +426,8 @@ export function useUniswapV4() {
         )
       ]
 
-      // 8) Build a tight deadline (now + 20s) to protect from stale execution
-      const deadline = Math.floor(Date.now() / 1_000) + 20
+      // 8) Build a tight deadline (now + 120s) to protect from stale execution
+      const deadline = Math.floor(Date.now() / 1_000) + 120
 
       // 9) Call the router — include ETH value if swapping native token → ERC20
       console.log(trade);
