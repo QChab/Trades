@@ -8,6 +8,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   sendTransaction: (transaction) => ipcRenderer.invoke('send-transaction', transaction),
   sendTrade: (trade) => ipcRenderer.invoke('send-trade', trade),
+  approveSpender: (from, contractAddress, spender, gasPrice) => ipcRenderer.invoke('approve-spender', from, contractAddress, spender, gasPrice),
   confirmTrade: (txId, gasCost, toAmount) => ipcRenderer.invoke('confirm-trade', txId, gasCost, toAmount),
   failTrade: (txId) => ipcRenderer.invoke('fail-trade', txId),
   setGasPrice: (gasPrice) => ipcRenderer.invoke('set-gas-price', gasPrice),

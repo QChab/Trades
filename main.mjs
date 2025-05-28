@@ -20,9 +20,10 @@ const stateStoreFile = path.join(userDataPath, 'window-state.json');
 const infuraKeyFile = path.join(userDataPath, 'ik.json');
 let infuraKeys = [];
 
-import { ethers } from 'ethers';  // v6 style
+import { ethers } from 'ethers';
+const UNIVERSAL_ROUTER_ADDRESS = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
+const PERMIT2_UNISWAPV4_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
-const UNIVERSAL_ROUTER_ADDRESS   = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
 const UNIVERSAL_ROUTER_ABI       = [
   'function execute(bytes commands, bytes[] inputs, uint256 deadline) external payable returns (bytes[] memory results)'
 ];
@@ -224,13 +225,11 @@ async function sendTransaction(transfer) {
   }
 }
 
-async function sendTrade({tradeDetailsString, args}) {
-  if (!privateKeys) return {success: false, error: 'No private keys found'}
-  const warnings = [];
+  const getWallet = (address) => {
+    if (!privateKeys || !privateKeys.length) 
+      throw new Error('No private keys found');
 
-  try {
-    const tradeDetails = JSON.parse(tradeDetailsString);
-    const from = tradeDetails.sender?.address?.toLowerCase();
+    const from = address.toLowerCase();
     const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from);
     const PRIVATE_KEY = pk.pk;
     
@@ -238,14 +237,81 @@ async function sendTrade({tradeDetailsString, args}) {
     if (!wallet || !wallet.address || wallet.address.toLowerCase() !== from) {
       throw new Error(`Incorrect private key for address ${transfer.from}`)
     }
-    const router = new ethers.Contract(UNIVERSAL_ROUTER_ADDRESS, UNIVERSAL_ROUTER_ABI, wallet);
-    
-    const balance = await provider.getBalance(from);
+    return wallet;
+  }
+
+const ERC20_ABI = [
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 amount) returns (bool)",
+];
+
+async function approveSpender({from, contractAddress, spender, gasPrice}) {
+  console.log({from, contractAddress, spender});
+  const warnings = [];
+
+  try {
+    const wallet = getWallet(from);
+    const balance = await provider.getBalance(wallet.address);
     const balanceEth = Number(ethers.utils.formatEther(balance));
     if (balanceEth < 0.001)
-      throw new Error(`Eth Balance of address ${from} too low (< 0.001)`)
+      throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.001)`)
     else if (balanceEth < 0.01)
-      warnings.push(`Beware eth Balance of address ${from} low (< 0.01)`)
+      warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
+    
+
+    const erc20 = new ethers.Contract(
+      contractAddress,
+      ERC20_ABI,
+      provider
+    );
+    const erc20WithSigner = erc20.connect(wallet);
+    const overrides = {
+      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9),
+      maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
+    };
+
+    const tx = await erc20WithSigner.approve(spender, ethers.constants.MaxUint256, overrides);
+    await tx.wait();
+
+    return {success: true, warnings}
+  } catch (err) {
+    console.error(err);
+    return {success: false, error: err.toString(), warnings};
+  }
+}
+
+async function sendTrade({tradeDetailsString, args}) {
+  const warnings = [];
+
+  try {
+    const tradeDetails = JSON.parse(tradeDetailsString);
+    const wallet = getWallet(tradeDetails.sender?.address?.toLowerCase());
+
+    if (!tradeDetails.fromToken?.address) throw new Error('Missing from token address in trade details')
+    if (!tradeDetails.toToken?.address) throw new Error('Missing to token address in trade details')
+    if (!tradeDetails.sender?.address) throw new Error('Missing sender address in trade details')
+
+    if (tradeDetails.fromToken.address !== '0x0000000000000000000000000000000000000000') {
+
+      const erc20 = new ethers.Contract(
+        tradeDetails?.fromToken?.address,
+        ERC20_ABI,
+        provider
+      );
+      let rawAllowance = await erc20.allowance(wallet.address, PERMIT2_UNISWAPV4_ADDRESS);
+      if (Number(rawAllowance) === 0) {
+        throw new Error('Insufficient allowance on ' + tradeDetails.fromToken.symbol);
+      }
+    }
+
+    const router = new ethers.Contract(UNIVERSAL_ROUTER_ADDRESS, UNIVERSAL_ROUTER_ABI, wallet);
+    
+    const balance = await provider.getBalance(wallet.address);
+    const balanceEth = Number(ethers.utils.formatEther(balance));
+    if (balanceEth < 0.001)
+      throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.001)`)
+    else if (balanceEth < 0.01)
+      warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
     
     const tx = await router.execute(
       ...args,
@@ -255,7 +321,6 @@ async function sendTrade({tradeDetailsString, args}) {
     return {success: true, warnings, tx: JSON.parse(JSON.stringify(tx))};
   } catch (err) {
     console.error(err);
-    console.log(err);
     return {success: false, error: err.toString(), warnings};
   }
 }
@@ -511,6 +576,10 @@ function createWindow() {
     return sendTrade(trade);
   });
 
+  ipcMain.handle('approve-spender', (event, from, contractAddress, spender, gasPrice) => {
+    return approveSpender({from, contractAddress, spender, gasPrice});
+  });
+
   ipcMain.handle('confirm-trade', (event, txId, gasCost, toAmount) => {
     return confirmTradeInDB(txId, gasCost, toAmount);
   });
@@ -564,6 +633,7 @@ function createWindow() {
   });
 
   ipcMain.handle('save-settings', (event, newSettings) => {
+    console.log('saving');
     settings = newSettings;
     fs.writeFileSync(settingsPath, JSON.stringify(settings));
   });

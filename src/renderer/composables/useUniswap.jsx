@@ -407,13 +407,13 @@ export function useUniswapV4() {
         // --- 1) SETTLE_ALL params: pull `amountIn` of currency0 from user via Permit2 ---
         ethers.utils.defaultAbiCoder.encode(
           ['address','uint256'],
-          [ poolKey.currency0, amountIn.quotient.toString() ]
+          [ trade.inputAmount.currency.address, amountIn.quotient.toString() ]
         ),
 
         // --- 2) TAKE_ALL params: send at least `minAmountOut` of currency1 to user ---
         ethers.utils.defaultAbiCoder.encode(
           ['address','uint256'],
-          [ poolKey.currency1, minAmountOut.toString() ]
+          [ trade.outputAmount.currency.address, minAmountOut.toString() ]
         )
       ]
 
@@ -425,6 +425,9 @@ export function useUniswapV4() {
           [ actions, params ]
         )
       ]
+
+      console.log({amountIn:    BigNumber.from(amountIn.quotient.toString()),
+              amountOutMinimum: minAmountOut})
 
       // 8) Build a tight deadline (now + 120s) to protect from stale execution
       const deadline = Math.floor(Date.now() / 1_000) + 120
@@ -441,10 +444,11 @@ export function useUniswapV4() {
           commands,
           inputs,
           deadline,
-          { 
+          {
             value: useNative ? amountIn.quotient.toString() : 0,
             maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9),
             maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
+            gasLimit: 300000,
           }
         ]
       })

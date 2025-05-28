@@ -30,7 +30,7 @@
               <input type="tel" placeholder="0" v-model.number="fromAmount"/>
               <select id="from-token" v-model="fromTokenAddress">
                 <option 
-                  v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
+                  v-for="(token, index) in tokens.filter((token) => token.symbol && token.address && token.decimals && token.symbol !== '' && token.address !== '' )"
                   :key="'fromToken-' + index" 
                   :value="token.address"
                 >
@@ -49,11 +49,11 @@
               <span class="amount-out" :class="{'fetching-price': isFetchingPrice}"> {{ trade?.toAmount }}</span>
               <select id="to-token" v-model="toTokenAddress">
                 <option 
-                  v-for="(token, index) in tokens.filter((token) => token.symbol !== '' && token.address !== '' )"
+                  v-for="(token, index) in tokens.filter((token) => token.symbol && token.address && token.decimals && token.symbol !== '' && token.address !== '' )"
                   :key="'toToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} (${{ token.price.toFixed(3) }})
+                  {{ token.symbol }} (${{ token.price.toFixed(2) }})
                 </option>
               </select>
             </div>
@@ -74,8 +74,11 @@
             </select>
           </div>
           <p class="details-message">{{ swapMessage }}</p>
-          <button @click="triggerTrade()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || !trade?.swap" class="swap-button">
+          <button v-if="!needsToApprove" @click="triggerTrade()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || !trade?.swap" class="swap-button">
             Swap
+          </button>
+          <button v-else @click="approveSpending()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || !trade?.swap" class="swap-button">
+            Approve
           </button>
         </div>
         <!-- EDITING -->
@@ -92,24 +95,31 @@
                   <div class="compensate-delete"></div>
                 </div>
               </label>
-              <label>
-                <!-- Second line: Token symbol -->
-                <div class="line">
-                  <span>Symbol:</span>
-                  <span v-if="token.symbol === 'ETH'">ETH</span>
-                  <input v-else v-model="token.symbol" placeholder="Token Name" class="token-name" />
-                </div>
-              </label>
-              <label>
-                <div class="line">
-                  <span>Decimals: {{ token.decimals }}</span>
-                </div>
-              </label>
+              <div v-if="token.address">
+                <label>
+                  <!-- Second line: Token symbol -->
+                  <div class="line">
+                    <span>Symbol:</span>
+                    <span v-if="token.symbol === 'ETH'">ETH</span>
+                    <input v-else v-model="token.symbol" placeholder="Token Name" class="token-name" />
+                  </div>
+                </label>
+                <label>
+                  <div class="line">
+                    <span>Decimals: {{ token.decimals }}</span>
+                  </div>
+                </label>
+                <label>
+                  <div class="line">
+                    <span>Price: ${{ token.price.toFixed(3) }}</span>
+                  </div>
+                </label>
+              </div>
             </li>
           </ul>
         </div>
       </div>
-      <p v-if="trade && trade.txId === 'pending' && !trade.isConfirmed">
+      <p v-if="trade && trade.txId === 'pending' && !trade.isConfirmed && swapMessage === ''">
         Swapping
         {{ trade.fromAmount }} {{ trade.fromTokenName || trade.fromToken?.symbol }} -> {{ trade.toAmount }} {{ trade.toTokenName || trade.toToken?.symbol }}
         from {{ trade.fromAddress || trade.sender?.name }} on {{ (new Date(trade.sentDate || trade.timestamp)).toLocaleString() }} ...
@@ -137,6 +147,7 @@ import deleteImage from '@/../assets/delete.svg';
 import { Contract, ethers, BigNumber } from 'ethers';
 import provider from '@/ethersProvider';
 import { useUniswapV4 } from '../composables/useUniswap';
+import { Percent } from '@uniswap/sdk-core';
 
 export default {
   name: 'ManualTrading',
@@ -162,6 +173,8 @@ export default {
   },
   emits: ['update:settings', 'update:trade'],
   setup(props, { emit } ) {
+    const PERMIT2_UNISWAPV4_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+
     const {
       findAndSelectBestPath,
       executeSwapExactInSingle,
@@ -176,36 +189,40 @@ export default {
     const senderDetails = ref(null);
     const tabPrice = ref('market');
     const isSwapButtonDisabled = ref(false);
+    const needsToApprove = ref(false);
+    const slippage = ref(50);
 
     // Token selection list with on/off toggles.
     const tokens = reactive([
-      { price: 1, address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18},
-      { price: 1, address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6},
-      { price: 1, address: '0x514910771af9ca656af840dff83e8264ecf986ca', symbol: 'LINK', decimals: 18},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
-      { price: 1, address: '', symbol: '', decimals: null},
+      { price: 0, address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18},
+      { price: 0, address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6},
+      { price: 0, address: '0x514910771af9ca656af840dff83e8264ecf986ca', symbol: 'LINK', decimals: 18},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
+      { price: 0, address: '', symbol: '', decimals: null},
     ]);
 
 
-    const erc20Abi = [
+    const ERC20_ABI = [
       "function symbol() view returns (string)",
       "function decimals() view returns (uint256)",
       "function balanceOf(address) view returns (uint256)",
+      "function allowance(address owner, address spender) view returns (uint256)",
+      "function approve(address spender, uint256 amount) returns (bool)",
     ];
 
     const tokensByAddresses = ref({});
@@ -233,10 +250,14 @@ export default {
           trade.value = {
             toAmount: 0
           };
+          needsToApprove.value = false;
         }
         isFetchingPrice.value = true;      
         debounceTimer = setTimeout(async () => {
           try {
+            if (!senderDetails.value.address) 
+              throw new Error('No wallet selected');
+
             priceFetchingMessage.value = '';
             const fromAmount = ethers.utils.parseUnits(fromAmountValue + '', tokensByAddresses.value[fromTokenAddressValue].decimals);
             const bestTrade = await findAndSelectBestPath(
@@ -245,18 +266,36 @@ export default {
               fromAmount
             );
             isSwapButtonDisabled.value = false;
+            if (!bestTrade || !bestTrade.minimumAmountOut)
+              throw new Error('No output amount found')
 
+            const slippagePercent = new Percent(Number(slippage.value), 10_000);
+            console.log(slippagePercent);
             trade.value = {
               swap: bestTrade,
               fromToken: tokensByAddresses.value[fromTokenAddressValue],
               toToken: tokensByAddresses.value[toTokenAddressValue],
               fromAmount: fromAmountValue + '',
               toAmount: bestTrade?.outputAmount?.toSignificant(6),
+              // toAmount: bestTrade.minimumAmountOut(slippagePercent),
+            }
+
+            if (trade.value.fromToken.address !== '0x0000000000000000000000000000000000000000') {
+              const erc20 = new ethers.Contract(
+                fromTokenAddressValue,
+                ERC20_ABI,
+                provider
+              );
+              let rawAllowance = await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS);
+              if (Number(rawAllowance) === 0) {
+                needsToApprove.value = true;
+              }
             }
 
           } catch (err) {
             isSwapButtonDisabled.value = true;
             priceFetchingMessage.value = err;
+            needsToApprove.value = false;
             console.error(err);
           }
           isFetchingPrice.value = false;
@@ -269,6 +308,11 @@ export default {
     const SUBGRAPH_URL               = `https://gateway.thegraph.com/api/${API_KEY}/subgraphs/id/${SUBGRAPH_ID}`;
 
     async function tokenUsd (tokenAddr, ethUsd) {
+      if (!tokenAddr) return 0;
+
+      if (tokenAddr === '0x0000000000000000000000000000000000000000')
+        return ethUsd;
+
       const qry = `
         query ($id: String!) {
           token(id: $id) { derivedETH }
@@ -319,7 +363,6 @@ export default {
       emit('update:settings', settings);
       
       settings.tokens = [...tokens];
-      window.electronAPI.saveSettings(JSON.parse(JSON.stringify(settings)));
     };
 
     onMounted(async () => {
@@ -332,7 +375,6 @@ export default {
           }
         }
       }
-      emitSettings();
     });
 
     watch(() => tokens, () => emitSettings(), {deep: true});
@@ -356,7 +398,7 @@ export default {
 
     const getTokenSymbol = async (contractAddress) => {
       // Create a Contract instance pointing to your ERC20
-      const contract = new Contract(contractAddress, erc20Abi, provider);
+      const contract = new Contract(contractAddress, ERC20_ABI, provider);
       
       // Call the 'symbol()' method
       const symbol = await contract.symbol();
@@ -366,7 +408,7 @@ export default {
 
     const getTokenDecimals = async (contractAddress) => {
       // Create a Contract instance pointing to your ERC20
-      const contract = new Contract(contractAddress, erc20Abi, provider);
+      const contract = new Contract(contractAddress, ERC20_ABI, provider);
       
       // Call the 'symbol()' method
       let decimals = await contract.decimals();
@@ -384,6 +426,7 @@ export default {
         } else if (ethers.utils.isAddress(contractAddress)) {
           tokens[index].decimals = await getTokenDecimals(contractAddress);
           tokens[index].symbol = await getTokenSymbol(contractAddress);
+          tokens[index].price = await tokenUsd(contractAddress, props.ethPrice);
         } else
           null;
           // TODO: throw error
@@ -424,7 +467,10 @@ export default {
         trade.value.sentDate = new Date();
         trade.value.txId = 'pending';
 
-        const {success, tx, warnings, error} = await executeSwapExactInSingle(trade.value, senderDetails.value, 50, props.gasPrice);
+        // if (senderDetails.value.balances[fromTokenAddress.value] < fromAmount.value) 
+        //   throw new Error('Not enough balance of ' + token.symbol)
+
+        const {success, tx, warnings, error} = await executeSwapExactInSingle(trade.value, senderDetails.value, 500, props.gasPrice);
         if (!success || !tx) {
           if (error)
             console.error(error)
@@ -436,6 +482,8 @@ export default {
             swapMessage.value = 'Not enough ETH on the address';
           else
             swapMessage.value = error;
+          if (warnings && warnings.length)
+            swapMessage.value = 'Warnings: ' + warnings.join(' ; ')
           console.log({success, tx, warnings});
           return false;
         }
@@ -447,6 +495,37 @@ export default {
         console.error(err);
       }
       isSwapButtonDisabled.value = false;
+    }
+
+    const approveSpending = async () => {
+      try {
+        isSwapButtonDisabled.value = true;
+        const {success, error } = await window.electronAPI.approveSpender(
+          senderDetails.value.address,
+          fromTokenAddress.value,
+          PERMIT2_UNISWAPV4_ADDRESS,
+          props.gasPrice
+        );
+
+        if (!success)
+          throw error;
+        
+        let allowance = 0;
+        while (allowance = 0) {
+          const erc20 = new ethers.Contract(
+            fromTokenAddress.value,
+            ERC20_ABI,
+            provider
+          );
+          allowance = Number(await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS));
+          console.log(allowance)
+          if (!allowance) await new Promise(r => setTimeout(r, 2000))
+        }
+      } catch (err) {
+        console.error(err);
+      }
+      isSwapButtonDisabled.value = false;
+      needsToApprove.value = false;
     }
 
     return {
@@ -474,6 +553,8 @@ export default {
       isSwapButtonDisabled,
       priceFetchingMessage,
       swapMessage,
+      needsToApprove,
+      approveSpending,
     };
   }
 };
@@ -727,7 +808,7 @@ input.token-name {
 .from-swap, .to-swap {
   border-radius: 15px;
   padding: 5px;
-  max-width: 350px;
+  max-width: 380px;
   margin-left: auto;
   margin-right: auto;
   border: 1px solid #ccc;
@@ -747,7 +828,17 @@ input.token-name {
   margin: 0;
   font-weight: 400;
 }
-.from-swap input, .to-swap span {
+.from-swap input {
+  background-color: #fff;
+  width: 200px;
+  border: none;
+  text-align: left;
+  padding: 10px;
+  font-weight: 500;
+  font-size: 22px;
+  display: inline-block;
+}
+.to-swap span {
   background-color: #fff;
   width: 200px;
   border: none;
@@ -757,12 +848,13 @@ input.token-name {
   font-size: 22px;
   display: inline-block;
 }
+
 .from-swap input:selected, .to-swap input:selected {
   border: 0px solid white;
 }
 .from-swap select, .to-swap select {
   border: 1px solid #ccc;
-  width: 120px;
+  width: 130px;
   text-align: center;
   padding: 5px;
   border: none;
@@ -786,7 +878,7 @@ input.token-name {
   display: block;
   margin-left: auto;
   margin-right: auto;
-  width: 350px;
+  width: 360px;
 }
 input:focus,
 textarea:focus {

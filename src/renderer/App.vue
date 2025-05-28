@@ -72,7 +72,7 @@
         <div class="form-group">
           <img class="icon-line" :src="gasImage" width="30"/>
           <label>
-            Max 
+            Max
             <input class="medium-number" type="number" v-model.number="maxGasPrice" placeholder="Max Gas" /> gwei
           </label>
           <GasPrice 
@@ -128,7 +128,7 @@
   import FileManager from './components/FileManager.vue';
   import ManualTrading from './components/ManualTrading.vue';
   import TransferHistory from './components/TransferHistory.vue';
-  import { onMounted, reactive, ref } from 'vue';
+  import { onMounted, onBeforeMount, reactive, ref } from 'vue';
   import * as XLSX from 'xlsx';
   import chevronDownImage from '@/../assets/chevron-down.svg';
   import GasPrice from './components/GasPrice.vue';
@@ -162,8 +162,21 @@
       const setCurrentSettings = (settings) => {
         currentSettings.value = {
           ...settings,
+          maxGasPrice: maxGasPrice.value,
         };
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify(currentSettings.value)));
       };
+
+      watch(() => maxGasPrice.value, (maxGasPriceValue) => {
+        console.log({
+          ...currentSettings.value,
+          maxGasPrice: maxGasPriceValue,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          maxGasPrice: maxGasPriceValue,
+        })));
+      })
 
       const gasPrice = ref(1000000000);
       const setGasPrice = (currentGasPrice) => {
@@ -187,6 +200,10 @@
             let balance;
             try {
               balance = await getBalance(addressDetail.address, token);
+              if (!balance && balance !== 0)
+                balance = await getBalance(addressDetail.address, token);
+              if (!balance && balance !== 0)
+                balance = await getBalance(addressDetail.address, token);
             } catch (err) {
               console.error(err);
               balance = 0;
@@ -355,6 +372,12 @@
       const newInfuraKey = ref('');
       // Boolean to control whether the Infura API keys section is visible or not
       const showInfuraKeys = ref(false);
+
+      onBeforeMount(async () => {
+        const settings = await window.electronAPI.loadSettings();
+        if (settings.maxGasPrice)
+          maxGasPrice.value = settings.maxGasPrice;
+      })
 
       onMounted(async () => {
         isFileDetected.value = await window.electronAPI.isFileDetected();
