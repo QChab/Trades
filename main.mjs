@@ -268,14 +268,22 @@ async function approveSpender({from, contractAddress, spender, gasPrice}) {
       ERC20_ABI,
       provider
     );
+
     const erc20WithSigner = erc20.connect(wallet);
     const overrides = {
       maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9),
       maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
     };
+    const tx1 = await erc20WithSigner.approve(spender, ethers.constants.MaxUint256, overrides);
+    await tx1.wait();
 
-    const tx = await erc20WithSigner.approve(spender, ethers.constants.MaxUint256, overrides);
-    await tx.wait();
+    const PERMIT2_ABI = [
+      "function approve(address token, address spender, uint160 amount, uint48 expiration) external"
+    ];
+    const permit2Contract = new ethers.Contract(PERMIT2_UNISWAPV4_ADDRESS, PERMIT2_ABI, wallet);
+
+    const tx2 = await permit2Contract.approve(contractAddress, UNIVERSAL_ROUTER_ADDRESS, '100000000000000000000000000000000000000000', Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50, overrides);
+    await tx2.wait();
 
     return {success: true, warnings}
   } catch (err) {

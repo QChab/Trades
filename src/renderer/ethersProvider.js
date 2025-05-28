@@ -4,9 +4,9 @@ import { ethers } from 'ethers';
 //    Replace these URLs with whichever Ethereum mainnet RPC endpoints you prefer.
 const rpcUrls = [
   // "https://eth.llamarpc.com",
-  "https://eth-mainnet.public.blastapi.io",
-  "https://api.securerpc.com/v1",
-  "https://eth1.lava.build",
+  // "https://eth-mainnet.public.blastapi.io",
+  // "https://api.securerpc.com/v1",
+  // "https://eth1.lava.build",
   // "https://rpc.mevblocker.io/fullprivacy",
   "https://eth.blockrazor.xyz",
   "https://eth.merkle.io",
@@ -33,7 +33,7 @@ const providersList = rpcUrls.map((url) => {
 //    - Here we set it explicitly to 1 so that any single healthy endpoint suffices.
 const provider = new ethers.providers.FallbackProvider(
   providersList,
-  2 // quorum: 1
+  1 // quorum: 1
 );
 
 export default provider;

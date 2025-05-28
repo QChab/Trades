@@ -217,7 +217,9 @@
       })
 
       const refreshBalance = async (addressDetail, token) => {
-        console.log(addressDetail, token);
+        if (!addressDetail?.address)
+          return false;
+        
         let balance;
         try {
           balance = await getBalance(addressDetail.address, token);

@@ -173,6 +173,7 @@ export default {
   emits: ['update:settings', 'update:trade', 'refreshBalance'],
   setup(props, { emit } ) {
     const PERMIT2_UNISWAPV4_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+    const UNIVERSAL_ROUTER_ADDRESS = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
 
     const {
       findAndSelectBestPath,
@@ -288,7 +289,21 @@ export default {
               let rawAllowance = await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS);
               if (Number(rawAllowance) === 0) {
                 needsToApprove.value = true;
+              } else {
+                const PERMIT2_ABI = [
+                  "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
+                ];
+                const permitContract = new ethers.Contract(
+                  PERMIT2_UNISWAPV4_ADDRESS,
+                  PERMIT2_ABI,
+                  provider,
+                )
+                let results = await permitContract.allowance(senderDetails.value.address, fromTokenAddressValue, UNIVERSAL_ROUTER_ADDRESS);
+                if (results && results[0].toString() === '0') {
+                  needsToApprove.value = true;
+                }
               }
+              console.log(results);
             }
 
           } catch (err) {

@@ -5,7 +5,7 @@
       <li v-for="(t, index) in trades" :key="t.timestamp" @click="openTxDetails(t.txId)">
         {{ t.hasFailed ? '❌' : (t.isConfirmed ? '✅' : '⏳') }}
         {{ t.fromAmount }} {{ t.fromTokenSymbol || t.fromToken?.symbol }} -> 
-        <span v-if="t.toAmount"> {{ t.toAmount }} ({{ t.expectedToAmount }}) </span>
+        <span v-if="t.toAmount"> {{ (!t.toAmount || t.toAmount === 'unknown') ? t.expectedToAmount : (t.toAmount + ' (' + t.expectedToAmount + ')') }}  </span>
         <span v-else> {{ t.toAmount || t.expectedToAmount }} </span>
         {{ t.toTokenSymbol || t.toToken?.symbol }}
         from {{ t.senderName || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
@@ -109,9 +109,8 @@ export default {
           if (receipt.status === '1' || receipt.status === 1) {
             trade.isConfirmed = true;
             const {gas, tokens} = await analyseReceipt(trade, receipt, provider)
-            console.log(gas, tokens)
             trade.gasCost = gas.paidUsd + '';
-            trade.toAmount = tokens[0].amount;
+            trade.toAmount = tokens[0]?.amount || 'unknown';
             window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, tokens[0].amount);
           } else {
             const {gas} = await analyseReceipt(trade, receipt, provider)

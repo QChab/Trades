@@ -286,8 +286,8 @@ export function useUniswapV4() {
       for (const p of pools) {
         if (
           p.involvesToken(tokenA) &&
-          p.involvesToken(tokenB) &&
-          (await isPoolUsable(p, amountIn))
+          p.involvesToken(tokenB)
+          // (await isPoolUsable(p, amountIn))
         ) {
           sanePools.push(p);
         }
@@ -450,6 +450,7 @@ export function useUniswapV4() {
             value: useNative ? amountIn.quotient.toString() : 0,
             maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9),
             maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
+            gasLimit: 300000,
           }
         ]
       })
