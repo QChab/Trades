@@ -144,15 +144,33 @@ export function useUniswapV4() {
     const tokenOut = tokenOutObject.address.toLowerCase();
     // --- 1) Fetch all pools involving tokenIn ---
     const poolsInQuery = gql`
-      query($a: String!){
+      query($a: String!, $b: String!){
         pools(
-          where: { token0_in: [$a] },
+          where:{
+            token0_in:[$a,$b],
+            token1_in:[$a,$b],
+            liquidity_not:"0",
+          },
+          first: 50
+        ) {
+          ...PoolFields
+        }
+        pools0: pools(
+          where:{
+            token0_in:[$a,$b],
+            token1_in:[$a,$b],
+            liquidity_not:"0",
+          },
           first: 100
         ) {
           ...PoolFields
         }
         pools1: pools(
-          where: { token1_in: [$a] },
+          where:{
+            token0_in:[$a,$b],
+            token1_in:[$a,$b],
+            liquidity_not:"0",
+          },
           first: 100
         ) {
           ...PoolFields
@@ -166,36 +184,12 @@ export function useUniswapV4() {
         }
       }
     `;
-    const { pools: poolsIn0, pools1: poolsIn1 } = await request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn });
-  
-      // --- 2) Fetch all pools involving tokenOut ---
-    const poolsOutQuery = gql`
-      query($b: String!){
-        pools(
-          where: { token0_in: [$b] },
-          first: 100
-        ) {
-          ...PoolFields
-        }
-        pools1: pools(
-          where: { token1_in: [$b] },
-          first: 100
-        ) {
-          ...PoolFields
-        }
-      }
-      fragment PoolFields on Pool {
-        id feeTier hooks liquidity sqrtPrice tick tickSpacing totalValueLockedUSD
-        token0 { id decimals symbol } token1 { id decimals symbol }
-        ticks(where: { liquidityGross_not: "0" }, first: 1000) {
-          tickIdx liquidityNet liquidityGross
-        }
-      }
-    `;
-    const { pools: poolsOut0, pools1: poolsOut1 } = await request(SUBGRAPH_URL, poolsOutQuery, { b: tokenOut });
+    // token0Price
+    // token1Price
+    const { pools: directPools, pools0: pools0, pools1: pools1 } = await request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut });
   
       // --- 3) Combine and dedupe ---
-    const rawPools = [...poolsIn0, ...poolsIn1, ...poolsOut0, ...poolsOut1];
+    const rawPools = [...directPools, ...pools0, ...pools1];
     const unique = new Map();
     rawPools.forEach(p => unique.set(p.id, p));
     const candidatePools = Array.from(unique.values());
@@ -296,8 +290,8 @@ export function useUniswapV4() {
       for (const p of pools) {
         if (
           p.involvesToken(tokenA) &&
-          p.involvesToken(tokenB)
-          // (await isPoolUsable(p, amountIn))
+          p.involvesToken(tokenB) &&
+          (await isPoolUsable(p, amountIn))
         ) {
           sanePools.push(p);
         }
