@@ -148,48 +148,69 @@ export function useUniswapV4() {
   async function findPossiblePaths(tokenInObject, tokenOutObject) {
     const tokenIn = tokenInObject.address.toLowerCase();
     const tokenOut = tokenOutObject.address.toLowerCase();
-
-    // Direct pools
-    const directPoolsQuery = gql`
-      query($a: String!, $b: String!){
+    // --- 1) Fetch all pools involving tokenIn ---
+    const poolsInQuery = gql`
+      query($a: String!){
         pools(
-          where:{token0_in:[$a,$b],token1_in:[$a,$b]},
-          first: 50
+          where: { token0_in: [$a] },
+          first: 100
         ) {
-          id
-          feeTier
-          hooks
-          liquidity
-          sqrtPrice
-          tick
-          tickSpacing
-          token0Price
-          token1Price
-          totalValueLockedUSD
-          token0 {
-            id
-          }
-          token1 {
-            id
-          }
-          ticks(
-            where: { liquidityGross_not: "0" },
-            first: 1000
-          ) {
-            tickIdx
-            liquidityNet
-            liquidityGross
-          }
+          ...PoolFields
+        }
+        pools1: pools(              # alias to get token1_in
+          where: { token1_in: [$a] },
+          first: 100
+        ) {
+          ...PoolFields
+        }
+      }
+      fragment PoolFields on Pool {
+        id feeTier hooks liquidity sqrtPrice tick tickSpacing totalValueLockedUSD
+        token0 { id } token1 { id }
+        ticks(where: { liquidityGross_not: "0" }, first: 1000) {
+          tickIdx liquidityNet liquidityGross
         }
       }
     `;
-    const { pools: directPools } = await request(SUBGRAPH_URL, directPoolsQuery, { a: tokenIn, b: tokenOut });
-    
+    const { pools: poolsIn0, pools1: poolsIn1 } = await request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn });
+  
+      // --- 2) Fetch all pools involving tokenOut ---
+    const poolsOutQuery = gql`
+      query($b: String!){
+        pools(
+          where: { token0_in: [$b] },
+          first: 100
+        ) {
+          ...PoolFields
+        }
+        pools1: pools(
+          where: { token1_in: [$b] },
+          first: 100
+        ) {
+          ...PoolFields
+        }
+      }
+      fragment PoolFields on Pool {
+        id feeTier hooks liquidity sqrtPrice tick tickSpacing totalValueLockedUSD
+        token0 { id } token1 { id }
+        ticks(where: { liquidityGross_not: "0" }, first: 1000) {
+          tickIdx liquidityNet liquidityGross
+        }
+      }
+    `;
+    const { pools: poolsOut0, pools1: poolsOut1 } = await request(SUBGRAPH_URL, poolsOutQuery, { b: tokenOut });
+  
+      // --- 3) Combine and dedupe ---
+    const rawPools = [...poolsIn0, ...poolsIn1, ...poolsOut0, ...poolsOut1];
+    const unique = new Map();
+    rawPools.forEach(p => unique.set(p.id, p));
+    const candidatePools = Array.from(unique.values());
+  
     const {tokenA, tokenB} = instantiateTokens(tokenInObject, tokenOutObject);
 
     const pools = [];
-    for (const pool of directPools) {
-      if (!pool.liquidity || pool.liquidity === "0" || Number(pool.totalValueLockedUSD) < 10) continue // TOOD: skip if liquidity very low
+    for (const pool of candidatePools) {
+      if (!pool.liquidity || pool.liquidity === "0") continue
       console.log(pool);
 
       let token0, token1;
@@ -291,7 +312,7 @@ export function useUniswapV4() {
       console.log('Sane pools: ' + sanePools.length);
       if (!sanePools.length) return []
 
-      trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
+      trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
     } catch (err) {
       /* The only error the SDK throws here is the dreaded “Invariant failed”.
       Wrap it to give the caller real insight. */
