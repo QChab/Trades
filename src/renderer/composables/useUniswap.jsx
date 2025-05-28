@@ -155,23 +155,13 @@ export function useUniswapV4() {
         ) {
           ...PoolFields
         }
-        pools0: pools(
+        poolsEth: pools(
           where:{
-            token0_in:[$a,$b],
-            token1_in:[$a,$b],
+            token0_in:[$a,$b,"0x0000000000000000000000000000000000000000"],
+            token1_in:[$a,$b,"0x0000000000000000000000000000000000000000"],
             liquidity_not:"0",
           },
-          first: 100
-        ) {
-          ...PoolFields
-        }
-        pools1: pools(
-          where:{
-            token0_in:[$a,$b],
-            token1_in:[$a,$b],
-            liquidity_not:"0",
-          },
-          first: 100
+          first: 50
         ) {
           ...PoolFields
         }
@@ -184,12 +174,15 @@ export function useUniswapV4() {
         }
       }
     `;
+    
     // token0Price
     // token1Price
-    const { pools: directPools, pools0: pools0, pools1: pools1 } = await request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut });
+    // totalValueLockedUSD_gt:"10"
+
+    const { pools: directPools, poolsEth, pools0: pools0, pools1: pools1 } = await request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut });
   
       // --- 3) Combine and dedupe ---
-    const rawPools = [...directPools, ...pools0, ...pools1];
+    const rawPools = [...directPools, ...poolsEth, ...pools0, ...pools1];
     const unique = new Map();
     rawPools.forEach(p => unique.set(p.id, p));
     const candidatePools = Array.from(unique.values());
