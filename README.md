@@ -68,5 +68,5 @@ Build:
 ```
 npm run build
 xcrun notarytool submit "./dist/trades-0.0.1-arm64.dmg" --apple-id "thibault@techinblocks.com" --password "txuv-flqw-bboi-yhqj" --team-id "BAXBQTTS3U" --wait --progress
-xcrun stapler staple "dist/trades-0.0.1-arm64.dmg
+xcrun stapler staple "dist/trades-0.0.1-arm64.dmg"
 ```
