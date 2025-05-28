@@ -12,7 +12,6 @@ import { TickMath, TickListDataProvider } from '@uniswap/v3-sdk';
 import { ref } from 'vue';
 import { ethers, BigNumber } from 'ethers';
 import { request, gql } from 'graphql-request';
-import provider from '@/ethersProvider';
 
 // Pull the enum‐maps out of the compiled JSON
 const Commands = {
@@ -116,9 +115,6 @@ export function useUniswapV4() {
   const error        = ref(null);
   const loading      = ref(false);
   const priceHistory = ref([]); // stores { timestamp, tokenIn, tokenOut, amountIn, amountOut }
-
-  const quoter          = new ethers.Contract(QUOTER_ADDRESS, QUOTER_ABI, provider);
-  const positionManager = new ethers.Contract(POSITION_MANAGER_ADDRESS, POSITION_MANAGER_ABI, provider);
 
   const instantiateTokens = (tokenInObject, tokenOutObject) => {
     const tokenIn = tokenInObject.address.toLowerCase();
@@ -230,7 +226,6 @@ export function useUniswapV4() {
       console.log(poolInstance);
       console.log(pool.id + ' built')
       pools.push(poolInstance);
-      // return [poolInstance]
     }
     return pools;
   }

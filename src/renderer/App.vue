@@ -78,6 +78,7 @@
           <GasPrice 
             @update:gas-price="setGasPrice"
             :maxGasPrice="maxGasPrice"
+            :provider="provider"
           />
         </div>
       </div>
@@ -96,6 +97,7 @@
             :gasPrice="gasPrice"
             :maxGasPrice="maxGasPrice * 1000000000"
             :ethPrice="ethPrice"
+            :provider="provider"
           />
         </div>
 
@@ -118,6 +120,7 @@
           <TransferHistory 
             :trades="trades"
             :ethPrice="ethPrice"
+            :provider="provider"
           />
         </div>
       </div>
@@ -125,23 +128,19 @@
   </template>
 
   <script>
-  // import TransferControl from './components/TransferControl.vue';
-  import { watch } from 'vue';
+  import { watch, shallowRef, onMounted, onBeforeMount, reactive, ref, markRaw} from 'vue';
   import FileManager from './components/FileManager.vue';
   import ManualTrading from './components/ManualTrading.vue';
   import TransferHistory from './components/TransferHistory.vue';
-  import { onMounted, onBeforeMount, reactive, ref } from 'vue';
   import * as XLSX from 'xlsx';
   import chevronDownImage from '@/../assets/chevron-down.svg';
   import GasPrice from './components/GasPrice.vue';
   import gasImage from '@/../assets/gas.png';
-  import provider from '@/ethersProvider.js';
   import {ethers} from 'ethers';
 
   export default {
     name: 'App',
     components: {
-      // TransferControl,
       FileManager,
       ManualTrading,
       TransferHistory,
@@ -192,6 +191,42 @@
           timestamp: new Date(),
         });
       }
+
+
+      const infuraKeys = ref([]);
+      const provider = shallowRef({});
+      watch(() => infuraKeys.value, (infuraKeysValue) => {
+        let providersList = infuraKeysValue.map((url) => {
+          return markRaw(new ethers.providers.JsonRpcProvider(
+            url,
+            {
+              chainId: 1,
+              name: 'homestead',
+            }
+          ))
+        });
+
+        if (providersList.length === 0) {
+          providersList = [
+            markRaw(new ethers.providers.JsonRpcProvider(
+              'https://eth1.lava.build',
+              {
+                chainId: 1,
+                name: 'homestead',
+              }
+            ))
+          ]
+        }
+        provider.value = markRaw(new ethers.providers.FallbackProvider(
+          providersList,
+          1,
+        ));
+      }, {immediate: true});
+
+      // This holds the value of the new key that the user types in
+      const newInfuraKey = ref('');
+      // Boolean to control whether the Infura API keys section is visible or not
+      const showInfuraKeys = ref(false);
 
       watch(() => loadedAddresses.value, async (loadedAddressesValue) => {
         for (const addressDetail of loadedAddressesValue) {
@@ -247,13 +282,13 @@
           return Math.floor(Math.random() * 60);
         }
 
-        const contract = new ethers.Contract(token.address, erc20Abi, provider);
+        const contract = new ethers.Contract(token.address, erc20Abi, provider.value);
         if (!token.decimals)
           token.decimals = await contract.decimals();
 
         let balance;
         if (token.address === '0x0000000000000000000000000000000000000000')
-          balance = await provider.getBalance(address);
+          balance = await provider.value.getBalance(address);
         else
           balance = await contract.balanceOf(address)
         if (balance.toString() === "0") return 0;
@@ -388,24 +423,19 @@
         }
       }
 
-      const infuraKeys = ref([]);
-      // This holds the value of the new key that the user types in
-      const newInfuraKey = ref('');
-      // Boolean to control whether the Infura API keys section is visible or not
-      const showInfuraKeys = ref(false);
-
       onBeforeMount(async () => {
         const settings = await window.electronAPI.loadSettings();
         if (settings.maxGasPrice)
           maxGasPrice.value = settings.maxGasPrice;
-      })
-
-      onMounted(async () => {
+      
         isFileDetected.value = await window.electronAPI.isFileDetected();
         
         trades.push(...(await window.electronAPI.getTrades()).data);
 
         infuraKeys.value = await window.electronAPI.getInfuraKeys();
+      })
+
+      onMounted(async () => {
       });
 
       const isProcessRunning = ref(false);
@@ -475,6 +505,7 @@
         loadedAddresses,
         ethPrice,
         refreshBalance,
+        provider,
       }
     }
   };

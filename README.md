@@ -62,3 +62,11 @@ Follow these steps to get your development environment set up:
     npm run build
     ```
     This command builds the vue project, then uses electron-builder and the configuration specified in electron-builder.json to create a distributable package (e.g., DMG for macOS).
+
+
+Build: 
+```
+npm run build
+xcrun notarytool submit "./dist/trades-0.0.1-arm64.dmg" --apple-id "thibault@techinblocks.com" --password "txuv-flqw-bboi-yhqj" --team-id "BAXBQTTS3U" --wait --progress
+xcrun stapler staple "dist/trades-0.0.1-arm64.dmg
+```

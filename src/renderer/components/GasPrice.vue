@@ -7,8 +7,7 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted, computed } from 'vue';
-import provider from '@/ethersProvider';
+import { ref, onMounted, onUnmounted, computed, toRaw } from 'vue';
 import { ethers } from 'ethers';
 
 export default {
@@ -22,6 +21,9 @@ export default {
     maxGasPrice: {
       type: Number,
       default: 3,
+    },
+    provider: {
+      type: Object,
     }
   },
   // Define the custom event this component will emit
@@ -33,8 +35,7 @@ export default {
     // Function to fetch the current gas price from the blockchain
     async function fetchGasPrice() {
       try {
-        // In ethers v6, use getFeeData()
-        const feeData = await provider.getFeeData();
+        const feeData = await toRaw(props.provider).getFeeData();
         // Extract the current gas price from the feeData object
         const currentGasPrice = feeData.gasPrice;
         // Update our reactive variable with the fetched gas price

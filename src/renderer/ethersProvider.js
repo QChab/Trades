@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers  } from "ethers";
 // -----------------------------------------------------------------------------
 // 1) At the very top‐level we can now use `await` directly.
 //    This code runs as soon as the module is imported.

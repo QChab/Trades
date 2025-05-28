@@ -16,8 +16,7 @@
 </template>
 
 <script>
-import { computed, watch } from 'vue';
-import provider from '@/ethersProvider';
+import { toRaw, watch } from 'vue';
 import {ethers} from 'ethers';
 
 export default {
@@ -29,6 +28,9 @@ export default {
     },
     ethPrice: {
       type: Number,
+    },
+    provider: {
+      type: Object,
     }
   },
   setup(props) {
@@ -104,16 +106,16 @@ export default {
 
       while (!trade.isConfirmed && trade.txId && !trade.hasFailed) {
         await new Promise((r) => setTimeout(r, 3000));
-        const receipt = await provider.getTransactionReceipt(trade.txId)
+        const receipt = await toRaw(props.provider).getTransactionReceipt(trade.txId)
         if (receipt) {
           if (receipt.status === '1' || receipt.status === 1) {
             trade.isConfirmed = true;
-            const {gas, tokens} = await analyseReceipt(trade, receipt, provider)
+            const {gas, tokens} = await analyseReceipt(trade, receipt, toRaw(props.provider))
             trade.gasCost = gas.paidUsd + '';
             trade.toAmount = tokens[0]?.amount || 'unknown';
             window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, trade.toAmount);
           } else {
-            const {gas} = await analyseReceipt(trade, receipt, provider)
+            const {gas} = await analyseReceipt(trade, receipt, toRaw(props.provider))
             trade.hasFailed = true;
             trade.gasCost = gas.paidUsd + '';
             window.electronAPI.failTrade(trade.txId, trade.gasCost);

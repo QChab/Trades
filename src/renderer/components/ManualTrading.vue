@@ -64,8 +64,7 @@
           </div>
           <p class="details-message">{{ priceFetchingMessage }}</p>
           <div class="address-form">
-            {{ trade }}
-            <p v-if="trade?.swap">{{ trade?.swap?.swaps?.length }} trade ; gas: {{ trade?.swap }}</p> 
+            <p v-if="trade?.swap">{{ trade?.swap?.swaps?.length }} trade </p> 
             <p>with</p>
             <select id="sender-address" v-model="senderDetails">
               <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address.address">
@@ -140,13 +139,12 @@
 </template>
 
 <script>
-import { ref, reactive, watch, onMounted, toValue } from 'vue';
+import { ref, reactive, watch, onMounted, toRaw } from 'vue';
 import chevronDownImage from '@/../assets/chevron-down.svg';
 import reverseImage from '@/../assets/reverse.svg';
 import downArrowImage from '@/../assets/down-arrow.svg';
 import deleteImage from '@/../assets/delete.svg';
 import { Contract, ethers, BigNumber } from 'ethers';
-import provider from '@/ethersProvider';
 import { useUniswapV4 } from '../composables/useUniswap';
 import { Percent } from '@uniswap/sdk-core';
 
@@ -169,6 +167,9 @@ export default {
     },
     ethPrice: {
       type: Number,
+    },
+    provider: {
+      type: Object,
     }
   },
   emits: ['update:settings', 'update:trade', 'refreshBalance'],
@@ -177,11 +178,7 @@ export default {
     const PERMIT2_ABI = [
       "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
     ];
-    const PERMIT2_CONTRACT = new ethers.Contract(
-      PERMIT2_UNISWAPV4_ADDRESS,
-      PERMIT2_ABI,
-      provider,
-    )
+
     const UNIVERSAL_ROUTER_ADDRESS = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
 
     const {
@@ -264,7 +261,7 @@ export default {
         isFetchingPrice.value = true;      
         debounceTimer = setTimeout(async () => {
           try {
-            if (!senderDetails.value.address) 
+            if (!senderDetails.value?.address) 
               throw new Error('No wallet selected');
 
             priceFetchingMessage.value = '';
@@ -293,12 +290,17 @@ export default {
               const erc20 = new ethers.Contract(
                 fromTokenAddressValue,
                 ERC20_ABI,
-                provider
+                toRaw(props.provider),
               );
               let rawAllowance = await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS);
               if (Number(rawAllowance) === 0 || Number(rawAllowance) < 1e38) {
                 needsToApprove.value = true;
               } else {
+                const PERMIT2_CONTRACT = new ethers.Contract(
+                  PERMIT2_UNISWAPV4_ADDRESS,
+                  PERMIT2_ABI,
+                  toRaw(props.provider),
+                )
                 let results = await PERMIT2_CONTRACT.allowance(senderDetails.value.address, fromTokenAddressValue, UNIVERSAL_ROUTER_ADDRESS);
                 if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
                   needsToApprove.value = true;
@@ -418,7 +420,7 @@ export default {
 
     const getTokenSymbol = async (contractAddress) => {
       // Create a Contract instance pointing to your ERC20
-      const contract = new Contract(contractAddress, ERC20_ABI, provider);
+      const contract = new Contract(contractAddress, ERC20_ABI, toRaw(props.provider));
       
       // Call the 'symbol()' method
       const symbol = await contract.symbol();
@@ -428,7 +430,7 @@ export default {
 
     const getTokenDecimals = async (contractAddress) => {
       // Create a Contract instance pointing to your ERC20
-      const contract = new Contract(contractAddress, ERC20_ABI, provider);
+      const contract = new Contract(contractAddress, ERC20_ABI, toRaw(props.provider));
       
       // Call the 'symbol()' method
       let decimals = await contract.decimals();
@@ -535,12 +537,17 @@ export default {
           const erc20 = new ethers.Contract(
             fromTokenAddress.value,
             ERC20_ABI,
-            provider
+            toRaw(props.provider),
           );
           allowance = Number(await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS));
           console.log(allowance)
           if (!allowance) await new Promise(r => setTimeout(r, 2000))
         }
+        const PERMIT2_CONTRACT = new ethers.Contract(
+          PERMIT2_UNISWAPV4_ADDRESS,
+          PERMIT2_ABI,
+          toRaw(props.provider),
+        )
         while (allowance = 0) {
           let results = await PERMIT2_CONTRACT.allowance(senderDetails.value.address, fromTokenAddress.value, UNIVERSAL_ROUTER_ADDRESS);
           if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
