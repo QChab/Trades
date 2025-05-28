@@ -117,30 +117,24 @@ export function useUniswapV4() {
   const priceHistory = ref([]); // stores { timestamp, tokenIn, tokenOut, amountIn, amountOut }
 
   const instantiateTokens = (tokenInObject, tokenOutObject) => {
+    console.log(tokenInObject)
+    console.log(tokenOutObject)
     const tokenIn = tokenInObject.address.toLowerCase();
     const tokenOut = tokenOutObject.address.toLowerCase();
 
-    // return {
-    //   tokenA: new Token(chainId, tokenIn, tokenInObject.decimals, tokenInObject.symbol),
-    //   tokenB: new Token(chainId, tokenOut, tokenOutObject.decimals, tokenOutObject.symbol)
-    // };
     const tokenA = tokenIn === nativeAddress
-      // ETHER is a NativeCurrency instance for chainId
       ? Ether.onChain(chainId)
-      // WETH9[chainId] is the wrapped-ETH Token if you need it for pool construction
-      : new Token(chainId, tokenIn, tokenInObject.decimals, tokenInObject.symbol);
+      : new Token(chainId, tokenIn, Number(tokenInObject.decimals), tokenInObject.symbol);
 
     const tokenB = tokenOut === nativeAddress
       ? Ether.onChain(chainId)
-      : new Token(chainId, tokenOut, tokenOutObject.decimals, tokenOutObject.symbol);
+      : new Token(chainId, tokenOut, Number(tokenOutObject.decimals), tokenOutObject.symbol);
 
-    console.log(tokenA)
     if (tokenIn === nativeAddress) {
       tokenA.address = nativeAddress;
     } else if (tokenOut === nativeAddress) {
       tokenB.address = nativeAddress;
     }
-    console.log(tokenA)
 
     return {tokenA, tokenB}
   }
@@ -157,7 +151,7 @@ export function useUniswapV4() {
         ) {
           ...PoolFields
         }
-        pools1: pools(              # alias to get token1_in
+        pools1: pools(
           where: { token1_in: [$a] },
           first: 100
         ) {
@@ -166,7 +160,7 @@ export function useUniswapV4() {
       }
       fragment PoolFields on Pool {
         id feeTier hooks liquidity sqrtPrice tick tickSpacing totalValueLockedUSD
-        token0 { id } token1 { id }
+        token0 { id decimals symbol } token1 { id decimals symbol }
         ticks(where: { liquidityGross_not: "0" }, first: 1000) {
           tickIdx liquidityNet liquidityGross
         }
@@ -192,7 +186,7 @@ export function useUniswapV4() {
       }
       fragment PoolFields on Pool {
         id feeTier hooks liquidity sqrtPrice tick tickSpacing totalValueLockedUSD
-        token0 { id } token1 { id }
+        token0 { id decimals symbol } token1 { id decimals symbol }
         ticks(where: { liquidityGross_not: "0" }, first: 1000) {
           tickIdx liquidityNet liquidityGross
         }
@@ -206,12 +200,16 @@ export function useUniswapV4() {
     rawPools.forEach(p => unique.set(p.id, p));
     const candidatePools = Array.from(unique.values());
   
-    const {tokenA, tokenB} = instantiateTokens(tokenInObject, tokenOutObject);
-
     const pools = [];
     for (const pool of candidatePools) {
       if (!pool.liquidity || pool.liquidity === "0") continue
-      console.log(pool);
+
+      console.log('building ' + pool.id)
+
+      const {tokenA, tokenB} = instantiateTokens(
+        {address: pool.token0?.id, symbol: pool.token0?.symbol, decimals: pool.token0?.decimals},
+        {address: pool.token1?.id, symbol: pool.token1?.symbol, decimals: pool.token1?.decimals},
+      );
 
       let token0, token1;
       if (pool.token0?.id.toLowerCase() !== tokenA.address.toLowerCase()) {
@@ -223,8 +221,6 @@ export function useUniswapV4() {
         token1 = tokenB;
       }
       
-      console.log('building ' + pool.id)
-
       const { tick: safeTick, sqrt: sqrtAligned } =
         alignTickAndPrice(pool.sqrtPrice, Number(pool.tickSpacing));
       
@@ -237,11 +233,9 @@ export function useUniswapV4() {
         Number(pool.feeTier), 
         Number(pool.tickSpacing), 
         pool.hooks,
-        // JSBI.BigInt(pool.sqrtPrice),
         sqrtAligned,
         JSBI.BigInt(pool.liquidity),
         safeTick,
-        // Number(pool.tickSpacing),
         tickProvider,
       );
       console.log(poolInstance);

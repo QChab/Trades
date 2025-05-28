@@ -416,6 +416,7 @@ export default {
 
     watch(() => senderDetails.value, (senderDetailsValue) => {
       if (!senderDetailsValue) isSwapButtonDisabled.value = true;
+      else needsToApprove.value = false;
     }, {immediate: true})
 
     const getTokenSymbol = async (contractAddress) => {
