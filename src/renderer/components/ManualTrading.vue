@@ -53,13 +53,17 @@
                   :key="'toToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} (${{ token.price.toFixed(2) }})
+                  {{ token.symbol }} (${{ token.price.toFixed(5) }})
                 </option>
               </select>
             </div>
             <span v-if="trade?.toAmount && !isFetchingPrice" class="usd-amount">
-              ${{ (Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1)  }}
-              ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price -Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(3) }}%)
+              <span v-if="tokensByAddresses[toTokenAddress].price">
+                ${{ (Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1) }}
+              </span>
+              <span v-if="tokensByAddresses[fromTokenAddress].price && tokensByAddresses[toTokenAddress].price">
+                ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price -Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(3) }}%)
+              </span>
             </span>
           </div>
           <p class="details-message">{{ priceFetchingMessage }}</p>
@@ -111,7 +115,7 @@
                 </label>
                 <label>
                   <div class="line">
-                    <span>Price: ${{ token.price.toFixed(3) }}</span>
+                    <span>Price: ${{ token.price.toFixed(5) }}</span>
                   </div>
                 </label>
               </div>
@@ -272,6 +276,7 @@ export default {
               fromAmount
             );
             isSwapButtonDisabled.value = false;
+            console.log(bestTrade)
             if (!bestTrade || !bestTrade.minimumAmountOut)
               throw new Error('No output amount found')
 
@@ -342,6 +347,7 @@ export default {
         body
       }).then(r => r.json());
 
+      console.log(tokenAddr, data?.token)
       // token not found ⇢ return 0
       const derivedEth = data?.token?.derivedETH
         ? Number(data.token.derivedETH)
@@ -1029,9 +1035,16 @@ button::-webkit-focus-inner {
   word-break: break-all;
 }
 
-.usd-amount {
+.usd-amount, .usd-amount span {
   font-size: 12px !important;
   color: #666;
   margin-left: 15px;
+  display: inline-block;
+  width: auto;
+}
+.usd-amount span {
+  margin-left: 0;
+  padding: 0;
+  margin-right: 5px;
 }
 </style>

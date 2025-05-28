@@ -165,6 +165,24 @@ export function useUniswapV4() {
         ) {
           ...PoolFields
         }
+        pools0: pools(
+          where:{
+            token0_in:[$a,$b],
+            liquidity_not:"0",
+          },
+          first: 100
+        ) {
+          ...PoolFields
+        }
+        pools1: pools(
+          where:{
+            token1_in:[$a,$b],
+            liquidity_not:"0",
+          },
+          first: 100
+        ) {
+          ...PoolFields
+        }
       }
       fragment PoolFields on Pool {
         id feeTier hooks liquidity sqrtPrice tick tickSpacing totalValueLockedUSD
@@ -174,7 +192,6 @@ export function useUniswapV4() {
         }
       }
     `;
-    
     // token0Price
     // token1Price
     // totalValueLockedUSD_gt:"10"
@@ -282,9 +299,9 @@ export function useUniswapV4() {
       const sanePools = [];
       for (const p of pools) {
         if (
-          p.involvesToken(tokenA) &&
-          p.involvesToken(tokenB) &&
-          (await isPoolUsable(p, amountIn))
+          (p.involvesToken(tokenA) ||
+          p.involvesToken(tokenB))
+          // && (await isPoolUsable(p, amountIn))
         ) {
           sanePools.push(p);
         }
