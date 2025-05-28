@@ -90,6 +90,7 @@
             @update:settings="setCurrentSettings"
             @update:gasPrice="setGasPrice"
             @update:trade="addTrade"
+            @refreshBalance="refreshBalance"
             :addresses="loadedAddresses"
             :gasPrice="gasPrice"
             :maxGasPrice="maxGasPrice * 1000000000"
@@ -215,6 +216,23 @@
         }
       })
 
+      const refreshBalance = async (addressDetail, token) => {
+        console.log(addressDetail, token);
+        let balance;
+        try {
+          balance = await getBalance(addressDetail.address, token);
+          if (!balance && balance !== 0)
+            balance = await getBalance(addressDetail.address, token);
+          if (!balance && balance !== 0)
+            balance = await getBalance(addressDetail.address, token);
+        } catch (err) {
+          console.error(err);
+          balance = 0;
+        }
+        if (!addressDetail.balances) addressDetail.balances = {};
+          addressDetail.balances[token.address] = balance;
+      }
+
       const erc20Abi = [
         "function symbol() view returns (string)",
         "function decimals() view returns (uint256)",
@@ -244,7 +262,7 @@
         return Number(balance);
       };
       
-      const ethPrice = ref(2500);
+      const ethPrice = ref(0);
 
       async function getEthUsd () {
         const url =
@@ -453,6 +471,7 @@
         maxGasPrice,
         loadedAddresses,
         ethPrice,
+        refreshBalance,
       }
     }
   };
@@ -666,7 +685,7 @@
     padding: 5px;
     border: 1px solid #ccc;
     border-radius: 4px;
-    width: 300px;
+    width: 270px;
   }
   
   /* Style for the add button (plus button) */

@@ -168,10 +168,9 @@ export default {
     },
     ethPrice: {
       type: Number,
-      default: 2500,
     }
   },
-  emits: ['update:settings', 'update:trade'],
+  emits: ['update:settings', 'update:trade', 'refreshBalance'],
   setup(props, { emit } ) {
     const PERMIT2_UNISWAPV4_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
@@ -333,15 +332,17 @@ export default {
       return derivedEth * ethUsd;          // USD price
     }
 
-    const setAllTokenPrices = async () => {
+    const setTokenPrices = async (tokenArray) => {
       if (!tokens) return;
-      for (const token of tokens) {
+      for (const token of tokenArray) {
+        console.log('fetching price of ' + token.symbol)
         token.price = await tokenUsd(token.address, props.ethPrice)
       }
     }
 
-    setAllTokenPrices();
-    setInterval(setAllTokenPrices, 60000);
+    // setAllTokenPrices();
+    watch(() => props.ethPrice, setTokenPrices(tokens));
+    setInterval(() => setTokenPrices(tokens), 60000);
   
 
     watch(() => tokens, async (tokensValue) => {
@@ -382,14 +383,17 @@ export default {
       if (toTokenAddress.value === fromTokenAddressValue) {
         toTokenAddress.value = oldFromTokenAddressValue
       }
+      emit('refreshBalance', senderDetails.value, tokensByAddresses.value[fromTokenAddressValue]);
     })
     watch(() => toTokenAddress.value, (toTokenAddressValue, oldToTokenAddressValue) => {
       if (fromTokenAddress.value === toTokenAddressValue) {
         fromTokenAddress.value = oldToTokenAddressValue
       }
+      emit('refreshBalance', senderDetails.value, tokensByAddresses.value[toTokenAddressValue]);
     })
     watch(() => props.addresses, (addressesValue) => {
-      senderDetails.value = props.addresses[0];
+      if (props.addresses && props.addresses[0])
+        senderDetails.value = props.addresses[0];
     }, {immediate: true})
 
     watch(() => senderDetails.value, (senderDetailsValue) => {
@@ -470,7 +474,7 @@ export default {
         // if (senderDetails.value.balances[fromTokenAddress.value] < fromAmount.value) 
         //   throw new Error('Not enough balance of ' + token.symbol)
 
-        const {success, tx, warnings, error} = await executeSwapExactInSingle(trade.value, senderDetails.value, 500, props.gasPrice);
+        const {success, tx, warnings, error} = await executeSwapExactInSingle(trade.value, senderDetails.value, 2000, props.gasPrice);
         if (!success || !tx) {
           if (error)
             console.error(error)
@@ -479,11 +483,11 @@ export default {
           trade.value.sentDate = null;
           trade.value.txId = null;
           if (error.toString().includes('insufficient funds for intrinsic transaction cost'))
-            swapMessage.value = 'Not enough ETH on the address';
+            swapMessage.value = 'Error: Not enough ETH on the address';
           else
             swapMessage.value = error;
           if (warnings && warnings.length)
-            swapMessage.value = 'Warnings: ' + warnings.join(' ; ')
+            swapMessage.value += '    | Warnings: ' + warnings.join(' ; ')
           console.log({success, tx, warnings});
           return false;
         }
@@ -608,10 +612,6 @@ input[type="number"] {
 
 p {
   font-weight: 500;
-  user-select: none; /* Standard syntax */
-  -webkit-user-select: none; /* Safari */
-  -moz-user-select: none; /* Old Firefox */
-  -ms-user-select: none; /* Internet Explorer/Edge */
 }
 
 h3 {

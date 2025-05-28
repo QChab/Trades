@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendTrade: (trade) => ipcRenderer.invoke('send-trade', trade),
   approveSpender: (from, contractAddress, spender, gasPrice) => ipcRenderer.invoke('approve-spender', from, contractAddress, spender, gasPrice),
   confirmTrade: (txId, gasCost, toAmount) => ipcRenderer.invoke('confirm-trade', txId, gasCost, toAmount),
-  failTrade: (txId) => ipcRenderer.invoke('fail-trade', txId),
+  failTrade: (txId, gasCost) => ipcRenderer.invoke('fail-trade', txId, gasCost),
   setGasPrice: (gasPrice) => ipcRenderer.invoke('set-gas-price', gasPrice),
   decryptRtf: (fileContent) => ipcRenderer.invoke('decrypt-rtf', fileContent),
   savePrivateKeys: (privateKeys) => ipcRenderer.invoke('save-private-keys', privateKeys),

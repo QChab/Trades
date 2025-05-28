@@ -9,7 +9,7 @@
         <span v-else> {{ t.toAmount || t.expectedToAmount }} </span>
         {{ t.toTokenSymbol || t.toToken?.symbol }}
         from {{ t.senderName || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
-        <span v-if="t.gasCost">; gas: ${{ t.gasCost.substring(0, 5)}} </span>
+        <span v-if="t.gasCost">; gas: ${{ t.gasCost.substring(0, 4)}} </span>
       </li>
     </transition-group>
   </div>
@@ -29,7 +29,6 @@ export default {
     },
     ethPrice: {
       type: Number,
-      default: 2500,
     }
   },
   setup(props) {
@@ -67,6 +66,9 @@ export default {
         paidUsd:   toEth(gasPaidWei) * ethUsd
       };
 
+      if (!rcpt.status || rcpt.status === '0')
+        return {gas: gasInfo}
+
       /* ── ERC-20 credits to tx-sender ──────── */
       const sender = rcpt.from.toLowerCase();
       const iface  = new ethers.utils.Interface([
@@ -91,7 +93,7 @@ export default {
 
         const humanAmt    = Number(ethers.utils.formatUnits(amountRaw, dec));
 
-        tokens.push({ symbol: sym, amount: humanAmt });
+        tokens.push({ symbol: sym, amount: humanAmt.toFixed(6) });
       }
 
       return { gas: gasInfo, tokens };
@@ -112,8 +114,10 @@ export default {
             trade.toAmount = tokens[0].amount;
             window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, tokens[0].amount);
           } else {
+            const {gas} = await analyseReceipt(trade, receipt, provider)
             trade.hasFailed = true;
-            window.electronAPI.failTrade(trade.txId);
+            trade.gasCost = gas.paidUsd + '';
+            window.electronAPI.failTrade(trade.txId, trade.gasCost);
           }
         }
       }

@@ -220,9 +220,11 @@ export function useUniswapV4() {
         Number(pool.feeTier), 
         Number(pool.tickSpacing), 
         pool.hooks,
+        // JSBI.BigInt(pool.sqrtPrice),
         sqrtAligned,
         JSBI.BigInt(pool.liquidity),
         safeTick,
+        // Number(pool.tickSpacing),
         tickProvider,
       );
       console.log(poolInstance);
@@ -235,7 +237,7 @@ export function useUniswapV4() {
 
   function alignTickAndPrice(sqrtPriceDecStr, spacing) {
     const exactTick  = TickMath.getTickAtSqrtRatio(JSBI.BigInt(sqrtPriceDecStr));
-    const aligned    = Math.floor(exactTick / spacing) * spacing;
+    const aligned    = Math.ceil(exactTick / spacing) * spacing;
     const sqrtAtTick = TickMath.getSqrtRatioAtTick(aligned);
     return {tick: aligned, sqrt: sqrtAtTick}
   }
@@ -284,8 +286,8 @@ export function useUniswapV4() {
       for (const p of pools) {
         if (
           p.involvesToken(tokenA) &&
-          p.involvesToken(tokenB)
-          // (await isPoolUsable(p, amountIn))
+          p.involvesToken(tokenB) &&
+          (await isPoolUsable(p, amountIn))
         ) {
           sanePools.push(p);
         }
@@ -357,14 +359,14 @@ export function useUniswapV4() {
         .div(BigNumber.from(10_000))
 
       // 4) Encode the single byte command V4_SWAP
-      //    (Commands.V4_SWAP === the 5-bit command ID for v4 swaps) :contentReference[oaicite:2]{index=2}
+      //    (Commands.V4_SWAP === the 5-bit command ID for v4 swaps)
       const commands = ethers.utils.solidityPack(
         ['uint8'],
         [Commands.V4_SWAP]
       )
 
       // 5) Encode the V4Router actions: SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL
-      //    (this tells the router exactly which steps to run) :contentReference[oaicite:3]{index=3}
+      //    (this tells the router exactly which steps to run)
       const actions = ethers.utils.solidityPack(
         ['uint8','uint8','uint8'],
         [
@@ -448,7 +450,6 @@ export function useUniswapV4() {
             value: useNative ? amountIn.quotient.toString() : 0,
             maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9),
             maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
-            gasLimit: 300000,
           }
         ]
       })

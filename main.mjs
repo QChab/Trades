@@ -101,14 +101,18 @@ async function saveTradeInDB(trade) {
   }
 }
 
-function failTradeInDB(txId) {
+function failTradeInDB(txId, gasCost) {
   const sql = `
     UPDATE trades
-    SET    hasFailed = 1
+    SET hasFailed = 1
+      gasCost  = $gasCost,
     WHERE  txId = $txId
   `;
 
-  db.run(sql, { $txId: txId.toLowerCase() }, function (err) {
+  db.run(sql, { 
+    $txId: txId.toLowerCase(),
+    $gasCost: gasCost,
+  }, function (err) {
     if (err) return console.error('❌ update fail failed:', err);
   });
 }
@@ -127,7 +131,7 @@ function confirmTradeInDB (txId, gasCost, toAmount) {
     sql,
     {
       $txId:    txId.toLowerCase(),
-      $gasCost: Number(gasCost),   // make sure it’s numeric
+      $gasCost: gasCost,   // make sure it’s numeric
       $toAmount: toAmount          // keep as string if you want full precision
     },
     function (err) {
@@ -583,8 +587,8 @@ function createWindow() {
   ipcMain.handle('confirm-trade', (event, txId, gasCost, toAmount) => {
     return confirmTradeInDB(txId, gasCost, toAmount);
   });
-  ipcMain.handle('fail-trade', (event, txId) => {
-    return failTradeInDB(txId);
+  ipcMain.handle('fail-trade', (event, txId, gasCost) => {
+    return failTradeInDB(txId, gasCost);
   });
 
   ipcMain.handle('save-addresses', (event, addresses, isSource) => {
