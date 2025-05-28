@@ -175,7 +175,7 @@ function refreshProviders () {
   providersList = rpcUrls.map((url) => 
     new ethers.providers.JsonRpcProvider(url,{ chainId: 1, name: 'homestead' })
   );
-  provider = new ethers.providers.FallbackProvider(providersList, 1);  
+  provider = new ethers.providers.FallbackProvider(providersList, 1);
 }
 
 async function sendTransaction(transfer) {
@@ -249,7 +249,8 @@ const ERC20_ABI = [
   "function approve(address spender, uint256 amount) returns (bool)",
 ];
 
-async function approveSpender({from, contractAddress, spender, gasPrice}) {
+// APPROVE TOKEN OF SPENDER FOR PERMIT2
+async function approveSpender({from, contractAddress, spender}) {
   console.log({from, contractAddress, spender});
   const warnings = [];
 
@@ -262,6 +263,10 @@ async function approveSpender({from, contractAddress, spender, gasPrice}) {
     else if (balanceEth < 0.01)
       warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
     
+    const overrides = {
+      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9),
+      maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
+    };
 
     const erc20 = new ethers.Contract(
       contractAddress,
@@ -269,21 +274,30 @@ async function approveSpender({from, contractAddress, spender, gasPrice}) {
       provider
     );
 
-    const erc20WithSigner = erc20.connect(wallet);
-    const overrides = {
-      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9),
-      maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
-    };
-    const tx1 = await erc20WithSigner.approve(spender, ethers.constants.MaxUint256, overrides);
-    await tx1.wait();
+    const allowance = await erc20.allowance(from, spender);
+    if (Number(allowance) === 0 || Number(allowance) < 1e38) {
+      const erc20WithSigner = erc20.connect(wallet);
+      const tx1 = await erc20WithSigner.approve(spender, ethers.constants.MaxUint256, overrides);
+      await tx1.wait();
+    }
 
     const PERMIT2_ABI = [
-      "function approve(address token, address spender, uint160 amount, uint48 expiration) external"
+      "function approve(address token, address spender, uint160 amount, uint48 expiration) external",
+      "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
     ];
     const permit2Contract = new ethers.Contract(PERMIT2_UNISWAPV4_ADDRESS, PERMIT2_ABI, wallet);
 
-    const tx2 = await permit2Contract.approve(contractAddress, UNIVERSAL_ROUTER_ADDRESS, '100000000000000000000000000000000000000000', Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50, overrides);
-    await tx2.wait();
+    let results = await permit2Contract.allowance(from, contractAddress, UNIVERSAL_ROUTER_ADDRESS);
+    if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
+      const tx2 = await permit2Contract.approve(
+        contractAddress,
+        UNIVERSAL_ROUTER_ADDRESS,
+        '100000000000000000000000000000000000000000',
+        Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50,
+        overrides
+      );
+      await tx2.wait();
+    }
 
     return {success: true, warnings}
   } catch (err) {
@@ -292,7 +306,7 @@ async function approveSpender({from, contractAddress, spender, gasPrice}) {
   }
 }
 
-async function sendTrade({tradeDetailsString, args}) {
+async function sendTrade({tradeDetailsString, args, onlyEstimate}) {
   const warnings = [];
 
   try {
@@ -324,6 +338,17 @@ async function sendTrade({tradeDetailsString, args}) {
       throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.001)`)
     else if (balanceEth < 0.01)
       warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
+    
+    if (onlyEstimate) {
+      const gasEstimate = await router
+        .estimateGas
+        .execute(...args);
+
+      // 4) (Optional) Compute the total ETH cost as gasEstimate * gasPrice
+      const estimatedCostWei = gasEstimate.mul(gasPrice);
+      const estimatedCostEth = ethers.utils.formatEther(estimatedCostWei);
+      return {success: true, estimatedCostEth}
+    }
     
     const tx = await router.execute(
       ...args,

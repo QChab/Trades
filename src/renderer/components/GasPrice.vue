@@ -2,7 +2,7 @@
 <template>
   <div class="gas-price-container">
     <!-- Display the formatted gas price (in gwei) -->
-    <span>currently {{ formattedGasPrice }} gwei</span>
+    <span :class="{'high-gas': maxGasPrice * 1000000000 < Number(gasPrice?.toString()) }">currently {{ formattedGasPrice }} gwei</span>
   </div>
 </template>
 
@@ -19,6 +19,10 @@ export default {
       type: Number,
       default: 10000,
     },
+    maxGasPrice: {
+      type: Number,
+      default: 3,
+    }
   },
   // Define the custom event this component will emit
   emits: ['update:gasPrice'],
@@ -69,6 +73,7 @@ export default {
     // Return the reactive and computed variables to the template
     return {
       formattedGasPrice,
+      gasPrice,
     };
   },
 };
@@ -83,5 +88,11 @@ export default {
   color: #555;
   margin-left: 10px;
   font-size: 0.9em;
+}
+
+.high-gas {
+  font-weight: 700;
+  color: red;
+  font-size: 15px;
 }
 </style>  

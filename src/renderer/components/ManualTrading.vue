@@ -64,7 +64,8 @@
           </div>
           <p class="details-message">{{ priceFetchingMessage }}</p>
           <div class="address-form">
-            <p>{{ trade?.swap?.swaps?.length }} trade</p>
+            {{ trade }}
+            <p v-if="trade?.swap">{{ trade?.swap?.swaps?.length }} trade ; gas: {{ trade?.swap }}</p> 
             <p>with</p>
             <select id="sender-address" v-model="senderDetails">
               <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address.address">
@@ -75,10 +76,10 @@
           </div>
           <p class="details-message">{{ swapMessage }}</p>
           <button v-if="!needsToApprove" @click="triggerTrade()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || !trade?.swap" class="swap-button">
-            Swap
+            {{ isSwapButtonDisabled && trade?.swap ? 'Swapping...' : 'Swap' }}
           </button>
           <button v-else @click="approveSpending()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || !trade?.swap" class="swap-button">
-            Approve
+            {{ (isSwapButtonDisabled && trade.swap) ? 'Approving...' : 'Approve' }}
           </button>
         </div>
         <!-- EDITING -->
@@ -173,6 +174,14 @@ export default {
   emits: ['update:settings', 'update:trade', 'refreshBalance'],
   setup(props, { emit } ) {
     const PERMIT2_UNISWAPV4_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+    const PERMIT2_ABI = [
+      "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
+    ];
+    const PERMIT2_CONTRACT = new ethers.Contract(
+      PERMIT2_UNISWAPV4_ADDRESS,
+      PERMIT2_ABI,
+      provider,
+    )
     const UNIVERSAL_ROUTER_ADDRESS = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
 
     const {
@@ -287,23 +296,15 @@ export default {
                 provider
               );
               let rawAllowance = await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS);
-              if (Number(rawAllowance) === 0) {
+              if (Number(rawAllowance) === 0 || Number(rawAllowance) < 1e38) {
                 needsToApprove.value = true;
               } else {
-                const PERMIT2_ABI = [
-                  "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
-                ];
-                const permitContract = new ethers.Contract(
-                  PERMIT2_UNISWAPV4_ADDRESS,
-                  PERMIT2_ABI,
-                  provider,
-                )
-                let results = await permitContract.allowance(senderDetails.value.address, fromTokenAddressValue, UNIVERSAL_ROUTER_ADDRESS);
-                if (results && results[0].toString() === '0') {
+                let results = await PERMIT2_CONTRACT.allowance(senderDetails.value.address, fromTokenAddressValue, UNIVERSAL_ROUTER_ADDRESS);
+                if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
                   needsToApprove.value = true;
                 }
+                console.log(results);
               }
-              console.log(results);
             }
 
           } catch (err) {
@@ -539,6 +540,13 @@ export default {
           allowance = Number(await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS));
           console.log(allowance)
           if (!allowance) await new Promise(r => setTimeout(r, 2000))
+        }
+        while (allowance = 0) {
+          let results = await PERMIT2_CONTRACT.allowance(senderDetails.value.address, fromTokenAddress.value, UNIVERSAL_ROUTER_ADDRESS);
+          if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
+            await new Promise(r => setTimeout(r, 2000))
+          }
+          allowance = results[0];
         }
       } catch (err) {
         console.error(err);

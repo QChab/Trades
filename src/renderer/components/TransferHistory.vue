@@ -111,7 +111,7 @@ export default {
             const {gas, tokens} = await analyseReceipt(trade, receipt, provider)
             trade.gasCost = gas.paidUsd + '';
             trade.toAmount = tokens[0]?.amount || 'unknown';
-            window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, tokens[0].amount);
+            window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, trade.toAmount);
           } else {
             const {gas} = await analyseReceipt(trade, receipt, provider)
             trade.hasFailed = true;

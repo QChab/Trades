@@ -1,7 +1,7 @@
   <template>
     <div class="header">
       <div class="settings">
-        <label>Test mode: <input type="checkbox" v-model="isTestMode"/></label>
+        <!-- <label>Test mode: <input type="checkbox" v-model="isTestMode"/></label> -->
         <div class="infura-keys">
           <!-- The title that toggles the infura keys section -->
           <p class="title" @click="toggleInfuraKeys">
@@ -77,6 +77,7 @@
           </label>
           <GasPrice 
             @update:gas-price="setGasPrice"
+            :maxGasPrice="maxGasPrice"
           />
         </div>
       </div>

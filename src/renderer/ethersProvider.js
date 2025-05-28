@@ -1,39 +1,35 @@
-import { ethers } from 'ethers';
+import { ethers } from "ethers";
+// -----------------------------------------------------------------------------
+// 1) At the very top‐level we can now use `await` directly.
+//    This code runs as soon as the module is imported.
+// -----------------------------------------------------------------------------
 
-// -- 1. Define your RPC endpoints:
-//    Replace these URLs with whichever Ethereum mainnet RPC endpoints you prefer.
-const rpcUrls = [
-  // "https://eth.llamarpc.com",
-  // "https://eth-mainnet.public.blastapi.io",
-  // "https://api.securerpc.com/v1",
-  // "https://eth1.lava.build",
-  // "https://rpc.mevblocker.io/fullprivacy",
-  "https://eth.blockrazor.xyz",
-  "https://eth.merkle.io",
-];
+// Fetch your Infura or RPC URLs from the Electron preload bridge:
+const rpcUrls = await window.electronAPI.getInfuraKeys();
 
-// -- 2. Map each URL to a JsonRpcProvider instance:
-//    - We pass the URL string and an options object indicating the chain.
-//    - `chainId: 1` means Ethereum mainnet, and `name: 'homestead'` is the ethers.js
-//      internal name for mainnet.
+// -----------------------------------------------------------------------------
+// 2) Build an array of JsonRpcProvider instances.
+// -----------------------------------------------------------------------------
 const providersList = rpcUrls.map((url) => {
   return new ethers.providers.JsonRpcProvider(
     url,
     {
+      // Standard Ethereum mainnet settings:
       chainId: 1,
       name: 'homestead',
     }
   );
 });
 
-// -- 3. Create a FallbackProvider:
-//    - Takes an array of ethers.providers.
-//    - The second argument is the quorum: how many providers must respond
-//      successfully for a call to be considered successful (default = 1).
-//    - Here we set it explicitly to 1 so that any single healthy endpoint suffices.
+// -----------------------------------------------------------------------------
+// 3) Instantiate a FallbackProvider around them.
+// -----------------------------------------------------------------------------
 const provider = new ethers.providers.FallbackProvider(
   providersList,
-  1 // quorum: 1
+  1  // quorum: how many endpoints must respond
 );
 
+// -----------------------------------------------------------------------------
+// 4) **Export** at the top level so there's no TS1258 error.
+// -----------------------------------------------------------------------------
 export default provider;
