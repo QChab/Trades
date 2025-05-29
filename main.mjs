@@ -278,6 +278,7 @@ async function approveSpender({from, contractAddress, spender}) {
     if (Number(allowance) === 0 || Number(allowance) < 1e38) {
       const erc20WithSigner = erc20.connect(wallet);
       const tx1 = await erc20WithSigner.approve(spender, ethers.constants.MaxUint256, overrides);
+      console.log(tx1?.nonce);
       await tx1.wait();
     }
 
@@ -296,6 +297,7 @@ async function approveSpender({from, contractAddress, spender}) {
         Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50,
         overrides
       );
+      console.log(tx2?.nonce);
       await tx2.wait();
     }
 

@@ -509,6 +509,8 @@ export default {
           trade.value.txId = null;
           if (error.toString().includes('insufficient funds for intrinsic transaction cost'))
             swapMessage.value = 'Error: Not enough ETH on the address';
+          else if (error.toString().includes('cannot estimate gas; transaction may fail or may require manual gas limit'))
+            swapMessage.value = 'Error: Preventing fail execution';
           else
             swapMessage.value = error;
           if (warnings && warnings.length)
@@ -529,24 +531,26 @@ export default {
     const approveSpending = async () => {
       try {
         isSwapButtonDisabled.value = true;
+        const originalAddress = senderDetails.value.address;
         const {success, error } = await window.electronAPI.approveSpender(
-          senderDetails.value.address,
+          originalAddress,
           fromTokenAddress.value,
           PERMIT2_UNISWAPV4_ADDRESS,
           props.gasPrice
         );
 
-        if (!success)
+        if (!success) {
           throw error;
+        }
         
         let allowance = 0;
-        while (allowance = 0) {
+        while (allowance = 0 && originalAddress === senderDetails.value.address) {
           const erc20 = new ethers.Contract(
             fromTokenAddress.value,
             ERC20_ABI,
             toRaw(props.provider),
           );
-          allowance = Number(await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS));
+          allowance = Number(await erc20.allowance(originalAddress, PERMIT2_UNISWAPV4_ADDRESS));
           console.log(allowance)
           if (!allowance) await new Promise(r => setTimeout(r, 2000))
         }
@@ -555,8 +559,8 @@ export default {
           PERMIT2_ABI,
           toRaw(props.provider),
         )
-        while (allowance = 0) {
-          let results = await PERMIT2_CONTRACT.allowance(senderDetails.value.address, fromTokenAddress.value, UNIVERSAL_ROUTER_ADDRESS);
+        while (allowance = 0 && originalAddress === senderDetails.value.address) {
+          let results = await PERMIT2_CONTRACT.allowance(originalAddress, fromTokenAddress.value, UNIVERSAL_ROUTER_ADDRESS);
           if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
             await new Promise(r => setTimeout(r, 2000))
           }
@@ -564,6 +568,7 @@ export default {
         }
       } catch (err) {
         console.error(err);
+        swapMessage.value = err;
       }
       isSwapButtonDisabled.value = false;
       needsToApprove.value = false;
