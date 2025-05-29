@@ -195,8 +195,8 @@ async function sendTransaction(transfer) {
     if (!transfer.isTestMode) {
       const balance = await provider.getBalance(from);
       const balanceEth = Number(ethers.utils.formatEther(balance));
-      if (balanceEth < 0.0001)
-        throw new Error(`Eth Balance of address ${from} too low (< 0.0001)`)
+      if (balanceEth < 0.0005)
+        throw new Error(`Eth Balance of address ${from} too low (< 0.0005)`)
       else if (balanceEth < 0.01)
         warnings.push(`Beware eth Balance of address ${from} low (< 0.01)`)
     }
@@ -258,8 +258,8 @@ async function approveSpender({from, contractAddress, spender}) {
     const wallet = getWallet(from);
     const balance = await provider.getBalance(wallet.address);
     const balanceEth = Number(ethers.utils.formatEther(balance));
-    if (balanceEth < 0.0001)
-      throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.0001)`)
+    if (balanceEth < 0.0005)
+      throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.0005)`)
     else if (balanceEth < 0.01)
       warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
     
@@ -334,8 +334,8 @@ async function sendTrade({tradeDetailsString, args, onlyEstimate}) {
     
     const balance = await provider.getBalance(wallet.address);
     const balanceEth = Number(ethers.utils.formatEther(balance));
-    if (balanceEth < 0.0001)
-      throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.0001)`)
+    if (balanceEth < 0.0005)
+      throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.0005)`)
     else if (balanceEth < 0.01)
       warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
     
