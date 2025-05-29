@@ -151,7 +151,7 @@ export function useUniswapV4() {
             token1_in:[$a,$b],
             liquidity_not:"0",
           },
-          first: 50
+          first: 20
         ) {
           ...PoolFields
         }
@@ -161,7 +161,7 @@ export function useUniswapV4() {
             token1_in:[$a,$b,"0x0000000000000000000000000000000000000000"],
             liquidity_not:"0",
           },
-          first: 50
+          first: 20
         ) {
           ...PoolFields
         }
@@ -171,7 +171,7 @@ export function useUniswapV4() {
             token1_in:[$a,$b,"0xdac17f958d2ee523a2206206994597c13d831ec7"],
             liquidity_not:"0",
           },
-          first: 50
+          first: 10
         ) {
           ...PoolFields
         }
@@ -181,7 +181,7 @@ export function useUniswapV4() {
             token1_in:[$a,$b,"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"],
             liquidity_not:"0",
           },
-          first: 50
+          first: 10
         ) {
           ...PoolFields
         }
@@ -191,7 +191,7 @@ export function useUniswapV4() {
             token1_in:[$a,$b,"0x6b175474e89094c44da98b954eedeac495271d0f"],
             liquidity_not:"0",
           },
-          first: 50
+          first: 10
         ) {
           ...PoolFields
         }
@@ -341,7 +341,7 @@ export function useUniswapV4() {
       console.log('Sane pools: ' + sanePools.length);
       if (!sanePools.length) return []
 
-      trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
+      trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
     } catch (err) {
       /* The only error the SDK throws here is the dreaded “Invariant failed”.
       Wrap it to give the caller real insight. */
@@ -370,7 +370,7 @@ export function useUniswapV4() {
     }
   }
 
-  async function executeSwapExactInSingle(tradeDetails, senderDetails, slippageBips = 50, gasPrice) {
+  async function executeSwapExactIn(tradeDetails, senderDetails, slippageBips = 50, gasPrice) {
     const trade = tradeDetails.swap;
     if (!trade.route.pools || !trade.route.pools[0])
       return {success: false, error: new Error('Missing route pools')};
@@ -389,13 +389,13 @@ export function useUniswapV4() {
       const amountOut   = trade.outputAmount        // CurrencyAmount
 
       // 2) Build the PoolKey struct to identify our v4 pool
-      const poolKey = {
-        currency0: route.pools[0].token0.address,      // lower-sorted token
-        currency1: route.pools[0].token1.address,      // higher-sorted token
-        fee:       route.pools[0].fee,                 // e.g. 3000
-        tickSpacing: route.pools[0].tickSpacing,       // e.g. 60
-        hooks:     route.pools[0].hooks                // usually the zero-address
-      }
+      const poolKeys = route.pools.map(pool => ({
+        currency0: pool.token0.address,      // lower-sorted token
+        currency1: pool.token1.address,      // higher-sorted token
+        fee:       pool.fee,                 // e.g. 3000
+        tickSpacing: pool.tickSpacing,       // e.g. 60
+        hooks:     pool.hooks                // usually the zero-address
+      }));
 
       // 3) Compute minimumAmountOut based on slippage tolerance
       //    (e.g. amountOut * (1 - slippageBips/10_000))
@@ -415,42 +415,76 @@ export function useUniswapV4() {
       const actions = ethers.utils.solidityPack(
         ['uint8','uint8','uint8'],
         [
-          Actions.SWAP_EXACT_IN_SINGLE,
+          route.pools.length === 1 ? Actions.SWAP_EXACT_IN_SINGLE : Actions.SWAP_EXACT_IN,
           Actions.SETTLE_ALL,
           Actions.TAKE_ALL
         ]
       )
 
-      // 6) Prepare the three sets of parameters matching those actions:
-      //    0: ExactInputSingleParams, 1: settle (tokenIn, amountIn), 2: take (tokenOut, minOut)
-      const params = [
-        // --- 0) swap config ---
-        ethers.utils.defaultAbiCoder.encode(
-          [
-            `(tuple(
-               address currency0,
-               address currency1,
-               uint24 fee,
-               int24 tickSpacing,
-               address hooks
-             ) poolKey,
-             bool zeroForOne,
-             uint128 amountIn,
-             uint128 amountOutMinimum,
-             bytes hookData)`
-          ],
-          [
-            {
-              poolKey,
-              zeroForOne: route.pools[0].token0.address.toLowerCase()
-                           === trade.inputAmount.currency.address.toLowerCase(),
-              amountIn:    BigNumber.from(amountIn.quotient.toString()),
-              amountOutMinimum: minAmountOut,
-              hookData:    '0x'
-            }
-          ]
-        ),
+      const zeroForOnes = route.pools.map(p =>
+        p.token0.address.toLowerCase() === trade.inputAmount.currency.address.toLowerCase()
+      );
 
+      let params;
+      if (route.pools.length === 1) {
+        params = [
+          ethers.utils.defaultAbiCoder.encode(
+            [
+              `(tuple(
+                address currency0,
+                address currency1,
+                uint24 fee,
+                int24 tickSpacing,
+                address hooks
+              ) poolKey,
+              bool zeroForOne,
+              uint128 amountIn,
+              uint128 amountOutMinimum,
+              bytes hookData)`
+            ],
+            [
+              {
+                poolKey: poolKeys[0],
+                zeroForOne: zeroForOnes[0],
+                amountIn:    BigNumber.from(amountIn.quotient.toString()),
+                amountOutMinimum: minAmountOut,
+                hookData:    '0x'
+              }
+            ]
+          )
+        ]
+      } else {
+        params = [
+          ethers.utils.defaultAbiCoder.encode(
+            [
+              `tuple(
+                tuple(
+                  address currency0,
+                  address currency1,
+                  uint24 fee,
+                  int24 tickSpacing,
+                  address hooks
+                )[] poolKeys,
+                bool[] zeroForOne,
+                uint128 amountIn,
+                uint128 amountOutMinimum,
+                bytes hookData
+              )`
+            ],
+            [
+              [
+                poolKeys,
+                zeroForOnes,
+                BigNumber.from(amountIn.quotient.toString()),
+                minAmountOut,
+                '0x'
+              ]
+            ]
+          )
+        ]
+      }
+
+      params.push(
         // --- 1) SETTLE_ALL params: pull `amountIn` of currency0 from user via Permit2 ---
         ethers.utils.defaultAbiCoder.encode(
           ['address','uint256'],
@@ -462,7 +496,7 @@ export function useUniswapV4() {
           ['address','uint256'],
           [ trade.outputAmount.currency.address, minAmountOut.toString() ]
         )
-      ]
+      )
 
       // 7) Finally, bundle actions+params into the single `inputs[0]`
       //    (the Universal Router expects inputs[i] = abi.encode(actions, params)) :contentReference[oaicite:4]{index=4}
@@ -512,6 +546,6 @@ export function useUniswapV4() {
     findPossiblePaths,
     selectBestPath,
     findAndSelectBestPath,
-    executeSwapExactInSingle,
+    executeSwapExactIn,
   };
 }
