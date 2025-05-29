@@ -330,6 +330,17 @@ async function sendTrade({tradeDetailsString, args, onlyEstimate}) {
       }
     }
 
+    const PERMIT2_ABI = [
+      "function approve(address token, address spender, uint160 amount, uint48 expiration) external",
+      "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
+    ];
+    const permit2Contract = new ethers.Contract(PERMIT2_UNISWAPV4_ADDRESS, PERMIT2_ABI, wallet);
+
+    let results = await permit2Contract.allowance(wallet.address, tradeDetails?.fromToken?.address, UNIVERSAL_ROUTER_ADDRESS);
+    if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
+      throw new Error('Insufficient allowance on ' + tradeDetails.fromToken.symbol + ' on PERMIT2');
+    }
+
     const router = new ethers.Contract(UNIVERSAL_ROUTER_ADDRESS, UNIVERSAL_ROUTER_ABI, wallet);
     
     const balance = await provider.getBalance(wallet.address);

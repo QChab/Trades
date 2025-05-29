@@ -320,7 +320,7 @@ export function useUniswapV4() {
       throw new Error('[selectBestPath] rawIn cannot be zero');
     }
     if (pools.length === 0) {
-      throw new Error('[selectBestPath] “pools” array is empty – cannot route');
+      throw new Error('No swap path found for this');
     }
 
     const {tokenA, tokenB } = instantiateTokens(tokenInObject, tokenOutObject);
@@ -425,9 +425,9 @@ export function useUniswapV4() {
         p.token0.address.toLowerCase() === trade.inputAmount.currency.address.toLowerCase()
       );
 
-      let params;
+      let params = []
       if (route.pools.length === 1) {
-        params = [
+        params.push(
           ethers.utils.defaultAbiCoder.encode(
             [
               `(tuple(
@@ -452,36 +452,53 @@ export function useUniswapV4() {
               }
             ]
           )
-        ]
+        )
       } else {
-        params = [
-          ethers.utils.defaultAbiCoder.encode(
-            [
-              `tuple(
+        const path = route.pools.map((pool, i) => ({
+          poolKey: poolKeys[i],
+          intermediateCurrency: 
+            // if this is not the last pool, it’s the next pool’s input token:
+            i < route.pools.length - 1
+              ? route.pools[i + 1].token0.address
+              : trade.outputAmount.currency.address,
+          hookData: '0x'
+        }));
+
+        const currencyIn = {
+          isNative: trade.inputAmount.currency.isNative,
+          token:    trade.inputAmount.currency.isNative 
+                    ? ethers.constants.AddressZero 
+                    : trade.inputAmount.currency.address
+        };
+
+        const exactInputEncoded = ethers.utils.defaultAbiCoder.encode(
+          [
+            `(tuple(bool isNative, address token) currencyIn,
+              tuple(
                 tuple(
                   address currency0,
                   address currency1,
                   uint24 fee,
                   int24 tickSpacing,
                   address hooks
-                )[] poolKeys,
-                bool[] zeroForOne,
-                uint128 amountIn,
-                uint128 amountOutMinimum,
+                ) poolKey,
+                address intermediateCurrency,
                 bytes hookData
-              )`
-            ],
+              )[] path,
+              uint128 amountIn,
+              uint128 amountOutMinimum)`
+          ],
+          [
             [
-              [
-                poolKeys,
-                zeroForOnes,
-                BigNumber.from(amountIn.quotient.toString()),
-                minAmountOut,
-                '0x'
-              ]
+              currencyIn,
+              path,
+              BigNumber.from(amountIn.quotient.toString()),
+              minAmountOut
             ]
-          )
-        ]
+          ]
+        );
+
+        params.push(exactInputEncoded)
       }
 
       params.push(

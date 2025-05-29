@@ -499,7 +499,7 @@ export default {
         // if (senderDetails.value.balances[fromTokenAddress.value] < fromAmount.value) 
         //   throw new Error('Not enough balance of ' + token.symbol)
 
-        const {success, tx, warnings, error} = await executeSwapExactIn(trade.value, senderDetails.value, 2000, props.gasPrice);
+        const {success, tx, warnings, error} = await executeSwapExactIn(trade.value, senderDetails.value, 200, props.gasPrice);
         if (!success || !tx) {
           if (error)
             console.error(error)
