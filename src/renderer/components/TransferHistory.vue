@@ -4,10 +4,12 @@
     <transition-group name="transfer" tag="ul">
       <li v-for="(t, index) in trades" :key="t.timestamp" @click="openTxDetails(t.txId)">
         {{ t.hasFailed ? '❌' : (t.isConfirmed ? '✅' : '⏳') }}
-        {{ t.fromAmount }} {{ t.fromTokenSymbol || t.fromToken?.symbol }} -> 
-        <span v-if="t.toAmount"> {{ (!t.toAmount || t.toAmount === 'unknown') ? t.expectedToAmount : (t.toAmount + ' (' + t.expectedToAmount + ')') }}  </span>
-        <span v-else> {{ t.toAmount || t.expectedToAmount }} </span>
-        {{ t.toTokenSymbol || t.toToken?.symbol }}
+        <span class="bold">
+          {{ t.fromAmount }} {{ t.fromTokenSymbol || t.fromToken?.symbol }} -> 
+          <span v-if="t.toAmount"> {{ (!t.toAmount || t.toAmount === 'unknown') ? t.expectedToAmount : (t.toAmount + ' (' + t.expectedToAmount + ')') }}  </span>
+          <span v-else> {{ t.toAmount || t.expectedToAmount }} </span>
+          {{ t.toTokenSymbol || t.toToken?.symbol }}
+        </span>
         from {{ t.senderName || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
         <span v-if="t.gasCost">; gas: ${{ t.gasCost.substring(0, 4)}} </span>
       </li>
@@ -33,7 +35,8 @@ export default {
       type: Object,
     }
   },
-  setup(props) {
+  emits: ['confirmedTrade'],
+  setup(props, {emit}) {
     // Utility function to format UNIX timestamps.
     function formatTimestamp(timestamp) {
       const date = new Date(timestamp);
@@ -108,6 +111,7 @@ export default {
         await new Promise((r) => setTimeout(r, 3000));
         const receipt = await toRaw(props.provider).getTransactionReceipt(trade.txId)
         if (receipt) {
+          emit('confirmedTrade', trade);
           if (receipt.status === '1' || receipt.status === 1) {
             trade.isConfirmed = true;
             const {gas, tokens} = await analyseReceipt(trade, receipt, toRaw(props.provider))
@@ -165,5 +169,8 @@ li {
   opacity: 1;
   transform: translateY(0);
 }
-
+.bold, .bold span {
+  font-weight: 600;
+  font-size: 14px !important;
+}
 </style>

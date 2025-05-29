@@ -212,7 +212,7 @@ async function sendTransaction(transfer) {
 
     const txData = await erc20Contract['transfer'].populateTransaction(recipient, amount);
     txData.gasLimit = 500000;
-    txData.maxFeePerGas = ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9);
+    txData.maxFeePerGas = ethers.utils.parseUnits((Number(gasPrice) * 1.65 / 1000000000).toFixed(3), 9);
     txData.maxPriorityFeePerGas = ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9);
     console.log(txData);
     let txResponse;
@@ -264,7 +264,7 @@ async function approveSpender({from, contractAddress, spender}) {
       warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
     
     const overrides = {
-      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9),
+      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.65 / 1000000000).toFixed(3), 9),
       maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
     };
 
@@ -278,8 +278,7 @@ async function approveSpender({from, contractAddress, spender}) {
     if (Number(allowance) === 0 || Number(allowance) < 1e38) {
       const erc20WithSigner = erc20.connect(wallet);
       const tx1 = await erc20WithSigner.approve(spender, ethers.constants.MaxUint256, overrides);
-      console.log(tx1?.nonce);
-      await tx1.wait();
+      await new Promise(r => setTimeout(r, 10000));
     }
 
     const PERMIT2_ABI = [
@@ -297,7 +296,6 @@ async function approveSpender({from, contractAddress, spender}) {
         Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50,
         overrides
       );
-      console.log(tx2?.nonce);
       await tx2.wait();
     }
 
@@ -330,19 +328,18 @@ async function sendTrade({tradeDetailsString, args, onlyEstimate}) {
       if (Number(rawAllowance) === 0) {
         throw new Error('Insufficient allowance on ' + tradeDetails.fromToken.symbol);
       }
+
+      const PERMIT2_ABI = [
+        "function approve(address token, address spender, uint160 amount, uint48 expiration) external",
+        "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
+      ];
+      const permit2Contract = new ethers.Contract(PERMIT2_UNISWAPV4_ADDRESS, PERMIT2_ABI, wallet);
+
+      let results = await permit2Contract.allowance(wallet.address, tradeDetails?.fromToken?.address, UNIVERSAL_ROUTER_ADDRESS);
+      if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
+        throw new Error('Insufficient allowance on ' + tradeDetails.fromToken.symbol + ' on PERMIT2');
+      }
     }
-
-    const PERMIT2_ABI = [
-      "function approve(address token, address spender, uint160 amount, uint48 expiration) external",
-      "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
-    ];
-    const permit2Contract = new ethers.Contract(PERMIT2_UNISWAPV4_ADDRESS, PERMIT2_ABI, wallet);
-
-    let results = await permit2Contract.allowance(wallet.address, tradeDetails?.fromToken?.address, UNIVERSAL_ROUTER_ADDRESS);
-    if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
-      throw new Error('Insufficient allowance on ' + tradeDetails.fromToken.symbol + ' on PERMIT2');
-    }
-
     const router = new ethers.Contract(UNIVERSAL_ROUTER_ADDRESS, UNIVERSAL_ROUTER_ABI, wallet);
     
     const balance = await provider.getBalance(wallet.address);

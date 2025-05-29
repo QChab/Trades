@@ -12,7 +12,6 @@ import { ethers } from 'ethers';
 
 export default {
   name: 'GasPrice',
-  // The component accepts a prop to set the polling interval (in milliseconds)
   props: {
     pollInterval: {
       type: Number,
@@ -26,7 +25,6 @@ export default {
       type: Object,
     }
   },
-  // Define the custom event this component will emit
   emits: ['update:gasPrice'],
   setup(props, { emit }) {
     // Reactive variable to store the fetched gas price (in wei as a BigNumber)

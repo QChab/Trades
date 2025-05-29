@@ -98,6 +98,7 @@
             :maxGasPrice="maxGasPrice * 1000000000"
             :ethPrice="ethPrice"
             :provider="provider"
+            :confirmedTrade="confirmedTrade"
           />
         </div>
 
@@ -118,6 +119,7 @@
             :infuraKeys="infuraKeys"
           /> -->
           <TransferHistory 
+            @confirmedTrade="setConfirmedTrade"
             :trades="trades"
             :ethPrice="ethPrice"
             :provider="provider"
@@ -128,7 +130,7 @@
   </template>
 
   <script>
-  import { watch, shallowRef, onMounted, onBeforeMount, reactive, ref, markRaw} from 'vue';
+  import { watch, shallowRef, onMounted, onBeforeMount, reactive, ref, markRaw, toRaw} from 'vue';
   import FileManager from './components/FileManager.vue';
   import ManualTrading from './components/ManualTrading.vue';
   import TransferHistory from './components/TransferHistory.vue';
@@ -157,6 +159,7 @@
       const loadedAddresses = ref([]);
 
       const isTestMode = ref(false);
+      const confirmedTrade = ref({});
 
       const maxGasPrice = ref(3);
 
@@ -278,24 +281,24 @@
       ];
       
       const getBalance = async (address, token) => {
+        console.log('fetching balance ' + token.symbol)
         if (isTestMode.value) {
           return Math.floor(Math.random() * 60);
         }
 
-        const contract = new ethers.Contract(token.address, erc20Abi, provider.value);
+        const contract = new ethers.Contract(token.address, erc20Abi, toRaw(provider.value));
         if (!token.decimals)
           token.decimals = await contract.decimals();
 
         let balance;
         if (token.address === '0x0000000000000000000000000000000000000000')
-          balance = await provider.value.getBalance(address);
+          balance = await toRaw(provider.value).getBalance(address);
         else
           balance = await contract.balanceOf(address)
+        console.log({balance})
         if (balance.toString() === "0") return 0;
         
-        // const balanceOffset = balanceOffsetByTokenByAddress[token.address] && balanceOffsetByTokenByAddress[token.address][address] ? balanceOffsetByTokenByAddress[token.address][address] : 0;
-        const balanceOffset = 0;
-        balance = Number(balance) * Math.pow(10, -Number(token.decimals)) - balanceOffset;
+        balance = Number(balance) * Math.pow(10, -Number(token.decimals));
         console.log("ERC20 balance:", Number(balance));
         return Number(balance);
       };
@@ -473,6 +476,10 @@
         infuraKeys.value = await window.electronAPI.deleteInfuraKey(index);
       };
 
+      const setConfirmedTrade = (trade) => {
+        confirmedTrade.value = trade;
+      }
+
       return {
         setCurrentSettings,
         currentSettings,
@@ -506,6 +513,8 @@
         ethPrice,
         refreshBalance,
         provider,
+        setConfirmedTrade,
+        confirmedTrade,
       }
     }
   };
@@ -624,6 +633,7 @@
 
   .private-keys {
     padding-bottom: 10px;
+    max-width: 400px;
   }
 
   .center {
