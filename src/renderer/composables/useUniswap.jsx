@@ -120,27 +120,19 @@ export function useUniswapV4() {
     const tokenIn = tokenInObject.address.toLowerCase();
     const tokenOut = tokenOutObject.address.toLowerCase();
 
-    // return {
-    //   tokenA: new Token(chainId, tokenIn, tokenInObject.decimals, tokenInObject.symbol),
-    //   tokenB: new Token(chainId, tokenOut, tokenOutObject.decimals, tokenOutObject.symbol)
-    // };
     const tokenA = tokenIn === nativeAddress
-      // ETHER is a NativeCurrency instance for chainId
       ? Ether.onChain(chainId)
-      // WETH9[chainId] is the wrapped-ETH Token if you need it for pool construction
-      : new Token(chainId, tokenIn, tokenInObject.decimals, tokenInObject.symbol);
+      : new Token(chainId, tokenIn, Number(tokenInObject.decimals), tokenInObject.symbol);
 
     const tokenB = tokenOut === nativeAddress
       ? Ether.onChain(chainId)
-      : new Token(chainId, tokenOut, tokenOutObject.decimals, tokenOutObject.symbol);
+      : new Token(chainId, tokenOut, Number(tokenOutObject.decimals), tokenOutObject.symbol);
 
-    console.log(tokenA)
     if (tokenIn === nativeAddress) {
       tokenA.address = nativeAddress;
     } else if (tokenOut === nativeAddress) {
       tokenB.address = nativeAddress;
     }
-    console.log(tokenA)
 
     return {tokenA, tokenB}
   }
@@ -148,62 +140,99 @@ export function useUniswapV4() {
   async function findPossiblePaths(tokenInObject, tokenOutObject) {
     const tokenIn = tokenInObject.address.toLowerCase();
     const tokenOut = tokenOutObject.address.toLowerCase();
-
-    // Direct pools
-    const directPoolsQuery = gql`
+    // --- 1) Fetch all pools involving tokenIn ---
+    
+    const poolsInQuery = gql`
       query($a: String!, $b: String!){
-        pools(
-          where:{token0_in:[$a,$b],token1_in:[$a,$b]},
+        poolsEth: pools(
+          where:{
+            token0_in:[$a,$b,"0x0000000000000000000000000000000000000000"],
+            token1_in:[$a,$b,"0x0000000000000000000000000000000000000000"],
+            liquidity_not:"0",
+          },
           first: 50
         ) {
-          id
-          feeTier
-          hooks
-          liquidity
-          sqrtPrice
-          tick
-          tickSpacing
-          token0Price
-          token1Price
-          totalValueLockedUSD
-          token0 {
-            id
-          }
-          token1 {
-            id
-          }
-          ticks(
-            where: { liquidityGross_not: "0" },
-            first: 1000
-          ) {
-            tickIdx
-            liquidityNet
-            liquidityGross
-          }
+          ...PoolFields
+        }
+        poolsUSDT: pools(
+          where:{
+            token0_in:[$a,$b,"0xdac17f958d2ee523a2206206994597c13d831ec7"],
+            token1_in:[$a,$b,"0xdac17f958d2ee523a2206206994597c13d831ec7"],
+            liquidity_not:"0",
+          },
+          first: 20
+        ) {
+          ...PoolFields
+        }
+        poolsUSDC: pools(
+          where:{
+            token0_in:[$a,$b,"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"],
+            token1_in:[$a,$b,"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"],
+            liquidity_not:"0",
+          },
+          first: 20
+        ) {
+          ...PoolFields
+        }
+        poolsDAI: pools(
+          where:{
+            token0_in:[$a,$b,"0x6b175474e89094c44da98b954eedeac495271d0f"],
+            token1_in:[$a,$b,"0x6b175474e89094c44da98b954eedeac495271d0f"],
+            liquidity_not:"0",
+          },
+          first: 20
+        ) {
+          ...PoolFields
+        }
+      }
+      fragment PoolFields on Pool {
+        id feeTier hooks liquidity sqrtPrice tick tickSpacing totalValueLockedUSD
+        token0 { id decimals symbol } token1 { id decimals symbol }
+        ticks(where: { liquidityGross_not: "0" }, first: 1000) {
+          tickIdx liquidityNet liquidityGross
         }
       }
     `;
-    const { pools: directPools } = await request(SUBGRAPH_URL, directPoolsQuery, { a: tokenIn, b: tokenOut });
-    
-    const {tokenA, tokenB} = instantiateTokens(tokenInObject, tokenOutObject);
+    // token0Price
+    // token1Price
+    // totalValueLockedUSD_gt:"10"
+    // pools0: pools(
+    //       where:{
+    //         token0_in:[$a,$b],
+    //         liquidity_not:"0",
+    //       },
+    //       first: 100
+    //     ) {
+    //       ...PoolFields
+    //     }
+    //     pools1: pools(
+    //       where:{
+    //         token1_in:[$a,$b],
+    //         liquidity_not:"0",
+    //       },
+    //       first: 100
+    //     ) {
+    //       ...PoolFields
+    //     }
 
+    const { poolsEth, poolsUSDT, poolsUSDC, poolsDAI } = await request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut });
+  
+      // --- 3) Combine and dedupe ---
+      // , ...pools0, ...pools1
+    const rawPools = [...poolsEth, ...poolsUSDT, ...poolsUSDC, ...poolsDAI];
+    const unique = new Map();
+    rawPools.forEach(p => unique.set(p.id, p));
+    const candidatePools = Array.from(unique.values());
+  
     const pools = [];
-    for (const pool of directPools) {
-      if (!pool.liquidity || pool.liquidity === "0" || Number(pool.totalValueLockedUSD) < 10) continue // TOOD: skip if liquidity very low
-      console.log(pool);
+    for (const pool of candidatePools) {
+      if (!pool.liquidity || pool.liquidity === "0") continue
 
-      let token0, token1;
-      if (pool.token0?.id.toLowerCase() !== tokenA.address.toLowerCase()) {
-        console.log('inverting')
-        token0 = tokenB;
-        token1 = tokenA;
-      } else {
-        token0 = tokenA;
-        token1 = tokenB;
-      }
+      const {tokenA, tokenB} = instantiateTokens(
+        {address: pool.token0?.id, symbol: pool.token0?.symbol, decimals: pool.token0?.decimals},
+        {address: pool.token1?.id, symbol: pool.token1?.symbol, decimals: pool.token1?.decimals},
+      );
       
-      console.log('building ' + pool.id)
-
       const { tick: safeTick, sqrt: sqrtAligned } =
         alignTickAndPrice(pool.sqrtPrice, Number(pool.tickSpacing));
       
@@ -211,20 +240,17 @@ export function useUniswapV4() {
       const tickProvider  = new TickListDataProvider(cleanedTicks, Number(pool.tickSpacing))
 
       const poolInstance = new Pool(
-        token0, 
-        token1, 
-        Number(pool.feeTier), 
-        Number(pool.tickSpacing), 
+        tokenA,
+        tokenB,
+        Number(pool.feeTier),
+        Number(pool.tickSpacing),
         pool.hooks,
-        // JSBI.BigInt(pool.sqrtPrice),
         sqrtAligned,
         JSBI.BigInt(pool.liquidity),
         safeTick,
-        // Number(pool.tickSpacing),
         tickProvider,
       );
-      console.log(poolInstance);
-      console.log(pool.id + ' built')
+
       pools.push(poolInstance);
     }
     return pools;
@@ -270,7 +296,7 @@ export function useUniswapV4() {
       throw new Error('[selectBestPath] rawIn cannot be zero');
     }
     if (pools.length === 0) {
-      throw new Error('[selectBestPath] “pools” array is empty – cannot route');
+      throw new Error('No swap path found for this');
     }
 
     const {tokenA, tokenB } = instantiateTokens(tokenInObject, tokenOutObject);
@@ -280,9 +306,9 @@ export function useUniswapV4() {
       const sanePools = [];
       for (const p of pools) {
         if (
-          p.involvesToken(tokenA) &&
-          p.involvesToken(tokenB)
-          // (await isPoolUsable(p, amountIn))
+          (p.involvesToken(tokenA) ||
+          p.involvesToken(tokenB))
+          // && (await isPoolUsable(p, amountIn))
         ) {
           sanePools.push(p);
         }
@@ -291,7 +317,7 @@ export function useUniswapV4() {
       console.log('Sane pools: ' + sanePools.length);
       if (!sanePools.length) return []
 
-      trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
+      trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
     } catch (err) {
       /* The only error the SDK throws here is the dreaded “Invariant failed”.
       Wrap it to give the caller real insight. */
@@ -320,7 +346,7 @@ export function useUniswapV4() {
     }
   }
 
-  async function executeSwapExactInSingle(tradeDetails, senderDetails, slippageBips = 50, gasPrice) {
+  async function executeSwapExactIn(tradeDetails, senderDetails, slippageBips = 50, gasPrice) {
     const trade = tradeDetails.swap;
     if (!trade.route.pools || !trade.route.pools[0])
       return {success: false, error: new Error('Missing route pools')};
@@ -339,13 +365,13 @@ export function useUniswapV4() {
       const amountOut   = trade.outputAmount        // CurrencyAmount
 
       // 2) Build the PoolKey struct to identify our v4 pool
-      const poolKey = {
-        currency0: route.pools[0].token0.address,      // lower-sorted token
-        currency1: route.pools[0].token1.address,      // higher-sorted token
-        fee:       route.pools[0].fee,                 // e.g. 3000
-        tickSpacing: route.pools[0].tickSpacing,       // e.g. 60
-        hooks:     route.pools[0].hooks                // usually the zero-address
-      }
+      const poolKeys = route.pools.map(pool => ({
+        currency0: pool.token0.address,      // lower-sorted token
+        currency1: pool.token1.address,      // higher-sorted token
+        fee:       pool.fee,                 // e.g. 3000
+        tickSpacing: pool.tickSpacing,       // e.g. 60
+        hooks:     pool.hooks                // usually the zero-address
+      }));
 
       // 3) Compute minimumAmountOut based on slippage tolerance
       //    (e.g. amountOut * (1 - slippageBips/10_000))
@@ -365,42 +391,82 @@ export function useUniswapV4() {
       const actions = ethers.utils.solidityPack(
         ['uint8','uint8','uint8'],
         [
-          Actions.SWAP_EXACT_IN_SINGLE,
+          route.pools.length === 1 ? Actions.SWAP_EXACT_IN_SINGLE : Actions.SWAP_EXACT_IN,
           Actions.SETTLE_ALL,
           Actions.TAKE_ALL
         ]
       )
 
-      // 6) Prepare the three sets of parameters matching those actions:
-      //    0: ExactInputSingleParams, 1: settle (tokenIn, amountIn), 2: take (tokenOut, minOut)
-      const params = [
-        // --- 0) swap config ---
-        ethers.utils.defaultAbiCoder.encode(
-          [
-            `(tuple(
-               address currency0,
-               address currency1,
-               uint24 fee,
-               int24 tickSpacing,
-               address hooks
-             ) poolKey,
-             bool zeroForOne,
-             uint128 amountIn,
-             uint128 amountOutMinimum,
-             bytes hookData)`
-          ],
-          [
-            {
-              poolKey,
-              zeroForOne: route.pools[0].token0.address.toLowerCase()
-                           === trade.inputAmount.currency.address.toLowerCase(),
-              amountIn:    BigNumber.from(amountIn.quotient.toString()),
-              amountOutMinimum: minAmountOut,
-              hookData:    '0x'
-            }
-          ]
-        ),
+      const zeroForOnes = route.pools.map(p =>
+        p.token0.address.toLowerCase() === trade.inputAmount.currency.address.toLowerCase()
+      );
 
+      let params = []
+      if (route.pools.length === 1) {
+        params.push(
+          ethers.utils.defaultAbiCoder.encode(
+            [
+              `(tuple(
+                address currency0,
+                address currency1,
+                uint24 fee,
+                int24 tickSpacing,
+                address hooks
+              ) poolKey,
+              bool zeroForOne,
+              uint128 amountIn,
+              uint128 amountOutMinimum,
+              bytes hookData)`
+            ],
+            [
+              {
+                poolKey: poolKeys[0],
+                zeroForOne: zeroForOnes[0],
+                amountIn: BigNumber.from(amountIn.quotient.toString()),
+                amountOutMinimum: minAmountOut,
+                hookData: '0x'
+              }
+            ]
+          )
+        )
+      } else {
+        const currencyIn =
+          trade.inputAmount.currency.isNative
+            ? ethers.constants.AddressZero
+            : trade.inputAmount.currency.address;
+
+        // 2. Build each PathKey in the expected shape
+        const path = route.pools.map((pool, i) => ({
+          intermediateCurrency:
+            route.currencyPath[i + 1]?.address ?? ethers.constants.AddressZero,
+          fee:         pool.fee,          // uint24
+          tickSpacing: pool.tickSpacing,  // int24
+          hooks:       pool.hooks,
+          hookData:    '0x'
+        }));
+
+        const exactInputEncoded = ethers.utils.defaultAbiCoder.encode(
+          [
+            'tuple(address,(address,uint24,int24,address,bytes)[],uint128,uint128)'
+          ],
+          [[
+            currencyIn,
+            path.map(p => [              // each PathKey also positional
+              p.intermediateCurrency,
+              p.fee,
+              p.tickSpacing,
+              p.hooks,
+              p.hookData
+            ]),
+            BigNumber.from(amountIn.quotient.toString()),
+            minAmountOut
+          ]]
+        );
+
+        params.push(exactInputEncoded)
+      }
+
+      params.push(
         // --- 1) SETTLE_ALL params: pull `amountIn` of currency0 from user via Permit2 ---
         ethers.utils.defaultAbiCoder.encode(
           ['address','uint256'],
@@ -412,7 +478,7 @@ export function useUniswapV4() {
           ['address','uint256'],
           [ trade.outputAmount.currency.address, minAmountOut.toString() ]
         )
-      ]
+      )
 
       // 7) Finally, bundle actions+params into the single `inputs[0]`
       //    (the Universal Router expects inputs[i] = abi.encode(actions, params)) :contentReference[oaicite:4]{index=4}
@@ -422,9 +488,6 @@ export function useUniswapV4() {
           [ actions, params ]
         )
       ]
-
-      console.log({amountIn:    BigNumber.from(amountIn.quotient.toString()),
-              amountOutMinimum: minAmountOut})
 
       // 8) Build a tight deadline (now + 120s) to protect from stale execution
       const deadline = Math.floor(Date.now() / 1_000) + 120
@@ -443,8 +506,9 @@ export function useUniswapV4() {
           deadline,
           {
             value: useNative ? amountIn.quotient.toString() : 0,
-            maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.45 / 1000000000).toFixed(3), 9),
+            maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.65 / 1000000000).toFixed(3), 9),
             maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
+            gasLimit: 500000,
           }
         ]
       })
@@ -462,6 +526,6 @@ export function useUniswapV4() {
     findPossiblePaths,
     selectBestPath,
     findAndSelectBestPath,
-    executeSwapExactInSingle,
+    executeSwapExactIn,
   };
 }

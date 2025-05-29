@@ -34,7 +34,7 @@
                   :key="'fromToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} ({{ senderDetails?.balances && senderDetails.balances[token.address] ? senderDetails.balances[token.address].toFixed(5) : 0 }})
+                  {{ token.symbol }} ({{ computedBalancesByAddress[senderDetails?.address] && computedBalancesByAddress[senderDetails.address][token.address] ? computedBalancesByAddress[senderDetails.address][token.address].toFixed(5) : 0 }})
                 </option>
               </select>
             </div>
@@ -53,13 +53,17 @@
                   :key="'toToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} (${{ token.price.toFixed(2) }})
+                  {{ token.symbol }} (${{ token.price.toFixed(5) }})
                 </option>
               </select>
             </div>
             <span v-if="trade?.toAmount && !isFetchingPrice" class="usd-amount">
-              ${{ (Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1)  }}
-              ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price -Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(3) }}%)
+              <span v-if="tokensByAddresses[toTokenAddress].price">
+                ${{ (Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1) }}
+              </span>
+              <span v-if="tokensByAddresses[fromTokenAddress].price && tokensByAddresses[toTokenAddress].price">
+                ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price -Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(3) }}%)
+              </span>
             </span>
           </div>
           <p class="details-message">{{ priceFetchingMessage }}</p>
@@ -69,7 +73,7 @@
             <select id="sender-address" v-model="senderDetails">
               <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address.address">
                 {{ address.name }} ({{ address?.address.substring(2, 6) }}...):
-                {{ address?.balances && address.balances[fromTokenAddress] ? address.balances[fromTokenAddress].toFixed(5) : 0 }} {{ tokensByAddresses[fromTokenAddress].symbol }}
+                {{ computedBalancesByAddress[address] && computedBalancesByAddress[address][fromTokenAddress] ? computedBalancesByAddress[address][fromTokenAddress].toFixed(5) : 0 }} {{ tokensByAddresses[fromTokenAddress].symbol }}
               </option>
             </select>
           </div>
@@ -111,7 +115,7 @@
                 </label>
                 <label>
                   <div class="line">
-                    <span>Price: ${{ token.price.toFixed(3) }}</span>
+                    <span>Price: ${{ token.price.toFixed(5) }}</span>
                   </div>
                 </label>
               </div>
@@ -139,7 +143,7 @@
 </template>
 
 <script>
-import { ref, reactive, watch, onMounted, toRaw } from 'vue';
+import { ref, reactive, watch, onMounted, toRaw, computed } from 'vue';
 import chevronDownImage from '@/../assets/chevron-down.svg';
 import reverseImage from '@/../assets/reverse.svg';
 import downArrowImage from '@/../assets/down-arrow.svg';
@@ -170,6 +174,9 @@ export default {
     },
     provider: {
       type: Object,
+    },
+    confirmedTrade: {
+      type: Object,
     }
   },
   emits: ['update:settings', 'update:trade', 'refreshBalance'],
@@ -183,7 +190,7 @@ export default {
 
     const {
       findAndSelectBestPath,
-      executeSwapExactInSingle,
+      executeSwapExactIn,
     } = useUniswapV4();
     const trade = ref();
     const trades = ref([]);
@@ -222,6 +229,36 @@ export default {
       { price: 0, address: '', symbol: '', decimals: null},
     ]);
 
+    const balanceOffsetByTokenByAddress = reactive({});
+
+    watch(() => props.confirmedTrade, (confirmedTradeValue) => {
+      console.log('CONFIRMED TRADE VALUUUUUE')
+      console.log(confirmedTradeValue)
+      const sender = confirmedTradeValue?.sender?.address;
+      const tokenAddress = confirmedTradeValue?.fromToken?.address;
+
+      if (!sender || !tokenAddress) return
+      if (!balanceOffsetByTokenByAddress[tokenAddress]) return
+      if (!balanceOffsetByTokenByAddress[tokenAddress][sender]) return
+
+      if (balanceOffsetByTokenByAddress[tokenAddress][sender] >= Number(confirmedTradeValue.fromAmount))
+        balanceOffsetByTokenByAddress[tokenAddress][sender] -= Number(confirmedTradeValue.fromAmount);
+    });
+
+    const computedBalancesByAddress = computed(() => {
+      let computedBalances = {};
+      for (const detail of props.addresses) {
+        if (!computedBalances[detail.address]) computedBalances[detail.address] = {}
+        
+        if (!detail.balances) continue;
+        for (const tokenAddress in detail.balances) {
+          computedBalances[detail.address][tokenAddress] = detail.balances[tokenAddress];
+          if (balanceOffsetByTokenByAddress[tokenAddress] && balanceOffsetByTokenByAddress[tokenAddress][detail.address])
+            computedBalances[detail.address][tokenAddress] -= balanceOffsetByTokenByAddress[tokenAddress][detail.address];
+        }
+      }
+      return computedBalances;
+    })
 
     const ERC20_ABI = [
       "function symbol() view returns (string)",
@@ -272,6 +309,7 @@ export default {
               fromAmount
             );
             isSwapButtonDisabled.value = false;
+            console.log(bestTrade)
             if (!bestTrade || !bestTrade.minimumAmountOut)
               throw new Error('No output amount found')
 
@@ -282,7 +320,7 @@ export default {
               fromToken: tokensByAddresses.value[fromTokenAddressValue],
               toToken: tokensByAddresses.value[toTokenAddressValue],
               fromAmount: fromAmountValue + '',
-              toAmount: bestTrade?.outputAmount?.toSignificant(6),
+              toAmount: bestTrade?.outputAmount?.toSignificant(5),
               // toAmount: bestTrade.minimumAmountOut(slippagePercent),
             }
 
@@ -311,7 +349,10 @@ export default {
 
           } catch (err) {
             isSwapButtonDisabled.value = true;
-            priceFetchingMessage.value = err;
+            if (err.toString().includes('fractional component exceeds decimals')) {
+              priceFetchingMessage.value = 'Error: Too much decimals in the input amount';
+            } else
+              priceFetchingMessage.value = err;
             needsToApprove.value = false;
             console.error(err);
           }
@@ -342,6 +383,7 @@ export default {
         body
       }).then(r => r.json());
 
+      console.log(tokenAddr, data?.token)
       // token not found ⇢ return 0
       const derivedEth = data?.token?.derivedETH
         ? Number(data.token.derivedETH)
@@ -490,10 +532,14 @@ export default {
         trade.value.sentDate = new Date();
         trade.value.txId = 'pending';
 
-        // if (senderDetails.value.balances[fromTokenAddress.value] < fromAmount.value) 
-        //   throw new Error('Not enough balance of ' + token.symbol)
+        if (fromTokenAddress.value === '0x0000000000000000000000000000000000000000') {
+          if (!senderDetails.value.balances || !senderDetails.value.balances[fromTokenAddress.value])
+            throw new Error('Insufficient ETH balance on ' + senderDetails.value.address)
+          if ((computedBalancesByAddress[senderDetails.value.address][fromTokenAddress.value] - (fromAmount.value)) < .004)
+            throw new Error('You must keep more ETH for gas cost on ' + senderDetails.value.address)
+        }
 
-        const {success, tx, warnings, error} = await executeSwapExactInSingle(trade.value, senderDetails.value, 2000, props.gasPrice);
+        const {success, tx, warnings, error} = await executeSwapExactIn(trade.value, senderDetails.value, 500, props.gasPrice);
         if (!success || !tx) {
           if (error)
             console.error(error)
@@ -503,13 +549,24 @@ export default {
           trade.value.txId = null;
           if (error.toString().includes('insufficient funds for intrinsic transaction cost'))
             swapMessage.value = 'Error: Not enough ETH on the address';
+          else if (error.toString().includes('cannot estimate gas; transaction may fail or may require manual gas limit'))
+            swapMessage.value = 'Error: Preventing failed swap';
           else
             swapMessage.value = error;
+
           if (warnings && warnings.length)
             swapMessage.value += '    | Warnings: ' + warnings.join(' ; ')
           console.log({success, tx, warnings});
           return false;
         }
+
+        if (!balanceOffsetByTokenByAddress[fromTokenAddress.value]) 
+          balanceOffsetByTokenByAddress[fromTokenAddress.value] = {}
+        if (!balanceOffsetByTokenByAddress[fromTokenAddress.value][senderDetails.value.address])
+          balanceOffsetByTokenByAddress[fromTokenAddress.value][senderDetails.value.address] = 0
+        
+        balanceOffsetByTokenByAddress[fromTokenAddress.value][senderDetails.value.address] += fromAmount.value;
+
         trade.value.expectedToAmount = trade.value.toAmount;
         trade.value.txId = tx?.hash;
         emit('update:trade', trade.value);
@@ -523,24 +580,26 @@ export default {
     const approveSpending = async () => {
       try {
         isSwapButtonDisabled.value = true;
+        const originalAddress = senderDetails.value.address;
         const {success, error } = await window.electronAPI.approveSpender(
-          senderDetails.value.address,
+          originalAddress,
           fromTokenAddress.value,
           PERMIT2_UNISWAPV4_ADDRESS,
           props.gasPrice
         );
 
-        if (!success)
+        if (!success) {
           throw error;
+        }
         
         let allowance = 0;
-        while (allowance = 0) {
+        while (allowance = 0 && originalAddress === senderDetails.value.address) {
           const erc20 = new ethers.Contract(
             fromTokenAddress.value,
             ERC20_ABI,
             toRaw(props.provider),
           );
-          allowance = Number(await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS));
+          allowance = Number(await erc20.allowance(originalAddress, PERMIT2_UNISWAPV4_ADDRESS));
           console.log(allowance)
           if (!allowance) await new Promise(r => setTimeout(r, 2000))
         }
@@ -549,8 +608,8 @@ export default {
           PERMIT2_ABI,
           toRaw(props.provider),
         )
-        while (allowance = 0) {
-          let results = await PERMIT2_CONTRACT.allowance(senderDetails.value.address, fromTokenAddress.value, UNIVERSAL_ROUTER_ADDRESS);
+        while (allowance = 0 && originalAddress === senderDetails.value.address) {
+          let results = await PERMIT2_CONTRACT.allowance(originalAddress, fromTokenAddress.value, UNIVERSAL_ROUTER_ADDRESS);
           if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
             await new Promise(r => setTimeout(r, 2000))
           }
@@ -559,6 +618,10 @@ export default {
         needsToApprove.value = false;
       } catch (err) {
         console.error(err);
+        if (err?.toString().includes('insufficient funds for intrinsic transaction cost'))
+          swapMessage.value = 'Error: Not enough ETH on the address ' + originalAddress;
+        else
+          swapMessage.value = err;
       }
       isSwapButtonDisabled.value = false;
     }
@@ -590,6 +653,8 @@ export default {
       swapMessage,
       needsToApprove,
       approveSpending,
+      balanceOffsetByTokenByAddress,
+      computedBalancesByAddress,
     };
   }
 };
@@ -866,7 +931,7 @@ input.token-name {
   text-align: left;
   padding: 10px;
   font-weight: 500;
-  font-size: 22px;
+  font-size: 23px;
   display: inline-block;
 }
 .to-swap span {
@@ -1029,9 +1094,16 @@ button::-webkit-focus-inner {
   word-break: break-all;
 }
 
-.usd-amount {
+.usd-amount, .usd-amount span {
   font-size: 12px !important;
   color: #666;
   margin-left: 15px;
+  display: inline-block;
+  width: auto;
+}
+.usd-amount span {
+  margin-left: 0;
+  padding: 0;
+  margin-right: 5px;
 }
 </style>
