@@ -556,11 +556,11 @@ export default {
           }
           allowance = results[0];
         }
+        needsToApprove.value = false;
       } catch (err) {
         console.error(err);
       }
       isSwapButtonDisabled.value = false;
-      needsToApprove.value = false;
     }
 
     return {

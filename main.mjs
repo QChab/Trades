@@ -104,8 +104,8 @@ async function saveTradeInDB(trade) {
 function failTradeInDB(txId, gasCost) {
   const sql = `
     UPDATE trades
-    SET hasFailed = 1
-      gasCost  = $gasCost,
+    SET hasFailed = 1,
+        gasCost  = $gasCost
     WHERE  txId = $txId
   `;
 
