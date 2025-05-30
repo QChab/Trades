@@ -319,7 +319,7 @@ export default {
             console.log(bestTrade)
             if (!bestTrade || !bestTrade.minimumAmountOut)
               throw new Error('No output amount found')
-
+            
             const slippagePercent = new Percent(Number(slippage.value), 10_000);
             console.log(slippagePercent);
             trade.value = {
@@ -330,7 +330,7 @@ export default {
               toAmount: bestTrade?.outputAmount?.toSignificant(5),
               // toAmount: bestTrade.minimumAmountOut(slippagePercent),
             }
-
+            console.log(bestTrade.swaps[0].route.pools[0].liquidity.toString())
             if (trade.value.fromToken.address !== '0x0000000000000000000000000000000000000000') {
               const erc20 = new ethers.Contract(
                 fromTokenAddressValue,

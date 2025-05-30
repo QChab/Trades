@@ -226,7 +226,7 @@ export function useUniswapV4() {
   
     const pools = [];
     for (const pool of candidatePools) {
-      if (!pool.liquidity || Number(pool.liquidity) <= 1000000000) continue
+      if (!pool.liquidity || Number(pool.liquidity) <= 1000000000000000000) continue
 
       const {tokenA, tokenB} = instantiateTokens(
         {address: pool.token0?.id, symbol: pool.token0?.symbol, decimals: pool.token0?.decimals},
