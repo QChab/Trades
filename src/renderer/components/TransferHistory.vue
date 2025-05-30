@@ -12,6 +12,7 @@
         </span>
         from {{ t.senderName || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
         <span v-if="t.gasCost">; gas: ${{ t.gasCost.substring(0, 4)}} </span>
+        <span @click.stop="deleteTrade(t, index)" class="delete">Delete</span>
       </li>
     </transition-group>
   </div>
@@ -127,10 +128,16 @@ export default {
         }
       }
     }
-    
+
+    const deleteTrade = (trade, index) => {
+      props.trades.splice(index, 1);
+      window.electronAPI.deleteTrade(trade.txId);
+    }
+
     return { 
       formatTimestamp,
       openTxDetails,
+      deleteTrade,
     };
   }
 };
@@ -152,6 +159,7 @@ ul {
 li {
   padding: 5px 0;
   border-bottom: 1px solid #eee;
+  position: relative;
 }
 
 
@@ -172,5 +180,20 @@ li {
 .bold, .bold span {
   font-weight: 600;
   font-size: 14px !important;
+}
+
+.delete {
+  display: none;
+  right: 0px;
+  position: absolute;
+  cursor: pointer;
+}
+
+li:hover .delete {
+  display: inline-block;
+}
+
+.delete:hover {
+  text-decoration: underline;
 }
 </style>

@@ -186,7 +186,7 @@ export function useUniswapV4() {
         }
       }
       fragment PoolFields on Pool {
-        id feeTier hooks liquidity sqrtPrice tick tickSpacing totalValueLockedUSD
+        id feeTier hooks liquidity sqrtPrice tick tickSpacing totalValueLockedUSD token0Price token1Price
         token0 { id decimals symbol } token1 { id decimals symbol }
         ticks(where: { liquidityGross_not: "0" }, first: 1000) {
           tickIdx liquidityNet liquidityGross
@@ -226,7 +226,7 @@ export function useUniswapV4() {
   
     const pools = [];
     for (const pool of candidatePools) {
-      if (!pool.liquidity || pool.liquidity === "0") continue
+      if (!pool.liquidity || Number(pool.liquidity) <= 1000000000) continue
 
       const {tokenA, tokenB} = instantiateTokens(
         {address: pool.token0?.id, symbol: pool.token0?.symbol, decimals: pool.token0?.decimals},
@@ -317,7 +317,11 @@ export function useUniswapV4() {
       console.log('Sane pools: ' + sanePools.length);
       if (!sanePools.length) return []
 
-      trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
+      if (tokenOutObject.address === '0x0000000000000000000000000000000000000000')
+        trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
+      else
+        trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
+      
     } catch (err) {
       /* The only error the SDK throws here is the dreaded “Invariant failed”.
       Wrap it to give the caller real insight. */
@@ -508,7 +512,6 @@ export function useUniswapV4() {
             value: useNative ? amountIn.quotient.toString() : 0,
             maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.65 / 1000000000).toFixed(3), 9),
             maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
-            gasLimit: 500000,
           }
         ]
       })

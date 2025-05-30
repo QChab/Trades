@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getTrades: () => ipcRenderer.invoke('get-trades'),
   loadSettings: () => ipcRenderer.invoke('load-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
+  deleteTrade: (txId) => ipcRenderer.invoke('delete-trade', txId),
   deleteHistory: () => ipcRenderer.invoke('delete-history'),
   saveAddresses: (addresses, isSource) => ipcRenderer.invoke('save-addresses', addresses, isSource),
   readAddresses: (isSource) => ipcRenderer.invoke('read-addresses', isSource),

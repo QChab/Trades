@@ -11,7 +11,7 @@
           <div class="price-form">
             <div class="tabs-price">
               <div :class="{active: tabPrice === 'market'}" @click="tabPrice = 'market'">Market price</div>
-              <div :class="{active: tabPrice === 'limit'}" @click="tabPrice = 'limit'">Limit price</div>
+              <!-- <div :class="{active: tabPrice === 'limit'}" @click="tabPrice = 'limit'">Limit price</div> -->
             </div>
             <div v-if="tabPrice === 'limit'">
               <p>
@@ -27,14 +27,20 @@
               Sell
             </p>
             <div class="amount-token">
-              <input type="tel" placeholder="0" v-model.number="fromAmount"/>
+              <input   
+                v-model.number="fromAmount"
+                type="number"
+                inputmode="decimal"
+                step="any"
+                placeholder="0"
+              />
               <select id="from-token" v-model="fromTokenAddress">
                 <option 
                   v-for="(token, index) in tokens.filter((token) => token.symbol && token.address && token.decimals && token.symbol !== '' && token.address !== '' )"
                   :key="'fromToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} ({{ computedBalancesByAddress[senderDetails?.address] && computedBalancesByAddress[senderDetails.address][token.address] ? spaceThousands(computedBalancesByAddress[senderDetails.address][token.address].toFixed(5)) : 0 }})
+                  {{ token.symbol }} ({{ computedBalancesByAddress[senderDetails?.address] && computedBalancesByAddress[senderDetails.address][token.address] ? computedBalancesByAddress[senderDetails.address][token.address].toFixed(5) : 0 }})
                 </option>
               </select>
             </div>
@@ -53,7 +59,7 @@
                   :key="'toToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} (${{ spaceThousands(token.price.toFixed(5)) }})
+                  {{ token.symbol }} (${{ token.price.toFixed(5) }})
                 </option>
               </select>
             </div>
@@ -70,12 +76,10 @@
           <div class="address-form">
             <p v-if="trade?.swap">{{ trade?.swap?.swaps?.length }} trade </p> 
             <p>with</p>
-            {{ senderDetails }}
-            {{ computedBalancesByAddress }}
             <select id="sender-address" v-model="senderDetails">
               <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address.address">
                 {{ address.name }} -  0x{{ address?.address.substring(2, 6) }}:
-                {{ computedBalancesByAddress[address] && computedBalancesByAddress[address][fromTokenAddress] ? computedBalancesByAddress[address][fromTokenAddress].toFixed(5) : 0 }} {{ tokensByAddresses[fromTokenAddress].symbol }}
+                {{ computedBalancesByAddress[address.address] && computedBalancesByAddress[address.address][fromTokenAddress] ? computedBalancesByAddress[address.address][fromTokenAddress].toFixed(5) : 0 }} {{ tokensByAddresses[fromTokenAddress].symbol }}
               </option>
             </select>
           </div>
@@ -84,7 +88,7 @@
             {{ isSwapButtonDisabled && trade?.swap ? 'Swapping...' : 'Swap' }}
           </button>
           <button v-else @click="approveSpending()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || !trade?.swap" class="swap-button">
-            {{ (isSwapButtonDisabled && trade.swap) ? 'Approving...' : 'Approve' }}
+            {{ (isSwapButtonDisabled && trade.swap) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
           </button>
         </div>
         <!-- EDITING -->
@@ -334,7 +338,9 @@ export default {
                 toRaw(props.provider),
               );
               let rawAllowance = await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS);
-              if (Number(rawAllowance) === 0 || Number(rawAllowance) < 1e38) {
+              console.log(rawAllowance.toString());
+              if (Number(rawAllowance) === 0 || Number(rawAllowance) < 1e27) {
+                console.log(Number(rawAllowance));
                 needsToApprove.value = true;
               } else {
                 const PERMIT2_CONTRACT = new ethers.Contract(
@@ -343,7 +349,8 @@ export default {
                   toRaw(props.provider),
                 )
                 let results = await PERMIT2_CONTRACT.allowance(senderDetails.value.address, fromTokenAddressValue, UNIVERSAL_ROUTER_ADDRESS);
-                if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
+                if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
+                  console.log(Number[results[0].toString()])
                   needsToApprove.value = true;
                 }
                 console.log(results);
@@ -373,6 +380,11 @@ export default {
 
       if (tokenAddr === '0x0000000000000000000000000000000000000000')
         return ethUsd;
+
+      if (tokenAddr.toLowerCase() === '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48')
+        return 1;
+      if (tokenAddr.toLowerCase() === '0xdac17f958d2ee523a2206206994597c13d831ec7')
+        return 1;
 
       const qry = `
         query ($id: String!) {
@@ -405,7 +417,7 @@ export default {
 
     // setAllTokenPrices();
     watch(() => props.ethPrice, setTokenPrices(tokens));
-    setInterval(() => setTokenPrices(tokens), 60000);
+    setInterval(() => setTokenPrices(tokens), 180000);
   
 
     watch(() => tokens, async (tokensValue) => {
@@ -542,7 +554,7 @@ export default {
             throw new Error('You must keep more ETH for gas cost on ' + senderDetails.value.address)
         }
 
-        const {success, tx, warnings, error} = await executeSwapExactIn(trade.value, senderDetails.value, 500, props.gasPrice);
+        const {success, tx, warnings, error} = await executeSwapExactIn(trade.value, senderDetails.value, 50, props.gasPrice);
         if (!success || !tx) {
           if (error)
             console.error(error)
@@ -613,7 +625,7 @@ export default {
         )
         while (allowance = 0 && originalAddress === senderDetails.value.address) {
           let results = await PERMIT2_CONTRACT.allowance(originalAddress, fromTokenAddress.value, UNIVERSAL_ROUTER_ADDRESS);
-          if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
+          if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
             await new Promise(r => setTimeout(r, 2000))
           }
           allowance = results[0];
@@ -1109,5 +1121,13 @@ button::-webkit-focus-inner {
   margin-left: 0;
   padding: 0;
   margin-right: 5px;
+}
+.amount-token input[type="number"] {
+  margin-right: 0px !important;
+}
+.amount-token input[type="number"]::-webkit-inner-spin-button,
+  .amount-token input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;  /* removes the arrow styling */
+  margin: 0;                 /* prevents a ghost 2 px margin in some cases */
 }
 </style>

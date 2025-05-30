@@ -142,6 +142,21 @@ function confirmTradeInDB (txId, gasCost, toAmount) {
   );
 }
 
+/**
+ * Delete all trades with the given txID.
+ * @param {string} txID  The transaction ID to delete.
+ */
+function deleteTrade(txID) {
+  const sql = `DELETE FROM trades WHERE txID = ?;`;
+
+  db.run(sql, [txID], function (err) {
+    if (err) {
+      console.error(`❌ Failed to delete trades for txID=${txID}:`, err);
+    } else {
+      console.log(`✅ Deleted ${this.changes} trade(s) with txID=${txID}`);
+    }
+  });
+}
 
 function deleteAllTrades() {
   const sql = `DELETE FROM trades;`;
@@ -275,10 +290,10 @@ async function approveSpender({from, contractAddress, spender}) {
     );
 
     const allowance = await erc20.allowance(from, spender);
-    if (Number(allowance) === 0 || Number(allowance) < 1e38) {
+    if (Number(allowance) === 0 || Number(allowance) < 1e27) {
       const erc20WithSigner = erc20.connect(wallet);
-      const tx1 = await erc20WithSigner.approve(spender, ethers.constants.MaxUint256, overrides);
-      await new Promise(r => setTimeout(r, 10000));
+      const tx1 = await erc20WithSigner.approve(spender, '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', overrides);
+      await tx1.wait();
     }
 
     const PERMIT2_ABI = [
@@ -288,11 +303,11 @@ async function approveSpender({from, contractAddress, spender}) {
     const permit2Contract = new ethers.Contract(PERMIT2_UNISWAPV4_ADDRESS, PERMIT2_ABI, wallet);
 
     let results = await permit2Contract.allowance(from, contractAddress, UNIVERSAL_ROUTER_ADDRESS);
-    if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
+    if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
       const tx2 = await permit2Contract.approve(
         contractAddress,
         UNIVERSAL_ROUTER_ADDRESS,
-        '100000000000000000000000000000000000000000',
+        '1000000000000000000000000000000000000000000000',
         Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50,
         overrides
       );
@@ -336,7 +351,7 @@ async function sendTrade({tradeDetailsString, args, onlyEstimate}) {
       const permit2Contract = new ethers.Contract(PERMIT2_UNISWAPV4_ADDRESS, PERMIT2_ABI, wallet);
 
       let results = await permit2Contract.allowance(wallet.address, tradeDetails?.fromToken?.address, UNIVERSAL_ROUTER_ADDRESS);
-      if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e38) {
+      if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
         throw new Error('Insufficient allowance on ' + tradeDetails.fromToken.symbol + ' on PERMIT2');
       }
     }
@@ -658,6 +673,10 @@ function createWindow() {
 
   ipcMain.handle('delete-history', (event) => {
     return deleteAllTrades();
+  });
+
+  ipcMain.handle('delete-trade', (event, txId) => {
+    return deleteTrade(txId);
   });
 
   ipcMain.handle('open-url', (event, url) => {
