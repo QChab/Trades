@@ -10,10 +10,10 @@
         <div v-if="!isEditingTokens">
           <div class="price-form">
             <div class="tabs-price">
-              <div :class="{active: tabPrice === 'market'}" @click="tabPrice = 'market'">Market price</div>
-              <!-- <div :class="{active: tabPrice === 'limit'}" @click="tabPrice = 'limit'">Limit price</div> -->
+              <div :class="{active: tabOrder === 'market'}" @click="tabOrder = 'market'">Market order</div>
+              <!-- <div :class="{active: tabOrder === 'limit'}" @click="tabOrder = 'limit'">Limit order</div> -->
             </div>
-            <div v-if="tabPrice === 'limit'">
+            <div v-if="tabOrder === 'limit'">
               <p>
                 when 1 {{ !shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }} = 
                 <input v-model.number="priceLimit" placeholder="0"/> 
@@ -207,7 +207,7 @@ export default {
     const fromTokenAddress = ref(null);
     const toTokenAddress = ref(null);
     const senderDetails = ref(null);
-    const tabPrice = ref('market');
+    const tabOrder = ref('market');
     const isSwapButtonDisabled = ref(false);
     const needsToApprove = ref(false);
     const slippage = ref(50);
@@ -655,7 +655,7 @@ export default {
       fromTokenAddress,
       toTokenAddress,
       senderDetails,
-      tabPrice,
+      tabOrder,
       tokensByAddresses,
       switchTokens,
       shouldSwitchTokensForLimit,

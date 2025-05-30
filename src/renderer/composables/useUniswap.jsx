@@ -130,10 +130,9 @@ export function useUniswapV4() {
 
     if (tokenIn === nativeAddress) {
       tokenA.address = nativeAddress;
+    } else if (tokenOut === nativeAddress) {
+      tokenB.address = nativeAddress;
     }
-    //  else if (tokenOut === nativeAddress) {
-    //   tokenB.address = nativeAddress;
-    // }
 
     return {tokenA, tokenB}
   }
