@@ -130,9 +130,10 @@ export function useUniswapV4() {
 
     if (tokenIn === nativeAddress) {
       tokenA.address = nativeAddress;
-    } else if (tokenOut === nativeAddress) {
-      tokenB.address = nativeAddress;
     }
+    //  else if (tokenOut === nativeAddress) {
+    //   tokenB.address = nativeAddress;
+    // }
 
     return {tokenA, tokenB}
   }
@@ -298,10 +299,11 @@ export function useUniswapV4() {
     if (pools.length === 0) {
       throw new Error('No swap path found for this');
     }
+    
+    let trades;
 
     const {tokenA, tokenB } = instantiateTokens(tokenInObject, tokenOutObject);
     const amountIn = CurrencyAmount.fromRawAmount(tokenA, rawIn.toString());
-    let trades;
     try {
       const sanePools = [];
       for (const p of pools) {
