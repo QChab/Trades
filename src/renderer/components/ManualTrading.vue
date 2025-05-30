@@ -34,11 +34,11 @@
                   :key="'fromToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} ({{ computedBalancesByAddress[senderDetails?.address] && computedBalancesByAddress[senderDetails.address][token.address] ? computedBalancesByAddress[senderDetails.address][token.address].toFixed(5) : 0 }})
+                  {{ token.symbol }} ({{ computedBalancesByAddress[senderDetails?.address] && computedBalancesByAddress[senderDetails.address][token.address] ? spaceThousands(computedBalancesByAddress[senderDetails.address][token.address].toFixed(5)) : 0 }})
                 </option>
               </select>
             </div>
-            <span v-if="fromAmount" class="usd-amount">${{ (fromAmount * tokensByAddresses[fromTokenAddress].price).toFixed(1)  }}</span>
+            <span v-if="fromAmount" class="usd-amount">${{ spaceThousands((fromAmount * tokensByAddresses[fromTokenAddress].price).toFixed(1))  }}</span>
           </div>
           <div class="to-swap">
             <img :src="downArrowImage" class="down-arrow-image" @click="switchTokens"/>
@@ -46,20 +46,20 @@
               Buy 
             </p>
             <div class="amount-token">
-              <span class="amount-out" :class="{'fetching-price': isFetchingPrice}"> {{ trade?.toAmount }}</span>
+              <span class="amount-out" :class="{'fetching-price': isFetchingPrice}"> {{ spaceThousands(trade?.toAmount) }}</span>
               <select id="to-token" v-model="toTokenAddress">
                 <option 
                   v-for="(token, index) in tokens.filter((token) => token.symbol && token.address && token.decimals && token.symbol !== '' && token.address !== '' )"
                   :key="'toToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} (${{ token.price.toFixed(5) }})
+                  {{ token.symbol }} (${{ spaceThousands(token.price.toFixed(5)) }})
                 </option>
               </select>
             </div>
             <span v-if="trade?.toAmount && !isFetchingPrice" class="usd-amount">
               <span v-if="tokensByAddresses[toTokenAddress].price">
-                ${{ (Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1) }}
+                ${{ spaceThousands((Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1)) }}
               </span>
               <span v-if="tokensByAddresses[fromTokenAddress].price && tokensByAddresses[toTokenAddress].price">
                 ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price -Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(3) }}%)
@@ -70,9 +70,11 @@
           <div class="address-form">
             <p v-if="trade?.swap">{{ trade?.swap?.swaps?.length }} trade </p> 
             <p>with</p>
+            {{ senderDetails }}
+            {{ computedBalancesByAddress }}
             <select id="sender-address" v-model="senderDetails">
               <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address.address">
-                {{ address.name }} ({{ address?.address.substring(2, 6) }}...):
+                {{ address.name }} -  0x{{ address?.address.substring(2, 6) }}:
                 {{ computedBalancesByAddress[address] && computedBalancesByAddress[address][fromTokenAddress] ? computedBalancesByAddress[address][fromTokenAddress].toFixed(5) : 0 }} {{ tokensByAddresses[fromTokenAddress].symbol }}
               </option>
             </select>
@@ -151,6 +153,7 @@ import deleteImage from '@/../assets/delete.svg';
 import { Contract, ethers, BigNumber } from 'ethers';
 import { useUniswapV4 } from '../composables/useUniswap';
 import { Percent } from '@uniswap/sdk-core';
+import spaceThousands from '../composables/spaceThousands';
 
 export default {
   name: 'ManualTrading',
@@ -248,13 +251,13 @@ export default {
     const computedBalancesByAddress = computed(() => {
       let computedBalances = {};
       for (const detail of props.addresses) {
-        if (!computedBalances[detail.address]) computedBalances[detail.address] = {}
+        if (!computedBalances[detail.address.toLowerCase()]) computedBalances[detail.address.toLowerCase()] = {}
         
         if (!detail.balances) continue;
         for (const tokenAddress in detail.balances) {
-          computedBalances[detail.address][tokenAddress] = detail.balances[tokenAddress];
-          if (balanceOffsetByTokenByAddress[tokenAddress] && balanceOffsetByTokenByAddress[tokenAddress][detail.address])
-            computedBalances[detail.address][tokenAddress] -= balanceOffsetByTokenByAddress[tokenAddress][detail.address];
+          computedBalances[detail.address.toLowerCase()][tokenAddress] = detail.balances[tokenAddress];
+          if (balanceOffsetByTokenByAddress[tokenAddress] && balanceOffsetByTokenByAddress[tokenAddress][detail.address.toLowerCase()])
+            computedBalances[detail.address.toLowerCase()][tokenAddress] -= balanceOffsetByTokenByAddress[tokenAddress][detail.address.toLowerCase()];
         }
       }
       return computedBalances;
@@ -452,8 +455,8 @@ export default {
       emit('refreshBalance', senderDetails.value, tokensByAddresses.value[toTokenAddressValue]);
     })
     watch(() => props.addresses, (addressesValue) => {
-      if (props.addresses && props.addresses[0])
-        senderDetails.value = props.addresses[0];
+      if (addressesValue && addressesValue[0])
+        senderDetails.value = addressesValue[0];
     }, {immediate: true})
 
     watch(() => senderDetails.value, (senderDetailsValue) => {
@@ -535,7 +538,7 @@ export default {
         if (fromTokenAddress.value === '0x0000000000000000000000000000000000000000') {
           if (!senderDetails.value.balances || !senderDetails.value.balances[fromTokenAddress.value])
             throw new Error('Insufficient ETH balance on ' + senderDetails.value.address)
-          if ((computedBalancesByAddress[senderDetails.value.address][fromTokenAddress.value] - (fromAmount.value)) < .004)
+          if ((computedBalancesByAddress[senderDetails.value.address][fromTokenAddress.value] - fromAmount.value) < .004)
             throw new Error('You must keep more ETH for gas cost on ' + senderDetails.value.address)
         }
 
@@ -655,6 +658,7 @@ export default {
       approveSpending,
       balanceOffsetByTokenByAddress,
       computedBalancesByAddress,
+      spaceThousands,
     };
   }
 };
