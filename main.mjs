@@ -575,7 +575,7 @@ function createWindow() {
 
         privateKeys.push({address: values[0], pk: values[1], name: values[2]});
       }
-      return {addresses: privateKeys.map((pk) => ({address: pk.address, name: pk.name})), success: true};
+      return {addresses: privateKeys.map((pk) => ({address: pk.address.toLowerCase(), name: pk.name})), success: true};
     } catch (err) {
       console.error(err);
       if (err.toString().includes('BAD_DECRYPT'))
@@ -591,7 +591,7 @@ function createWindow() {
       let csvData = 'address,pk,name\n'
       for (const pk of args.privateKeys) {
         if (!pk.address || !pk.pk) continue;
-        csvData += pk.address + ',' + pk.pk + ',' + pk.name + '\n'
+        csvData += pk.address.toLowerCase() + ',' + pk.pk + ',' + pk.name + '\n'
       }
       const cipheredData = aes256Ecb(csvData, args.password, true);
       fs.writeFileSync(privateKeysPath, cipheredData);

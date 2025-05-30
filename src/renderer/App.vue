@@ -383,7 +383,7 @@
             name: line[indexName],
           }));
           
-          loadedAddresses.value = privateKeys.map((pk) => ({address: pk.address, name: pk.name})).filter((pk) => pk.address && pk.name);
+          loadedAddresses.value = privateKeys.map((pk) => ({address: pk.address.toLowerCase(), name: pk.name})).filter((pk) => pk.address && pk.name);
 
           const result = await window.electronAPI.savePrivateKeys({privateKeys, password: password.value});
           if (!result?.success) throw new Error('Private keys not saved, error: ' + result?.error);
