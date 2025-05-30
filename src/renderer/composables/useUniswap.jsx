@@ -148,6 +148,7 @@ export function useUniswapV4() {
           where:{
             token0_in:[$a,$b,"0x0000000000000000000000000000000000000000"],
             token1_in:[$a,$b,"0x0000000000000000000000000000000000000000"],
+            hooks: "0x0000000000000000000000000000000000000000"
             liquidity_not:"0",
           },
           first: 50
@@ -158,6 +159,7 @@ export function useUniswapV4() {
           where:{
             token0_in:[$a,$b,"0xdac17f958d2ee523a2206206994597c13d831ec7"],
             token1_in:[$a,$b,"0xdac17f958d2ee523a2206206994597c13d831ec7"],
+            hooks: "0x0000000000000000000000000000000000000000"
             liquidity_not:"0",
           },
           first: 20
@@ -168,6 +170,7 @@ export function useUniswapV4() {
           where:{
             token0_in:[$a,$b,"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"],
             token1_in:[$a,$b,"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"],
+            hooks: "0x0000000000000000000000000000000000000000"
             liquidity_not:"0",
           },
           first: 20
@@ -178,6 +181,7 @@ export function useUniswapV4() {
           where:{
             token0_in:[$a,$b,"0x6b175474e89094c44da98b954eedeac495271d0f"],
             token1_in:[$a,$b,"0x6b175474e89094c44da98b954eedeac495271d0f"],
+            hooks: "0x0000000000000000000000000000000000000000"
             liquidity_not:"0",
           },
           first: 20
@@ -186,7 +190,7 @@ export function useUniswapV4() {
         }
       }
       fragment PoolFields on Pool {
-        id feeTier hooks liquidity sqrtPrice tick tickSpacing totalValueLockedUSD token0Price token1Price
+        id feeTier liquidity sqrtPrice tick tickSpacing
         token0 { id decimals symbol } token1 { id decimals symbol }
         ticks(where: { liquidityGross_not: "0" }, first: 1000) {
           tickIdx liquidityNet liquidityGross
@@ -244,7 +248,7 @@ export function useUniswapV4() {
         tokenB,
         Number(pool.feeTier),
         Number(pool.tickSpacing),
-        pool.hooks,
+        '0x0000000000000000000000000000000000000000', // pool.hooks
         sqrtAligned,
         JSBI.BigInt(pool.liquidity),
         safeTick,
@@ -318,10 +322,10 @@ export function useUniswapV4() {
       console.log('Sane pools: ' + sanePools.length);
       if (!sanePools.length) return []
 
-      if (tokenOutObject.address === '0x0000000000000000000000000000000000000000')
-        trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
-      else
-        trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
+      // if (tokenOutObject.address === '0x0000000000000000000000000000000000000000')
+      //   trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
+      // else
+      trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
       
     } catch (err) {
       /* The only error the SDK throws here is the dreaded “Invariant failed”.
