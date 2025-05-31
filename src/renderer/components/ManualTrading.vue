@@ -320,19 +320,15 @@ export default {
             if (!bestTrade || !bestTrade.minimumAmountOut)
               throw new Error('No output amount found')
 
-            const slippagePercent = new Percent(Number(slippage.value), 10_000);
-            console.log(slippagePercent);
-            // SECURITY TO AVOID SETTING TRADE OF PREVIOUS CALCULATIONS
-            if (bestTrade.swaps[0].outputAmount.currency.address.toLowerCase() !== toTokenAddress.value.toLowerCase()) {
+            // SECURITY TO AVOID SETTING TRADE OF CALCULATIONS FOR PREVIOUS TOKEN PAIR
+            if (bestTrade?.swaps[0]?.outputAmount?.currency?.address.toLowerCase() !== toTokenAddress.value.toLowerCase()) {
               console.log('outdated to token')
               isSwapButtonDisabled.value = false;
-              isFetchingPrice.value = false;
               return;
             }
-            if (bestTrade.swaps[0].inputAmount.currency.address.toLowerCase() !== fromTokenAddress.value.toLowerCase()) {
-              console.log('outdated to token')
+            if (bestTrade?.swaps[0]?.inputAmount?.currency?.address.toLowerCase() !== fromTokenAddress.value.toLowerCase()) {
+              console.log('outdated from token')
               isSwapButtonDisabled.value = false;
-              isFetchingPrice.value = false;
               return;
             }
 
@@ -344,7 +340,7 @@ export default {
               toAmount: bestTrade?.outputAmount?.toSignificant(5),
               // toAmount: bestTrade.minimumAmountOut(slippagePercent),
             }
-            console.log(bestTrade.swaps[0].route.pools[0].liquidity.toString())
+            console.log(bestTrade.swaps[0].route.pools.map((p) => p.id))
             if (trade.value.fromToken.address !== '0x0000000000000000000000000000000000000000') {
               const erc20 = new ethers.Contract(
                 fromTokenAddressValue,
@@ -352,7 +348,7 @@ export default {
                 toRaw(props.provider),
               );
               let rawAllowance = await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS);
-              console.log(rawAllowance.toString());
+              
               if (Number(rawAllowance) === 0 || Number(rawAllowance) < 1e27) {
                 console.log(Number(rawAllowance));
                 needsToApprove.value = true;
@@ -564,7 +560,7 @@ export default {
         if (fromTokenAddress.value === '0x0000000000000000000000000000000000000000') {
           if (!senderDetails.value.balances || !senderDetails.value.balances[fromTokenAddress.value])
             throw new Error('Insufficient ETH balance on ' + senderDetails.value.address)
-          if ((computedBalancesByAddress[senderDetails.value.address][fromTokenAddress.value] - fromAmount.value) < .004)
+          if ((computedBalancesByAddress.value[senderDetails.value.address][fromTokenAddress.value] - fromAmount.value) < .004)
             throw new Error('You must keep more ETH for gas cost on ' + senderDetails.value.address)
         }
 

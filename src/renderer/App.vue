@@ -237,28 +237,17 @@
           for (const token of currentSettings.value.tokens) {
             if (!token.address || token.address === '') continue;
 
-            let balance;
-            try {
-              balance = await getBalance(addressDetail.address, token);
-              if (!balance && balance !== 0)
-                balance = await getBalance(addressDetail.address, token);
-              if (!balance && balance !== 0)
-                balance = await getBalance(addressDetail.address, token);
-            } catch (err) {
-              console.error(err);
-              balance = 0;
-            }
-            if (!addressDetail.balances) addressDetail.balances = {};
-            addressDetail.balances[token.address] = balance;
+            await refreshBalance(addressDetail, token)
             await new Promise((r) => setTimeout(r, 100))
           }
         }
       })
 
       const refreshBalance = async (addressDetail, token) => {
+        console.log(addressDetail, token)
         if (!addressDetail?.address)
           return false;
-        
+
         let balance;
         try {
           balance = await getBalance(addressDetail.address, token);
@@ -478,6 +467,8 @@
 
       const setConfirmedTrade = (trade) => {
         confirmedTrade.value = trade;
+        refreshBalance(trade.sender, trade.fromToken || {address: trade.fromTokenAddress, symbol: trade.fromTokenSymbol})
+        refreshBalance(trade.sender, trade.toToken || {address: trade.toTokenAddress, symbol: trade.toTokenSymbol})
       }
 
       return {

@@ -332,7 +332,7 @@ export function useUniswapV4() {
       Wrap it to give the caller real insight. */
       console.error('[selectBestPath] SDK invariant blew up:', err);
     }
-    console.log(trades)
+
     // console.log({out: trade.outputAmount, cost: trade.executionPrice});
     return trades ? trades[0] : undefined;
       // trade.minimumAmountOut(slippageTolerance)
