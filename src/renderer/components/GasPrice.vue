@@ -33,7 +33,15 @@ export default {
     // Function to fetch the current gas price from the blockchain
     async function fetchGasPrice() {
       try {
-        const feeData = await toRaw(props.provider).getFeeData();
+        const rpcUrls = [
+          'https://eth.merkle.io',
+          'https://eth.llamarpc.com',
+        ]
+        const providersList = rpcUrls.map((url) => 
+          new ethers.providers.JsonRpcProvider(url,{ chainId: 1, name: 'homestead' })
+        );
+        const provider = new ethers.providers.FallbackProvider(providersList, 1);
+        const feeData = await toRaw(provider).getFeeData();
         // Extract the current gas price from the feeData object
         const currentGasPrice = feeData.gasPrice;
         // Update our reactive variable with the fetched gas price

@@ -99,7 +99,9 @@ const SUBGRAPH_ID                = 'DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G
 const SUBGRAPH_URL               = `https://gateway.thegraph.com/api/${API_KEY}/subgraphs/id/${SUBGRAPH_ID}`;
 
 const STATE_VIEW_ADDRESS   = '0x7ffe42c4a5deea5b0fec41c94c136cf115597227';
-
+const STATE_VIEW_ABI = [
+  'function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)'
+]
 const POSITION_MANAGER_ADDRESS   = '0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e';
 const POSITION_MANAGER_ABI       = [
   'function poolKeys(bytes25 poolId) view returns (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks)'
@@ -226,19 +228,36 @@ export function useUniswapV4() {
     const rawPools = [...poolsEth, ...poolsUSDT, ...poolsUSDC, ...poolsDAI];
     const unique = new Map();
     rawPools.forEach(p => unique.set(p.id, p));
-    const candidatePools = Array.from(unique.values());
+    const candidatePools = Array.from(unique.values()).filter((pool) => (pool.liquidity && pool.totalValueLockedUSD && Number(pool.totalValueLockedUSD) >= 10000))
   
+    // const rpcUrls = await window.electronAPI.getInfuraKeys();
+    // const providersList = rpcUrls.map((url) => 
+    //   new ethers.providers.JsonRpcProvider(url,{ chainId: 1, name: 'homestead' })
+    // );
+    // const provider = new ethers.providers.FallbackProvider(providersList, 1);
+    // const stateViewContract = new ethers.Contract(STATE_VIEW_ADDRESS, STATE_VIEW_ABI, provider);
+    // console.log(candidatePools);
+    // const refreshedSlots0 = await Promise.all(candidatePools.map((pool) => {
+    //   return stateViewContract.getSlot0(pool.id);
+    // }));
+    // console.log(refreshedSlots0);
+
+    // for (let i = 0; i < candidatePools.length; i++) {
+    //   console.log({before: candidatePools[i].sqrtPrice, after: refreshedSlots0[i].sqrtPriceX96.toString()});
+    //   console.log({beforeTick: candidatePools[i].tick, afterTick: refreshedSlots0[i].tick});
+    //   candidatePools[i].sqrtPrice = refreshedSlots0[i].sqrtPriceX96.toString();
+    //   candidatePools[i].tick = refreshedSlots0[i].tick;
+    // }
+
     const pools = [];
     for (const pool of candidatePools) {
-      if (!pool.liquidity || Number(pool.totalValueLockedUSD) <= 50000) continue
-
       const {tokenA, tokenB} = instantiateTokens(
         {address: pool.token0?.id, symbol: pool.token0?.symbol, decimals: pool.token0?.decimals},
         {address: pool.token1?.id, symbol: pool.token1?.symbol, decimals: pool.token1?.decimals},
       );
       
-      const { tick: safeTick, sqrt: sqrtAligned } =
-        alignTickAndPrice(pool.sqrtPrice, Number(pool.tickSpacing));
+      // const { tick: safeTick, sqrt: sqrtAligned } =
+      //   alignTickAndPrice(pool.sqrtPrice, Number(pool.tickSpacing));
       
       const cleanedTicks  = sanitiseTicks(pool.ticks, Number(pool.tickSpacing))
       const tickProvider  = new TickListDataProvider(cleanedTicks, Number(pool.tickSpacing))
@@ -249,9 +268,11 @@ export function useUniswapV4() {
         Number(pool.feeTier),
         Number(pool.tickSpacing),
         '0x0000000000000000000000000000000000000000', // pool.hooks
-        sqrtAligned,
+        // sqrtAligned,
+        pool.sqrtPrice,
         JSBI.BigInt(pool.liquidity),
-        safeTick,
+        // safeTick,
+        Number(pool.tick),
         tickProvider,
       );
 
@@ -307,25 +328,25 @@ export function useUniswapV4() {
 
     const {tokenA, tokenB } = instantiateTokens(tokenInObject, tokenOutObject);
     const amountIn = CurrencyAmount.fromRawAmount(tokenA, rawIn.toString());
+    //   const sanePools = [];
+    //   for (const p of pools) {
+    //     if (
+    //       (p.involvesToken(tokenA) ||
+    //       p.involvesToken(tokenB))
+    //       // && (await isPoolUsable(p, amountIn))
+    //     ) {
+    //       sanePools.push(p);
+    //     }
+    //   }
+
     try {
-      const sanePools = [];
-      for (const p of pools) {
-        if (
-          (p.involvesToken(tokenA) ||
-          p.involvesToken(tokenB))
-          // && (await isPoolUsable(p, amountIn))
-        ) {
-          sanePools.push(p);
-        }
-      }
+      console.log('Sane pools: ' + pools.length);
+      if (!pools.length) return []
 
-      console.log('Sane pools: ' + sanePools.length);
-      if (!sanePools.length) return []
-
-      // if (tokenOutObject.address === '0x0000000000000000000000000000000000000000')
-      //   trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
-      // else
-      trades = await Trade.bestTradeExactIn(sanePools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
+      if (tokenOutObject.address === '0x0000000000000000000000000000000000000000')
+        trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
+      else
+        trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
       
     } catch (err) {
       /* The only error the SDK throws here is the dreaded “Invariant failed”.

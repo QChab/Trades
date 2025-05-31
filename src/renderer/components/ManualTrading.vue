@@ -85,7 +85,7 @@
           </div>
           <p class="details-message">{{ swapMessage }}</p>
           <button v-if="!needsToApprove" @click="triggerTrade()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || !trade?.swap" class="swap-button">
-            {{ isSwapButtonDisabled && trade?.swap ? 'Swapping...' : 'Swap' }}
+            {{ isSwapButtonDisabled && trade?.swap && isFetchingPrice ? 'Swapping...' : 'Swap' }}
           </button>
           <button v-else @click="approveSpending()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || !trade?.swap" class="swap-button">
             {{ (isSwapButtonDisabled && trade.swap) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
@@ -340,7 +340,7 @@ export default {
               toAmount: bestTrade?.outputAmount?.toSignificant(5),
               // toAmount: bestTrade.minimumAmountOut(slippagePercent),
             }
-            console.log(bestTrade.swaps[0].route.pools.map((p) => p.id))
+
             if (trade.value.fromToken.address !== '0x0000000000000000000000000000000000000000') {
               const erc20 = new ethers.Contract(
                 fromTokenAddressValue,
@@ -564,7 +564,7 @@ export default {
             throw new Error('You must keep more ETH for gas cost on ' + senderDetails.value.address)
         }
 
-        const {success, tx, warnings, error} = await executeSwapExactIn(trade.value, senderDetails.value, 100, props.gasPrice);
+        const {success, tx, warnings, error} = await executeSwapExactIn(trade.value, senderDetails.value, 50, props.gasPrice);
         if (!success || !tx) {
           if (error)
             console.error(error)
