@@ -59,7 +59,7 @@
                   :key="'toToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} (${{ token.price.toFixed(5) }})
+                  {{ token.symbol }} ${{ token.price.toFixed(5) }}
                 </option>
               </select>
             </div>
@@ -319,9 +319,23 @@ export default {
             console.log(bestTrade)
             if (!bestTrade || !bestTrade.minimumAmountOut)
               throw new Error('No output amount found')
-            
+
             const slippagePercent = new Percent(Number(slippage.value), 10_000);
             console.log(slippagePercent);
+            // SECURITY TO AVOID SETTING TRADE OF PREVIOUS CALCULATIONS
+            if (bestTrade.swaps[0].outputAmount.currency.address.toLowerCase() !== toTokenAddress.value.toLowerCase()) {
+              console.log('outdated to token')
+              isSwapButtonDisabled.value = false;
+              isFetchingPrice.value = false;
+              return;
+            }
+            if (bestTrade.swaps[0].inputAmount.currency.address.toLowerCase() !== fromTokenAddress.value.toLowerCase()) {
+              console.log('outdated to token')
+              isSwapButtonDisabled.value = false;
+              isFetchingPrice.value = false;
+              return;
+            }
+
             trade.value = {
               swap: bestTrade,
               fromToken: tokensByAddresses.value[fromTokenAddressValue],
@@ -554,7 +568,7 @@ export default {
             throw new Error('You must keep more ETH for gas cost on ' + senderDetails.value.address)
         }
 
-        const {success, tx, warnings, error} = await executeSwapExactIn(trade.value, senderDetails.value, 50, props.gasPrice);
+        const {success, tx, warnings, error} = await executeSwapExactIn(trade.value, senderDetails.value, 100, props.gasPrice);
         if (!success || !tx) {
           if (error)
             console.error(error)

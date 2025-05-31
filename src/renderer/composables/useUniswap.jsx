@@ -190,7 +190,7 @@ export function useUniswapV4() {
         }
       }
       fragment PoolFields on Pool {
-        id feeTier liquidity sqrtPrice tick tickSpacing
+        id feeTier liquidity sqrtPrice tick tickSpacing totalValueLockedUSD
         token0 { id decimals symbol } token1 { id decimals symbol }
         ticks(where: { liquidityGross_not: "0" }, first: 1000) {
           tickIdx liquidityNet liquidityGross
@@ -230,7 +230,7 @@ export function useUniswapV4() {
   
     const pools = [];
     for (const pool of candidatePools) {
-      if (!pool.liquidity || Number(pool.liquidity) <= 1000000000000000000) continue
+      if (!pool.liquidity || Number(pool.totalValueLockedUSD) <= 50000) continue
 
       const {tokenA, tokenB} = instantiateTokens(
         {address: pool.token0?.id, symbol: pool.token0?.symbol, decimals: pool.token0?.decimals},
