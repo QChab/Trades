@@ -343,10 +343,10 @@ export function useUniswapV4() {
       console.log('Sane pools: ' + pools.length);
       if (!pools.length) return []
 
-      if (tokenOutObject.address === '0x0000000000000000000000000000000000000000')
-        trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
-      else
-        trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
+      // if (tokenOutObject.address === '0x0000000000000000000000000000000000000000')
+      //   trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
+      // else
+      trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
       
     } catch (err) {
       /* The only error the SDK throws here is the dreaded “Invariant failed”.
