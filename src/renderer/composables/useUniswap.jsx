@@ -343,11 +343,8 @@ export function useUniswapV4() {
       console.log('Sane pools: ' + pools.length);
       if (!pools.length) return []
 
-      // if (tokenOutObject.address === '0x0000000000000000000000000000000000000000')
-      //   trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 1, maxNumResults: 1 });
-      // else
-      trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 1 });
-      
+      trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 5 });
+      console.log(trades);
     } catch (err) {
       /* The only error the SDK throws here is the dreaded “Invariant failed”.
       Wrap it to give the caller real insight. */
@@ -547,6 +544,88 @@ export function useUniswapV4() {
     }
   }
 
+  async function quoteSinglePool(pool, amountIn, tokenOut) {
+    try {
+      const [out] = await pool.getOutputAmount(amountIn);
+      return out;
+    } catch {
+      return CurrencyAmount.fromRawAmount(tokenOut, '0');
+    }
+  }
+
+  /**
+   * Find the optimal split between pool0 and pool1 via hill‐climbing.
+   *
+   * @param pool0   First Pool instance (A→B)
+   * @param pool1   Second Pool instance (A→B)
+   * @param rawIn   ethers.BigNumber total amount of A to swap
+   * @param tokenA  SDK Token/Ether for input
+   * @param tokenB  SDK Token/Ether for output
+   * @param {
+   *   initialFrac = 0.7,  // start at 70%
+   *   initialStep = 0.1,  // probe ±10%
+   *   minStep     = 0.01, // stop when step < 1%
+   * } options
+   *
+   * @returns { fraction, output }
+   *   fraction: number in [0,1] to send to pool0
+   *   output:   JSBI best total output quotient
+   */
+  async function findBestSplitHillClimb(
+    pool0, pool1, rawIn, tokenA, tokenB,
+    { initialFrac = 0.7, initialStep = 0.1, minStep = 0.05 } = {}
+  ) {
+    let frac   = initialFrac;
+    let step   = initialStep;
+
+    // helper to compute total output for a given frac
+    async function totalOutFor(fr) {
+      // clamp
+      const f = Math.min(1, Math.max(0, fr));
+      // split amounts
+      const in0 = rawIn.mul(Math.floor(f * 1e6)).div(1e6);
+      const in1 = rawIn.sub(in0);
+
+      const amt0 = CurrencyAmount.fromRawAmount(tokenA, in0.toString());
+      const amt1 = CurrencyAmount.fromRawAmount(tokenA, in1.toString());
+
+      const out0 = await quoteSinglePool(pool0, amt0, tokenB);
+      const out1 = await quoteSinglePool(pool1, amt1, tokenB);
+
+      return JSBI.add(out0.quotient, out1.quotient);
+    }
+
+    // get initial value
+    let bestOutput = await totalOutFor(frac);
+
+    while (step >= minStep) {
+      // probe up/down
+      const upFrac   = Math.min(1, frac + step);
+      const downFrac = Math.max(0, frac - step);
+
+      const [outUp, outDown] = await Promise.all([
+        totalOutFor(upFrac),
+        totalOutFor(downFrac)
+      ]);
+
+      // compare
+      if (JSBI.greaterThan(outUp, bestOutput)) {
+        // going up helps
+        frac = upFrac;
+        bestOutput = outUp;
+      } else if (JSBI.greaterThan(outDown, bestOutput)) {
+        // going down helps
+        frac = downFrac;
+        bestOutput = outDown;
+      } else {
+        // neither neighbor is better → shrink step
+        step /= 2;
+      }
+    }
+
+    return { fraction: frac, output: bestOutput };
+  }
+
   return {
     txHash,
     error,
@@ -556,5 +635,7 @@ export function useUniswapV4() {
     selectBestPath,
     findAndSelectBestPath,
     executeSwapExactIn,
+    quoteSinglePool,
+    findBestSplitHillClimb,
   };
 }

@@ -332,7 +332,7 @@ export default {
               return;
             }
             // SECURITY TO AVOID SETTING TRADE OF CALCULATIONS FOR PREVIOUS FROM AMOUNT
-            if (bestTrade?.swaps[0]?.inputAmount.toString() !== fromAmount.value.toLowerCase()) {
+            if (bestTrade?.swaps[0]?.inputAmount.toSignificant(18) !== (fromAmountValue + '')) {
               console.log('outdated input amount')
               isSwapButtonDisabled.value = false;
               return;
