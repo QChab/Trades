@@ -331,6 +331,12 @@ export default {
               isSwapButtonDisabled.value = false;
               return;
             }
+            // SECURITY TO AVOID SETTING TRADE OF CALCULATIONS FOR PREVIOUS FROM AMOUNT
+            if (bestTrade?.swaps[0]?.inputAmount.toString() !== fromAmount.value.toLowerCase()) {
+              console.log('outdated input amount')
+              isSwapButtonDisabled.value = false;
+              return;
+            }
 
             trade.value = {
               swap: bestTrade,
