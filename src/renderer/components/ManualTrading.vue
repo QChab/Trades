@@ -199,7 +199,8 @@ export default {
     ];
 
     const {
-      findAndSelectBestPath,
+      findPossiblePools,
+      selectBestPath,
       executeSwapExactIn,
       executeMixedSwaps,
     } = useUniswapV4();
@@ -356,58 +357,72 @@ export default {
 
         debounceTimer = setTimeout(async () => {
           try {
-            // Parse the “From” amount into raw BigNumber using token decimals
+            // FINDING POOLS
+            const pools = await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo]);
+            
+            // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
+            if (_newFrom !== fromTokenAddress.value.toLowerCase() || _newTo !== toTokenAddress.value.toLowerCase()) {
+              console.log('Outdated token pair in first check');
+              isFetchingPrice.value = false;
+              return;
+            }
+            if (_newAmt !== fromAmount.value) {
+              console.log('Outdated input amount in first check');
+              isFetchingPrice.value = false;
+              return;
+            }
+
+            // FINDING TRADES
             const fromAmtRaw = ethers.utils.parseUnits(
               _newAmt.toString(),
               tokensByAddresses.value[_newFrom].decimals
             );
-
-            // 1) Run the new findAndSelectBestPath → now returns an ARRAY of Trade instances
-            const bestTrades = await findAndSelectBestPath(
-              tokensByAddresses.value[_newFrom],
-              tokensByAddresses.value[_newTo],
-              fromAmtRaw
-            );
-
-            // Ensure it’s an array; if single‐trade, wrap it
-            const tradeArray = Array.isArray(bestTrades) ? bestTrades : [bestTrades];
+            const bestTrades = await selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw);
 
             // Filter out any null/undefined
-            const validTrades = tradeArray.filter(t => t && t.outputAmount);
+            const validTrades = bestTrades.filter(t => t && t.outputAmount);
             if (validTrades.length === 0) {
               throw new Error('No output amount found');
             }
-            let totalOutJSBI = validTrades.reduce(
-              (acc, t) => JSBI.add(acc, t.outputAmount.quotient),
-              JSBI.BigInt(0)
-            );
 
+            const totalBig = validTrades.reduce(
+              (acc, t) => {
+                const legInBN = BigNumber.from(t.outputAmount.quotient.toString());
+                return acc.add(legInBN);
+              },
+              BigNumber.from(0)
+            );
             const outCurrency = validTrades[0].outputAmount.currency;
             const decimals = outCurrency.decimals;
-            // Convert totalOutJSBI → BigNumber → string with decimals
-            const totalBig = BigNumber.from(totalOutJSBI.toString());
-            // Divide by 10**decimals to get a decimal string
             const totalHuman = ethers.utils.formatUnits(totalBig, decimals);
 
-            // 3) SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
+            // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
             for (const t of validTrades) {
               const inAddr  = t.inputAmount.currency.address.toLowerCase();
               const outAddr = t.outputAmount.currency.address.toLowerCase();
-              if (inAddr !== _newFrom.toLowerCase() || outAddr !== _newTo.toLowerCase()) {
-                console.log('Outdated token pair in one of the legs');
+              if (inAddr !== fromTokenAddress.value.toLowerCase() || outAddr !== toTokenAddress.value.toLowerCase()) {
+                console.log('Outdated token pair');
+                isFetchingPrice.value = false;
                 return;
               }
             }
 
             const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
-            const expectedInRawBN = ethers.utils.parseUnits(_newAmt.toString(), decimalsIn);
-            const totalInJSBI = validTrades.reduce(
-              (acc, t) => JSBI.add(acc, t.inputAmount.quotient),
-              JSBI.BigInt(0)
+            const expectedInRawBN = ethers.utils.parseUnits(fromAmount.value + '', decimalsIn);
+            
+            const totalInBN = validTrades.reduce(
+              (acc, t) => {
+                console.log(t.inputAmount.quotient.toString())
+                // Convert each JSBI quotient → string → BigNumber, then add
+                const legInBN = BigNumber.from(t.inputAmount.quotient.toString());
+                return acc.add(legInBN);
+              },
+              BigNumber.from(0)
             );
-            const totalInBN = BigNumber.from(totalInJSBI.toString());
+
             if (!totalInBN.eq(expectedInRawBN)) {
-              console.log('Outdated input amount');
+              console.log('Outdated input amount, sum of input of trades: ' + totalInBN.toString());
+              isFetchingPrice.value = false;
               return;
             }
 
@@ -417,6 +432,7 @@ export default {
             tradeSummary.sender    = _newSender;
             tradeSummary.fromAmount    = _newAmt.toString();
             tradeSummary.toAmount      = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(5);
+            tradeSummary.expectedToAmount = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(5);
             tradeSummary.fromTokenSymbol = tokensByAddresses.value[_newFrom].symbol;
             tradeSummary.toTokenSymbol   = tokensByAddresses.value[_newTo].symbol;
             tradeSummary.fromAddressName = `${senderDetails.value.name}`;
@@ -640,7 +656,7 @@ export default {
         }
 
         // Call our adapted executeSwapExactIn, passing the *array* of trades
-        const { success, tx, error } = await executeMixedSwaps(
+        const { success, warnings, tx, error } = await executeMixedSwaps(
           trades.value,
           tradeSummary,
           slippage.value,
@@ -651,12 +667,16 @@ export default {
           // Roll back summary
           tradeSummary.txId     = null;
           tradeSummary.sentDate = null;
+          console.error(error)
           if (error.toString().includes('insufficient funds for intrinsic transaction cost')) {
             swapMessage.value = 'Error: Not enough ETH on the address';
           } else if (error.toString().includes('cannot estimate gas')) {
             swapMessage.value = 'Error: Preventing failed swap';
           } else {
             swapMessage.value = error.message || String(error);
+          }
+          if (warnings && warnings.length) {
+            swapMessage.value += ' | Warnings: ' + warnings.join(' ; ');
           }
           return;
         }
@@ -676,6 +696,10 @@ export default {
         tradeSummary.txId = tx.hash;
         tradeSummary.fromTokenSymbol = tokensByAddresses.value[fromTokenAddress.value].symbol;
         tradeSummary.toTokenSymbol   = tokensByAddresses.value[toTokenAddress.value].symbol;
+
+        if (warnings && warnings.length) {
+          swapMessage.value = 'Warnings: ' + warnings.join(' ; ');
+        }
         emit('update:trade', { ...tradeSummary });
       } catch (err) {
         swapMessage.value = err.message || String(err);

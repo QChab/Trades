@@ -139,7 +139,7 @@ export function useUniswapV4() {
     return {tokenA, tokenB}
   }
   // --- Path finding ---
-  async function findPossiblePaths(tokenInObject, tokenOutObject) {
+  async function findPossiblePools(tokenInObject, tokenOutObject) {
     const tokenIn = tokenInObject.address.toLowerCase();
     const tokenOut = tokenOutObject.address.toLowerCase();
     // --- 1) Fetch all pools involving tokenIn ---
@@ -353,33 +353,33 @@ export function useUniswapV4() {
           if (i === 0 && !trade.swaps[0].route.pools[1]) {
             if (poolsDirect.findIndex((p) => p.id === trade.swaps[0].route.pools[0].poolId) === -1)
               poolsDirect.push(trade.swaps[0].route.pools[0]);
-          } else if (i === 0) {
-            if (pools0.findIndex((p) => p.id === trade.swaps[0].route.pools[0].poolId) === -1)
-              pools0.push(trade.swaps[0].route.pools[0])
-          } else if (i === 1) {
-            if (pools1.findIndex((p) => p.id === trade.swaps[0].route.pools[1].poolId) === -1)
-              pools1.push(trade.swaps[0].route.pools[1])
           }
+          // else if (i === 0) {
+          //   if (pools0.findIndex((p) => p.id === trade.swaps[0].route.pools[0].poolId) === -1)
+          //     pools0.push(trade.swaps[0].route.pools[0])
+          // } else if (i === 1) {
+          //   if (pools1.findIndex((p) => p.id === trade.swaps[0].route.pools[1].poolId) === -1)
+          //     pools1.push(trade.swaps[0].route.pools[1])
+          // }
         }
       }
       console.log(poolsDirect)
-      console.log(pools0)
-      console.log(pools1)
       if (poolsDirect.length < 2) {
-        return trades[0]
+        return [trades[0]];
       } else {
         const bestSplit = await findBestSplitHillClimb(poolsDirect[0], poolsDirect[1], rawIn, tokenA, tokenB);
         console.log({f: bestSplit.fraction, o: bestSplit.output.toString()});
 
-        if (bestSplit.fraction && bestSplit.fraction <= 0.95) {
+        if (bestSplit.fraction && bestSplit.fraction <= 1) {
+          let fr = 0.9;
           const splitOutRaw = bestSplit.output.toString();
 
-          const singleOutRaw = trades[0]
-            ? BigNumber.from(trades[0].outputAmount.quotient.toString()).toString()
-            : '0';
-          if (BigNumber.from(splitOutRaw).gt(BigNumber.from(singleOutRaw))) {
+          // const singleOutRaw = trades[0]
+          //   ? BigNumber.from(trades[0].outputAmount.quotient.toString()).toString()
+          //   : '0';
+          // if (BigNumber.from(splitOutRaw).gt(BigNumber.from(singleOutRaw))) {
             console.log('should split the trade for better output amount');
-            const in0 = rawIn.mul(Math.floor(bestSplit.fraction * 1e6)).div(1e6);
+            const in0 = rawIn.mul(Math.floor(fr * 1e6)).div(1e6);
             const in1 = rawIn.sub(in0);
             const c0 = CurrencyAmount.fromRawAmount(tokenA, in0.toString());
             const c1 = CurrencyAmount.fromRawAmount(tokenA, in1.toString());
@@ -393,8 +393,9 @@ export function useUniswapV4() {
                 { maxHops: 1, maxNumResults: 1 }
               ),
             ])
+            console.log(trade0, trade1);
             return [trade0, trade1];
-          }
+          // }
         }
       }
     } catch (err) {
@@ -402,25 +403,12 @@ export function useUniswapV4() {
       Wrap it to give the caller real insight. */
       console.error('[selectBestPath] SDK invariant blew up:', err);
     }
-
-    return trades ? trades[0] : undefined;
   }
 
   /** Combined helper: find and quote best path, stores price */
   async function findAndSelectBestPath(tokenInObject, tokenOutObject, amountIn) {
-    const pools = await findPossiblePaths(tokenInObject, tokenOutObject);
+    const pools = await findPossiblePools(tokenInObject, tokenOutObject);
     return await selectBestPath(tokenInObject, tokenOutObject, pools, amountIn);
-  }
-
-  async function isPoolUsable(pool, amountIn) {
-    try {
-      // getOutputAmount throws if liquidity == 0 or if price/tick are inconsistent
-      const [amountOut] = await pool.getOutputAmount(amountIn);
-      return !JSBI.equal(amountOut.quotient, JSBI.BigInt(0));
-    } catch (err) {
-      console.warn('⚠️  pool skipped:', pool.poolId.toString(), err.message);
-      return false;
-    }
   }
 
   async function executeSwapExactIn(tradeDetails, senderDetails, slippageBips = 50, gasPrice) {
@@ -633,7 +621,7 @@ export function useUniswapV4() {
       // clamp
       const f = Math.min(1, Math.max(0, fr));
       // split amounts
-      const in0 = rawIn.mul(Math.floor(f * 1e6)).div(1e6);
+      const in0 = rawIn.mul(Math.floor(f * 1e4)).div(1e4);
       const in1 = rawIn.sub(in0);
 
       const amt0 = CurrencyAmount.fromRawAmount(tokenA, in0.toString());
@@ -677,6 +665,7 @@ export function useUniswapV4() {
   }
 
   async function executeMixedSwaps(trades, tradeSummary, slippageBips = 50, gasPrice) {
+    console.log(trades);
     if (tradeSummary.sender?.balances) {
       let totalInBN = BigNumber.from(0);
       for (const t of trades) {
@@ -687,7 +676,7 @@ export function useUniswapV4() {
       const balance = tradeSummary.sender?.balances[trades[0].inputAmount.currency.address.toLowerCase()];
       const decimals = trades[0].inputAmount.currency.decimals;
       const balanceBN = ethers.utils.parseUnits(
-        balance + '',
+        (balance).toFixed(decimals),
         decimals,
       );
       if (balanceBN.lt(totalInBN))
@@ -696,10 +685,14 @@ export function useUniswapV4() {
     
     const N = trades.length;
     // 2) Build commands array: one V4_SWAP per trade
+    // const commands = ethers.utils.solidityPack(
+    //   Array(N).fill('uint8'),
+    //   Array(N).fill(Commands.V4_SWAP)
+    // );
     const commands = ethers.utils.solidityPack(
-      Array(N).fill('uint8'),
-      Array(N).fill(Commands.V4_SWAP)
-    );
+      ['uint8'],
+      [Commands.V4_SWAP]
+    )
 
     // 3) Build flat actions array:
     //    for each leg choose SWAP_EXACT_IN_SINGLE or SWAP_EXACT_IN, then SETTLE_ALL, TAKE_ALL
@@ -709,6 +702,7 @@ export function useUniswapV4() {
         : Actions.SWAP_EXACT_IN;
       return [ swapA, Actions.SETTLE_ALL, Actions.TAKE_ALL ];
     });
+
     const actions = ethers.utils.solidityPack(
       Array(flatActions.length).fill('uint8'),
       flatActions
@@ -730,15 +724,21 @@ export function useUniswapV4() {
 
         params.push(
           ethers.utils.defaultAbiCoder.encode(
-            ['(tuple(address,address,uint24,int24,address) poolKey,bool zeroForOne,uint128 amountIn,uint128 amountOutMinimum,bytes hookData)'],
+            ['(tuple(address, address, uint24, int24, address),bool,uint128,uint128,bytes)'],
             [
-              {
-                poolKey: trade.route.pools[0].poolKey,
+              [
+                [
+                  trade.route.pools[0].poolKey.currency0,
+                  trade.route.pools[0].poolKey.currency1,
+                  trade.route.pools[0].poolKey.fee,
+                  trade.route.pools[0].poolKey.tickSpacing,
+                  trade.route.pools[0].poolKey.hooks,
+                ],
                 zeroForOne,
-                amountIn: amountInBn,
-                amountOutMinimum: minOutBn,
-                hookData: '0x'
-              }
+                amountInBn,
+                minOutBn,
+                '0x'
+              ]
             ]
           )
         );
@@ -756,7 +756,7 @@ export function useUniswapV4() {
           hooks: pool.hooks,
           hookData: '0x'
         }));
-
+        console.log('before encode 2')
         params.push(
           ethers.utils.defaultAbiCoder.encode(
             ['tuple(address,(address,uint24,int24,address,bytes)[],uint128,uint128)'],
@@ -826,7 +826,7 @@ export function useUniswapV4() {
     error,
     loading,
     priceHistory,
-    findPossiblePaths,
+    findPossiblePools,
     selectBestPath,
     findAndSelectBestPath,
     executeSwapExactIn,
