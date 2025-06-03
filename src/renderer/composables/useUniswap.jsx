@@ -1,15 +1,11 @@
 // useUniswapV4.js
 // A Vue 3 composable for Uniswap V4 swaps, path finding, best-route selection,
 // price tracking, and swap execution in an Electron + Vue3 environment.
-// Requires: ethers.js, graphql-request
-// npm install ethers graphql-request
+
 import JSBI from 'jsbi';
 import { Token, CurrencyAmount, Ether } from '@uniswap/sdk-core';
 import { Pool, Trade } from '@uniswap/v4-sdk';
 import { TickMath, TickListDataProvider } from '@uniswap/v3-sdk';
-
-
-import { ref } from 'vue';
 import { ethers, BigNumber } from 'ethers';
 import { request, gql } from 'graphql-request';
 
