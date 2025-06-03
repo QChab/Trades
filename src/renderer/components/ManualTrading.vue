@@ -400,7 +400,7 @@ export default {
 
         // If tokens changed, reset summary & approval state
         if (_oldFrom !== _newFrom || _oldTo !== _newTo) {
-          tradeSummary.toAmount = '0';
+          tradeSummary.toAmount = null;
           needsToApprove.value = false;
         }
 
@@ -537,8 +537,7 @@ export default {
 
           isFetchingPrice.value = false;
         }, 400);
-      },
-      { deep: true }
+      }
     );
 
     // Whenever props.ethPrice changes, re‐fetch token prices
@@ -832,6 +831,7 @@ export default {
     return {
       // state
       isEditingTokens,
+      tokens,
       fromAmount,
       fromTokenAddress,
       toTokenAddress,

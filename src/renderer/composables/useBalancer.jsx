@@ -53,94 +53,43 @@ async function findPossiblePools(tokenInObject, tokenOutObject) {
   const USDT = '0xdac17f958d2ee523a2206206994597c13d831ec7';
   const DAI  = '0x6b175474e89094c44da98b954eedeac495271d0f';
 
-  // Hosted-service does NOT support _or, so we issue multiple sub‐queries:
+// can use or inside where:
+          // where: {
+          //   or: [
+          //     {
+          //       tokens_: {
+          //         address_in: [$a, $b]
+          //       }
+          //     },
+          //   ]
+          // }
   const query = gql`
-    query ($a: String!, $b: String!, $st0: String!, $st1: String!, $st2: String!) {
-      direct: pools(
-        where: {
-          tokensList_contains: [$a,$b]
-          tokensCount: 2
-          totalLiquidity_gt: "0"
+    query ($a: String!, $b: String!) {
+      {
+        pools(
+          first: 500,
+          where: {
+            or: [
+              {
+                tokens_: {
+                  address_in: [$a, $b]
+                },
+                swapsCount_gt: "20",
+                isPaused: false,
+              },
+            ]
+          }
+        ) {
+          id
+          address
         }
-        first: 100
-      ) {
-        id
-        address
-      }
-      viaA_USDC: pools(
-        where: {
-          tokensList_contains: [$a,$st0]
-          tokensCount: 2
-          totalLiquidity_gt: "0"
-        }
-        first: 100
-      ) {
-        id
-        address
-      }
-      viaA_USDT: pools(
-        where: {
-          tokensList_contains: [$a,$st1]
-          tokensCount: 2
-          totalLiquidity_gt: "0"
-        }
-        first: 100
-      ) {
-        id
-        address
-      }
-      viaA_DAI: pools(
-        where: {
-          tokensList_contains: [$a,$st2]
-          tokensCount: 2
-          totalLiquidity_gt: "0"
-        }
-        first: 100
-      ) {
-        id
-        address
-      }
-      viaB_USDC: pools(
-        where: {
-          tokensList_contains: [$b,$st0]
-          tokensCount: 2
-          totalLiquidity_gt: "0"
-        }
-        first: 100
-      ) {
-        id
-        address
-      }
-      viaB_USDT: pools(
-        where: {
-          tokensList_contains: [$b,$st1]
-          tokensCount: 2
-          totalLiquidity_gt: "0"
-        }
-        first: 100
-      ) {
-        id
-        address
-      }
-      viaB_DAI: pools(
-        where: {
-          tokensList_contains: [$b,$st2]
-          tokensCount: 2
-          totalLiquidity_gt: "0"
-        }
-        first: 100
-      ) {
-        id
-        address
       }
     }
   `;
+
   const variables = {
     a: tokenIn,
     b: tokenOut,
-    st0: USDC,
-    st1: USDT,
-    st2: DAI,
   };
 
   const result = await request(BALANCER_SUBGRAPH_URL, query, variables);

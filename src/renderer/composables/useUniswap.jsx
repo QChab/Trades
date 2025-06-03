@@ -138,47 +138,71 @@ export function useUniswapV4() {
     const tokenOut = tokenOutObject.address.toLowerCase();
     
     // --- 1) Fetch all pools involving tokens and trusted intermediates ---
+    const firstAddressAlphabet = tokenIn < tokenOut ? tokenIn : tokenOut;
+    const lastAddressAlphabet = tokenIn < tokenOut ? tokenOut : tokenIn;
+    console.log({firstAddressAlphabet, lastAddressAlphabet})
     const poolsInQuery = gql`
       query($a: String!, $b: String!){
         poolsDirect: pools(
           where:{
             token0_in: [$a, $b],
-            token1_in: [$a, $b, "0xdac17f958d2ee523a2206206994597c13d831ec7", "0x0000000000000000000000000000000000000000", "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "0x6b175474e89094c44da98b954eedeac495271d0f"],
-            hooks: "0x0000000000000000000000000000000000000000"
+            token1_in: [
+              ${tokenIn < tokenOut ? '$b' : '$a'},
+              ${firstAddressAlphabet >= "0x6b175474e89094c44da98b954eedeac495271d0f" ? '' : '"0x6b175474e89094c44da98b954eedeac495271d0f",'}
+              ${firstAddressAlphabet >= "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" ? '' : '"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",'}
+              ${firstAddressAlphabet >= "0xdac17f958d2ee523a2206206994597c13d831ec7" ? '' : '"0xdac17f958d2ee523a2206206994597c13d831ec7",'}
+            ],
             liquidity_not:"0",
           },
           first: 100
         ) {
-          ...PoolFields
-        }
-        poolsOut: pools(
-          where:{
-            token0_in: ["0xdac17f958d2ee523a2206206994597c13d831ec7", "0x0000000000000000000000000000000000000000", "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "0x6b175474e89094c44da98b954eedeac495271d0f"],
-            token1_in: [$a, $b],
-            hooks: "0x0000000000000000000000000000000000000000"
-            liquidity_not:"0",
-          },
-          first: 50
-        ) {
-          ...PoolFields
-        }
-      }
-      fragment PoolFields on Pool {
-        id feeTier liquidity sqrtPrice tick tickSpacing totalValueLockedUSD
-        token0 { id decimals symbol } token1 { id decimals symbol }
-        ticks(where: { liquidityGross_not: "0" }, first: 1000) {
-          tickIdx liquidityNet liquidityGross
+          id feeTier sqrtPrice hooks tick tickSpacing liquidity totalValueLockedUSD
+          token0 { id decimals symbol } token1 { id decimals symbol }
+          ticks(where: { liquidityGross_not: "0" }, first: 1000) {
+            tickIdx liquidityNet liquidityGross
+          }
         }
       }
     `;
+    console.log(poolsInQuery);
+    const poolsOutQuery = gql`
+      query($a: String!, $b: String!){
+        poolsOut: pools(
+          where:{
+            token0_in: [
+              "0x0000000000000000000000000000000000000000",
+              ${lastAddressAlphabet <= "0x6b175474e89094c44da98b954eedeac495271d0f" ? '' : '"0x6b175474e89094c44da98b954eedeac495271d0f",'}
+              ${lastAddressAlphabet <= "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" ? '' : '"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",'}
+              ${lastAddressAlphabet <= "0xdac17f958d2ee523a2206206994597c13d831ec7" ? '' : '"0xdac17f958d2ee523a2206206994597c13d831ec7",'}
+            ],
+            token1_in: [$a, $b],
+            liquidity_not:"0",
+          },
+          first: 100
+        ) {
+          id feeTier sqrtPrice hooks tick tickSpacing liquidity totalValueLockedUSD
+          token0 { id decimals symbol } token1 { id decimals symbol }
+          ticks(where: { liquidityGross_not: "0" }, first: 1000) {
+            tickIdx liquidityNet liquidityGross
+          }
+        }
+      }
+    `;
+    console.log(poolsOutQuery);
 
-    const { poolsDirect, poolsOut } = await request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut });
+    
+    const [{ poolsDirect }, {poolsOut}] = await Promise.all([
+      request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut }),
+      request(SUBGRAPH_URL, poolsOutQuery, { a: tokenIn, b: tokenOut })
+    ])
   
       // --- 3) Combine and dedupe ---
     const rawPools = [...poolsDirect, ...poolsOut];
     const unique = new Map();
     rawPools.forEach(p => unique.set(p.id, p));
-    const candidatePools = Array.from(unique.values()).filter((pool) => (pool.liquidity && pool.totalValueLockedUSD && Number(pool.totalValueLockedUSD) >= 10000))
+    const candidatePools = Array.from(unique.values()).filter((pool) => (
+      pool.hooks === '0x0000000000000000000000000000000000000000' && pool.liquidity && pool.totalValueLockedUSD && Number(pool.totalValueLockedUSD) >= 10000
+    ))
   
     const pools = [];
     for (const pool of candidatePools) {
