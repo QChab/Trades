@@ -379,6 +379,8 @@ export default {
             );
             const bestTrades = await selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw);
 
+            console.log(bestTrades);
+            
             // Filter out any null/undefined
             const validTrades = bestTrades.filter(t => t && t.outputAmount);
             if (validTrades.length === 0) {

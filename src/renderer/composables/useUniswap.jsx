@@ -378,7 +378,7 @@ export function useUniswapV4() {
             : '0';
           if (BigNumber.from(splitOutRaw).gt(BigNumber.from(singleOutRaw))) {
             console.log('should split the trade for better output amount');
-            const in0 = rawIn.mul(Math.floor(fr * 1e4)).div(1e4);
+            const in0 = rawIn.mul(Math.floor(bestSplit.fraction * 1e4)).div(1e4);
             const in1 = rawIn.sub(in0);
             const c0 = CurrencyAmount.fromRawAmount(tokenA, in0.toString());
             const c1 = CurrencyAmount.fromRawAmount(tokenA, in1.toString());
@@ -402,6 +402,7 @@ export function useUniswapV4() {
       Wrap it to give the caller real insight. */
       console.error('[selectBestPath] SDK invariant blew up:', err);
     }
+    return [trades[0]];
   }
 
   /** Combined helper: find and quote best path, stores price */
@@ -664,6 +665,20 @@ export function useUniswapV4() {
   }
 
   async function executeMixedSwaps(trades, tradeSummary, slippageBips = 50, gasPrice) {
+    const totalBigIn = trades.reduce(
+      (acc, t) => {
+        const legInBN = BigNumber.from(t.inputAmount.quotient.toString());
+        return acc.add(legInBN);
+      },
+      BigNumber.from(0)
+    );
+    const totalBigOut = trades.reduce(
+      (acc, t) => {
+        const legInBN = BigNumber.from(t.outputAmount.quotient.toString());
+        return acc.add(legInBN);
+      },
+      BigNumber.from(0)
+    );
     console.log(trades);
     if (tradeSummary.sender?.balances) {
       let totalInBN = BigNumber.from(0);
@@ -693,9 +708,9 @@ export function useUniswapV4() {
       const swapA = trade.route.pools.length === 1
         ? Actions.SWAP_EXACT_IN_SINGLE
         : Actions.SWAP_EXACT_IN;
-      return [ swapA, Actions.SETTLE_ALL, Actions.TAKE_ALL ];
+      return [ swapA ];
     });
-
+    flatActions.push(Actions.SETTLE_ALL, Actions.TAKE_ALL);
     const actions = ethers.utils.solidityPack(
       Array(flatActions.length).fill('uint8'),
       flatActions
@@ -768,24 +783,24 @@ export function useUniswapV4() {
           )
         );
       }
-
-      // b) settle: pull `amountIn` of the input token
-      params.push(
-        ethers.utils.defaultAbiCoder.encode(
-          ['address','uint256'],
-          [ trade.inputAmount.currency.address, amountInBn ]
-        )
-      );
-
-      // c) take: send `minOut` of the output token
-      params.push(
-        ethers.utils.defaultAbiCoder.encode(
-          ['address','uint256'],
-          [ trade.outputAmount.currency.address, minOutBn ]
-        )
-      );
     }
 
+    // b) settle: pull `amountIn` of the input token
+    params.push(
+      ethers.utils.defaultAbiCoder.encode(
+        ['address','uint256'],
+        [ trades[0].inputAmount.currency.address, totalBigIn ]
+      )
+    );
+
+    // c) take: send `minOut` of the output token
+    params.push(
+      ethers.utils.defaultAbiCoder.encode(
+        ['address','uint256'],
+        [ trades[0].outputAmount.currency.address, totalBigOut ]
+      )
+    );
+    
     // 5) Final bundle
     const inputs = [
       ethers.utils.defaultAbiCoder.encode(['bytes','bytes[]'], [ actions, params ])
