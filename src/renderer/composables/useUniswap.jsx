@@ -142,51 +142,29 @@ export function useUniswapV4() {
   async function findPossiblePools(tokenInObject, tokenOutObject) {
     const tokenIn = tokenInObject.address.toLowerCase();
     const tokenOut = tokenOutObject.address.toLowerCase();
-    // --- 1) Fetch all pools involving tokenIn ---
     
+    // --- 1) Fetch all pools involving tokens and trusted intermediates ---
     const poolsInQuery = gql`
       query($a: String!, $b: String!){
-        poolsEth: pools(
+        poolsDirect: pools(
           where:{
-            token0_in:[$a,$b,"0x0000000000000000000000000000000000000000"],
-            token1_in:[$a,$b,"0x0000000000000000000000000000000000000000"],
+            token0_in: [$a, $b],
+            token1_in: [$a, $b, "0xdac17f958d2ee523a2206206994597c13d831ec7", "0x0000000000000000000000000000000000000000", "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "0x6b175474e89094c44da98b954eedeac495271d0f"],
+            hooks: "0x0000000000000000000000000000000000000000"
+            liquidity_not:"0",
+          },
+          first: 100
+        ) {
+          ...PoolFields
+        }
+        poolsOut: pools(
+          where:{
+            token0_in: ["0xdac17f958d2ee523a2206206994597c13d831ec7", "0x0000000000000000000000000000000000000000", "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "0x6b175474e89094c44da98b954eedeac495271d0f"],
+            token1_in: [$a, $b],
             hooks: "0x0000000000000000000000000000000000000000"
             liquidity_not:"0",
           },
           first: 50
-        ) {
-          ...PoolFields
-        }
-        poolsUSDT: pools(
-          where:{
-            token0_in:[$a,$b,"0xdac17f958d2ee523a2206206994597c13d831ec7"],
-            token1_in:[$a,$b,"0xdac17f958d2ee523a2206206994597c13d831ec7"],
-            hooks: "0x0000000000000000000000000000000000000000"
-            liquidity_not:"0",
-          },
-          first: 20
-        ) {
-          ...PoolFields
-        }
-        poolsUSDC: pools(
-          where:{
-            token0_in:[$a,$b,"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"],
-            token1_in:[$a,$b,"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"],
-            hooks: "0x0000000000000000000000000000000000000000"
-            liquidity_not:"0",
-          },
-          first: 20
-        ) {
-          ...PoolFields
-        }
-        poolsDAI: pools(
-          where:{
-            token0_in:[$a,$b,"0x6b175474e89094c44da98b954eedeac495271d0f"],
-            token1_in:[$a,$b,"0x6b175474e89094c44da98b954eedeac495271d0f"],
-            hooks: "0x0000000000000000000000000000000000000000"
-            liquidity_not:"0",
-          },
-          first: 20
         ) {
           ...PoolFields
         }
@@ -199,33 +177,12 @@ export function useUniswapV4() {
         }
       }
     `;
-    // token0Price
-    // token1Price
-    // totalValueLockedUSD_gt:"10"
-    // pools0: pools(
-    //       where:{
-    //         token0_in:[$a,$b],
-    //         liquidity_not:"0",
-    //       },
-    //       first: 100
-    //     ) {
-    //       ...PoolFields
-    //     }
-    //     pools1: pools(
-    //       where:{
-    //         token1_in:[$a,$b],
-    //         liquidity_not:"0",
-    //       },
-    //       first: 100
-    //     ) {
-    //       ...PoolFields
-    //     }
 
-    const { poolsEth, poolsUSDT, poolsUSDC, poolsDAI } = await request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut });
+    const { poolsDirect, poolsOut } = await request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut });
   
       // --- 3) Combine and dedupe ---
       // , ...pools0, ...pools1
-    const rawPools = [...poolsEth, ...poolsUSDT, ...poolsUSDC, ...poolsDAI];
+    const rawPools = [...poolsDirect, ...poolsOut];
     const unique = new Map();
     rawPools.forEach(p => unique.set(p.id, p));
     const candidatePools = Array.from(unique.values()).filter((pool) => (pool.liquidity && pool.totalValueLockedUSD && Number(pool.totalValueLockedUSD) >= 10000))
@@ -615,8 +572,6 @@ export function useUniswapV4() {
 
       const out0 = trade0.swaps[0].outputAmount;
       const out1 = trade1.swaps[0].outputAmount;
-
-      console.log(out0.quotient.toString(), out1.quotient.toString())
 
       return {trades: [trade0, trade1], out: JSBI.add(out0.quotient, out1.quotient)};
     }

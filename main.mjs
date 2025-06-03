@@ -351,7 +351,7 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
       const permit2Contract = new ethers.Contract(PERMIT2_UNISWAPV4_ADDRESS, PERMIT2_ABI, wallet);
 
       let results = await permit2Contract.allowance(wallet.address, tradeSummary?.fromToken?.address, UNIVERSAL_ROUTER_ADDRESS);
-      if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
+      if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e26) {
         throw new Error('Insufficient allowance on ' + tradeSummary.fromToken.symbol + ' on PERMIT2');
       }
     }

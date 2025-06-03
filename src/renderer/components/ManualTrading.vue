@@ -214,7 +214,7 @@ export default {
     const tabOrder         = ref('market');
     const isSwapButtonDisabled = ref(false);
     const needsToApprove   = ref(false);
-    const slippage         = ref(50);
+    const slippage         = ref(70);
 
     const tokens = reactive([
       { price: 0, address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18 },
@@ -302,6 +302,30 @@ export default {
     };
 
     // ─── Watchers ─────────────────────────────────────────────────────────────
+    // Refresh balances
+    watch(
+      [() => senderDetails.value,
+      () => fromTokenAddress.value,
+      () => toTokenAddress.value],
+      ([_newSender, _fromAddr, _toAddr]) => {
+        if (!_newSender) return;
+
+        // Ask the parent (or composable) to refresh this wallet’s balances for
+        // both tokens currently shown in the UI.
+        emit(
+          'refreshBalance',
+          _newSender,
+          tokensByAddresses.value[_fromAddr],
+        );
+        emit(
+          'refreshBalance',
+          _newSender,
+          tokensByAddresses.value[_toAddr]
+        );
+      },
+      { immediate: true }
+    );
+
 
     // Whenever props.confirmedTrade changes, adjust our offset map
     watch(() => props.confirmedTrade, (confirmed) => {
@@ -318,6 +342,31 @@ export default {
         balanceOffsetByTokenByAddress[tok][sender] -= amt;
       }
     });
+
+    watch(
+      () => fromTokenAddress.value,
+      (newFrom, oldFrom) => {
+        if (!newFrom) return;
+
+        // If user just made From == To, push the "To" back to what the old From was
+        if (newFrom === toTokenAddress.value) {
+          toTokenAddress.value = oldFrom;
+        }
+      }
+    );
+
+    watch(
+      () => toTokenAddress.value,
+      (newTo, oldTo) => {
+        if (!newTo) return;
+
+        // If user just made To == From, push the "From" back to what the old To was
+        if (newTo === fromTokenAddress.value) {
+          fromTokenAddress.value = oldTo;
+        }
+      }
+    );
+
 
     // Whenever fromToken, toToken, fromAmount, trades, or sender changes → re‐quote
     let debounceTimer = null;
@@ -363,12 +412,12 @@ export default {
             // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
             if (_newFrom !== fromTokenAddress.value.toLowerCase() || _newTo !== toTokenAddress.value.toLowerCase()) {
               console.log('Outdated token pair in first check');
-              isFetchingPrice.value = false;
+              // isFetchingPrice.value = false;
               return;
             }
             if (_newAmt !== fromAmount.value) {
               console.log('Outdated input amount in first check');
-              isFetchingPrice.value = false;
+              // isFetchingPrice.value = false;
               return;
             }
 
@@ -402,7 +451,7 @@ export default {
               const outAddr = t.outputAmount.currency.address.toLowerCase();
               if (inAddr !== fromTokenAddress.value.toLowerCase() || outAddr !== toTokenAddress.value.toLowerCase()) {
                 console.log('Outdated token pair');
-                isFetchingPrice.value = false;
+                // isFetchingPrice.value = false;
                 return;
               }
             }
@@ -421,7 +470,7 @@ export default {
 
             if (!totalInBN.eq(expectedInRawBN)) {
               console.log('Outdated input amount, sum of input of trades: ' + totalInBN.toString());
-              isFetchingPrice.value = false;
+              // isFetchingPrice.value = false;
               return;
             }
 
@@ -448,7 +497,7 @@ export default {
                 PERMIT2_UNISWAPV4_ADDRESS
               );
               // If allowance < 1e27 (arbitrary “sufficient” threshold), require approval
-              if (BigNumber.from(rawAllowance).lt(BigNumber.from('1000000000000000000000000000'))) {
+              if (BigNumber.from(rawAllowance).lt(BigNumber.from('100000000000000000000000000'))) {
                 needsToApprove.value = true;
               } else {
                 // double‐check Permit2 → Router allowance
@@ -462,7 +511,7 @@ export default {
                   _newFrom,
                   UNIVERSAL_ROUTER_ADDRESS
                 );
-                if (BigNumber.from(remaining).lt(BigNumber.from('1000000000000000000000000000'))) {
+                if (BigNumber.from(remaining).lt(BigNumber.from('100000000000000000000000000'))) {
                   needsToApprove.value = true;
                 } else {
                   needsToApprove.value = false;
@@ -487,7 +536,7 @@ export default {
           }
 
           isFetchingPrice.value = false;
-        }, 500);
+        }, 400);
       },
       { deep: true }
     );
@@ -636,6 +685,7 @@ export default {
 
     // ─── triggerTrade(): Execute *all* legs in one Universal Router call ────
     const triggerTrade = async () => {
+      let globalWarnings;
       try {
         isSwapButtonDisabled.value = true;
         swapMessage.value = '';
@@ -662,22 +712,9 @@ export default {
           props.gasPrice
         );
 
-        if (!success) {
-          // Roll back summary
-          tradeSummary.txId     = null;
-          tradeSummary.sentDate = null;
-          console.error(error)
-          if (error.toString().includes('insufficient funds for intrinsic transaction cost')) {
-            swapMessage.value = 'Error: Not enough ETH on the address';
-          } else if (error.toString().includes('cannot estimate gas')) {
-            swapMessage.value = 'Error: Preventing failed swap';
-          } else {
-            swapMessage.value = error.message || String(error);
-          }
-          if (warnings && warnings.length) {
-            swapMessage.value += ' | Warnings: ' + warnings.join(' ; ');
-          }
-          return;
+        if (!success && error) {
+          if (warnings) globalWarnings = warnings;
+          throw error;
         }
 
         // Subtract “from amount” from our local offset map
@@ -700,9 +737,23 @@ export default {
           swapMessage.value = 'Warnings: ' + warnings.join(' ; ');
         }
         emit('update:trade', { ...tradeSummary });
-      } catch (err) {
-        swapMessage.value = err.message || String(err);
-        console.error(err);
+      } catch (error) {
+        tradeSummary.txId     = null;
+        tradeSummary.sentDate = null;
+
+
+        if (error.toString().includes('insufficient funds for intrinsic transaction cost')) {
+          swapMessage.value = 'Error: Not enough ETH on the address';
+        } else if (error.toString().includes('cannot estimate gas')) {
+          swapMessage.value = 'Error: Preventing failed swap';
+        } else {
+          swapMessage.value = error.message || String(error);
+        }
+        if (globalWarnings && globalWarnings.length) {
+          swapMessage.value += ' | Warnings: ' + globalWarnings.join(' ; ');
+        }
+
+        console.error(error);
       } finally {
         isSwapButtonDisabled.value = false;
       }

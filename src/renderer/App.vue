@@ -244,7 +244,6 @@
       })
 
       const refreshBalance = async (addressDetail, token) => {
-        console.log(addressDetail, token)
         if (!addressDetail?.address)
           return false;
 
@@ -284,11 +283,11 @@
           balance = await toRaw(provider.value).getBalance(address);
         else
           balance = await contract.balanceOf(address)
-        console.log({balance})
+
         if (balance.toString() === "0") return 0;
         
         balance = Number(balance) * Math.pow(10, -Number(token.decimals));
-        console.log("ERC20 balance:", Number(balance));
+        console.log(token.symbol + " balance:", Number(balance));
         return Number(balance);
       };
       
