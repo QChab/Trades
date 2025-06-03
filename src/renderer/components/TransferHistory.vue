@@ -20,7 +20,7 @@
 
 <script>
 import { toRaw, watch } from 'vue';
-import {ethers} from 'ethers';
+import {BigNumber, ethers} from 'ethers';
 
 export default {
   name: 'TransferHistory',
@@ -89,17 +89,27 @@ export default {
         );
 
       const tokens = [];
+      let sumRawAmountByToken = {};
       for (const log of credits) {
         const tokenAddr   = log.address;
-        const amountRaw   = ethers.BigNumber.from(log.data);
+        const amountRaw   = BigNumber.from(log.data);
 
         // quick-load ERC-20 meta
         const erc20 = new ethers.Contract(tokenAddr, iface, provider);
         const [dec, sym] = await Promise.all([erc20.decimals(), erc20.symbol()]);
 
-        const humanAmt    = Number(ethers.utils.formatUnits(amountRaw, dec));
+        if (!sumRawAmountByToken[tokenAddr]) {
+          sumRawAmountByToken[tokenAddr] = BigNumber.from(0);
+        }
+        sumRawAmountByToken[tokenAddr] = sumRawAmountByToken[tokenAddr].add(amountRaw);
 
-        tokens.push({ symbol: sym, amount: humanAmt.toFixed(6) });
+        const humanAmt    = Number(ethers.utils.formatUnits(sumRawAmountByToken[tokenAddr], dec));
+
+        let indexToken = tokens.findIndex((t) => t.symbol === sym)
+        if (indexToken === -1)
+          tokens.push({ symbol: sym, amount: humanAmt.toFixed(6) });
+        else 
+          tokens[indexToken].amount = humanAmt.toFixed(6);
       }
 
       return { gas: gasInfo, tokens };

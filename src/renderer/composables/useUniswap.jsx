@@ -371,15 +371,14 @@ export function useUniswapV4() {
         console.log({f: bestSplit.fraction, o: bestSplit.output.toString()});
 
         if (bestSplit.fraction && bestSplit.fraction <= 1) {
-          let fr = 0.9;
           const splitOutRaw = bestSplit.output.toString();
 
-          // const singleOutRaw = trades[0]
-          //   ? BigNumber.from(trades[0].outputAmount.quotient.toString()).toString()
-          //   : '0';
-          // if (BigNumber.from(splitOutRaw).gt(BigNumber.from(singleOutRaw))) {
+          const singleOutRaw = trades[0]
+            ? BigNumber.from(trades[0].outputAmount.quotient.toString()).toString()
+            : '0';
+          if (BigNumber.from(splitOutRaw).gt(BigNumber.from(singleOutRaw))) {
             console.log('should split the trade for better output amount');
-            const in0 = rawIn.mul(Math.floor(fr * 1e6)).div(1e6);
+            const in0 = rawIn.mul(Math.floor(fr * 1e4)).div(1e4);
             const in1 = rawIn.sub(in0);
             const c0 = CurrencyAmount.fromRawAmount(tokenA, in0.toString());
             const c1 = CurrencyAmount.fromRawAmount(tokenA, in1.toString());
@@ -393,9 +392,9 @@ export function useUniswapV4() {
                 { maxHops: 1, maxNumResults: 1 }
               ),
             ])
-            console.log(trade0, trade1);
+
             return [trade0, trade1];
-          // }
+          }
         }
       }
     } catch (err) {
@@ -683,12 +682,6 @@ export function useUniswapV4() {
         return {success: false, error: new Error('Insufficient balance of ' + trades[0].inputAmount.currency.symbol )}
     }
     
-    const N = trades.length;
-    // 2) Build commands array: one V4_SWAP per trade
-    // const commands = ethers.utils.solidityPack(
-    //   Array(N).fill('uint8'),
-    //   Array(N).fill(Commands.V4_SWAP)
-    // );
     const commands = ethers.utils.solidityPack(
       ['uint8'],
       [Commands.V4_SWAP]
