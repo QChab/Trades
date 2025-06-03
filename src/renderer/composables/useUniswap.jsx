@@ -789,7 +789,7 @@ export function useUniswapV4() {
     params.push(
       ethers.utils.defaultAbiCoder.encode(
         ['address','uint256'],
-        [ trades[0].inputAmount.currency.address, totalBigIn ]
+        [ tradeSummary.fromToken.address, totalBigIn ]
       )
     );
 
@@ -797,7 +797,7 @@ export function useUniswapV4() {
     params.push(
       ethers.utils.defaultAbiCoder.encode(
         ['address','uint256'],
-        [ trades[0].outputAmount.currency.address, totalBigOut ]
+        [ tradeSummary.toToken.address, totalBigOut ]
       )
     );
     

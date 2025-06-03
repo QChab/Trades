@@ -380,7 +380,7 @@ export default {
             const bestTrades = await selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw);
 
             console.log(bestTrades);
-            
+
             // Filter out any null/undefined
             const validTrades = bestTrades.filter(t => t && t.outputAmount);
             if (validTrades.length === 0) {
@@ -394,9 +394,7 @@ export default {
               },
               BigNumber.from(0)
             );
-            const outCurrency = validTrades[0].outputAmount.currency;
-            const decimals = outCurrency.decimals;
-            const totalHuman = ethers.utils.formatUnits(totalBig, decimals);
+            const totalHuman = ethers.utils.formatUnits(totalBig, tokensByAddresses.value[_newTo].decimals);
 
             // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
             for (const t of validTrades) {
@@ -414,7 +412,6 @@ export default {
             
             const totalInBN = validTrades.reduce(
               (acc, t) => {
-                console.log(t.inputAmount.quotient.toString())
                 // Convert each JSBI quotient → string → BigNumber, then add
                 const legInBN = BigNumber.from(t.inputAmount.quotient.toString());
                 return acc.add(legInBN);
