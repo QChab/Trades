@@ -328,16 +328,6 @@ export function useUniswapV4() {
 
     const {tokenA, tokenB } = instantiateTokens(tokenInObject, tokenOutObject);
     const amountIn = CurrencyAmount.fromRawAmount(tokenA, rawIn.toString());
-    //   const sanePools = [];
-    //   for (const p of pools) {
-    //     if (
-    //       (p.involvesToken(tokenA) ||
-    //       p.involvesToken(tokenB))
-    //       // && (await isPoolUsable(p, amountIn))
-    //     ) {
-    //       sanePools.push(p);
-    //     }
-    //   }
 
     try {
       console.log('Sane pools: ' + pools.length);
@@ -363,7 +353,9 @@ export function useUniswapV4() {
           // }
         }
       }
-      console.log(poolsDirect)
+      if (trades.length < 2)
+        return trades[0];
+
       if (poolsDirect.length < 2) {
         return [trades[0]];
       } else {
