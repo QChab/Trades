@@ -335,59 +335,49 @@ export function useUniswapV4() {
 
       trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 8 });
 
-      const poolsDirect = [];
-      const pools0 = [];
-      const pools1 = [];
-      for (const trade of trades) {
-        for (let i = 0; i < trade.swaps[0].route.pools.length; i++) {
-          if (i === 0 && !trade.swaps[0].route.pools[1]) {
-            if (poolsDirect.findIndex((p) => p.id === trade.swaps[0].route.pools[0].poolId) === -1)
-              poolsDirect.push(trade.swaps[0].route.pools[0]);
-          }
-          // else if (i === 0) {
-          //   if (pools0.findIndex((p) => p.id === trade.swaps[0].route.pools[0].poolId) === -1)
-          //     pools0.push(trade.swaps[0].route.pools[0])
-          // } else if (i === 1) {
-          //   if (pools1.findIndex((p) => p.id === trade.swaps[0].route.pools[1].poolId) === -1)
-          //     pools1.push(trade.swaps[0].route.pools[1])
-          // }
-        }
-      }
       if (trades.length < 2)
-        return trades[0];
-
-      if (poolsDirect.length < 2) {
         return [trades[0]];
-      } else {
-        const bestSplit = await findBestSplitHillClimb(poolsDirect[0], poolsDirect[1], rawIn, tokenA, tokenB);
-        console.log({f: bestSplit.fraction, o: bestSplit.output.toString()});
 
-        if (bestSplit.fraction && bestSplit.fraction <= .95) {
-          const splitOutRaw = bestSplit.output.toString();
-
-          const singleOutRaw = trades[0]
-            ? BigNumber.from(trades[0].outputAmount.quotient.toString()).toString()
-            : '0';
-          if (BigNumber.from(splitOutRaw).gt(BigNumber.from(singleOutRaw))) {
-            const in0 = rawIn.mul(Math.floor(bestSplit.fraction * 1e4)).div(1e4);
-            const in1 = rawIn.sub(in0);
-            const c0 = CurrencyAmount.fromRawAmount(tokenA, in0.toString());
-            const c1 = CurrencyAmount.fromRawAmount(tokenA, in1.toString());
-            const [[trade0], [trade1]] = await Promise.all([
-              Trade.bestTradeExactIn(
-                [ poolsDirect[0] ], c0, tokenB,
-                { maxHops: 1, maxNumResults: 1 }
-              ),
-              Trade.bestTradeExactIn(
-                [ poolsDirect[1] ], c1, tokenB,
-                { maxHops: 1, maxNumResults: 1 }
-              ),
-            ])
-
-            return [trade0, trade1];
+      const knownPools = {};
+      const bestTwoTradesWithoutPoolConflict = [];
+      for (const trade of trades) {
+        if (bestTwoTradesWithoutPoolConflict.length === 2) break;
+        let canAddTrade = true;
+        for (const pool of trade.swaps[0].route.pools) {
+          if (knownPools[pool.poolId]) canAddTrade = false;
+        }
+        if (canAddTrade) {
+          for (const pool of trade.swaps[0].route.pools) {
+            knownPools[pool.poolId] = true;
           }
+          bestTwoTradesWithoutPoolConflict.push(trade);
         }
       }
+
+      if (bestTwoTradesWithoutPoolConflict.length < 2)
+        return [trades[0]];
+
+      const bestSplit = await findBestSplitHillClimb(
+        bestTwoTradesWithoutPoolConflict[0].swaps[0].route.pools,
+        bestTwoTradesWithoutPoolConflict[1].swaps[0].route.pools,
+        rawIn,
+        tokenA,
+        tokenB
+      );
+      console.log({f: bestSplit.fraction, o: bestSplit.output.toString()});
+
+      if (!bestSplit.fraction || bestSplit.fraction > .951) 
+        return [trades[0]];
+
+      const splitOutRaw = bestSplit.output.toString();
+
+      const singleOutRaw = trades[0]
+        ? BigNumber.from(trades[0].outputAmount.quotient.toString()).toString()
+        : '0';
+      if (BigNumber.from(splitOutRaw).gt(BigNumber.from(singleOutRaw))) {
+        return bestSplit.trades;
+      }
+
     } catch (err) {
       /* The only error the SDK throws here is the dreaded “Invariant failed”.
       Wrap it to give the caller real insight. */
@@ -601,7 +591,7 @@ export function useUniswapV4() {
    *   output:   JSBI best total output quotient
    */
   async function findBestSplitHillClimb(
-    pool0, pool1, rawIn, tokenA, tokenB,
+    pools0, pools1, rawIn, tokenA, tokenB,
     { initialFrac = 0.8, initialStep = 0.1, minStep = 0.05 } = {}
   ) {
     let frac   = initialFrac;
@@ -618,43 +608,59 @@ export function useUniswapV4() {
       const amt0 = CurrencyAmount.fromRawAmount(tokenA, in0.toString());
       const amt1 = CurrencyAmount.fromRawAmount(tokenA, in1.toString());
 
-      const [out0, out1] = await Promise.all([
-        quoteSinglePool(pool0, amt0, tokenB),
-        quoteSinglePool(pool1, amt1, tokenB),
+      const [[trade0], [trade1]] = await Promise.all([
+        Trade.bestTradeExactIn(pools0, amt0, tokenB, {maxHops: 2, maxNumResults: 1}),
+        Trade.bestTradeExactIn(pools1, amt1, tokenB, {maxHops: 2, maxNumResults: 1}),
       ])
 
-      return JSBI.add(out0.quotient, out1.quotient);
+      const out0 = trade0.swaps[0].outputAmount;
+      const out1 = trade1.swaps[0].outputAmount;
+
+      console.log(out0.quotient.toString(), out1.quotient.toString())
+
+      return {trades: [trade0, trade1], out: JSBI.add(out0.quotient, out1.quotient)};
     }
 
     // get initial value
-    let bestOutput = await totalOutFor(frac);
+    let resultInitial = await totalOutFor(frac);
+    let bestOutput = resultInitial.out;
+    let bestTrades = resultInitial.trades;
+
+    let totalOutForFrac1;
 
     while (step >= minStep) {
       // probe up/down
       const upFrac   = Math.min(1, frac + step);
       const downFrac = Math.max(0, frac - step);
 
-      const [outUp, outDown] = await Promise.all([
-        totalOutFor(upFrac),
+      const [resultUp, resultDown] = await Promise.all([
+        upFrac === 1 && totalOutForFrac1 ? totalOutForFrac1 : totalOutFor(upFrac),
         totalOutFor(downFrac)
       ]);
+
+      if (upFrac === 1) totalOutForFrac1 = resultUp;
+
+      const outUp = resultUp.out;
+      const outDown = resultDown.out;
 
       // compare
       if (JSBI.greaterThan(outUp, bestOutput)) {
         // going up helps
         frac = upFrac;
         bestOutput = outUp;
+        bestTrades = resultUp.trades;
       } else if (JSBI.greaterThan(outDown, bestOutput)) {
         // going down helps
         frac = downFrac;
         bestOutput = outDown;
+        bestTrades = resultDown.trades;
       } else {
         // neither neighbor is better → shrink step
         step /= 2;
       }
     }
 
-    return { fraction: frac, output: bestOutput };
+    return { fraction: frac, output: bestOutput, trades: bestTrades };
   }
 
   async function executeMixedSwaps(trades, tradeSummary, slippageBips = 50, gasPrice) {
