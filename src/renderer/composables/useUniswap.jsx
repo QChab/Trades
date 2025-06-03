@@ -164,7 +164,6 @@ export function useUniswapV4() {
         }
       }
     `;
-    console.log(poolsInQuery);
     const poolsOutQuery = gql`
       query($a: String!, $b: String!){
         poolsOut: pools(
@@ -188,8 +187,6 @@ export function useUniswapV4() {
         }
       }
     `;
-    console.log(poolsOutQuery);
-
     
     const [{ poolsDirect }, {poolsOut}] = await Promise.all([
       request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut }),
