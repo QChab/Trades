@@ -112,12 +112,6 @@ const QUOTER_ABI                 = [
 ];
 
 export function useUniswapV4() {
-  // Reactive state
-  const txHash       = ref(null);
-  const error        = ref(null);
-  const loading      = ref(false);
-  const priceHistory = ref([]); // stores { timestamp, tokenIn, tokenOut, amountIn, amountOut }
-
   const instantiateTokens = (tokenInObject, tokenOutObject) => {
     const tokenIn = tokenInObject.address.toLowerCase();
     const tokenOut = tokenOutObject.address.toLowerCase();
@@ -181,40 +175,17 @@ export function useUniswapV4() {
     const { poolsDirect, poolsOut } = await request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut });
   
       // --- 3) Combine and dedupe ---
-      // , ...pools0, ...pools1
     const rawPools = [...poolsDirect, ...poolsOut];
     const unique = new Map();
     rawPools.forEach(p => unique.set(p.id, p));
     const candidatePools = Array.from(unique.values()).filter((pool) => (pool.liquidity && pool.totalValueLockedUSD && Number(pool.totalValueLockedUSD) >= 10000))
   
-    // const rpcUrls = await window.electronAPI.getInfuraKeys();
-    // const providersList = rpcUrls.map((url) => 
-    //   new ethers.providers.JsonRpcProvider(url,{ chainId: 1, name: 'homestead' })
-    // );
-    // const provider = new ethers.providers.FallbackProvider(providersList, 1);
-    // const stateViewContract = new ethers.Contract(STATE_VIEW_ADDRESS, STATE_VIEW_ABI, provider);
-    // console.log(candidatePools);
-    // const refreshedSlots0 = await Promise.all(candidatePools.map((pool) => {
-    //   return stateViewContract.getSlot0(pool.id);
-    // }));
-    // console.log(refreshedSlots0);
-
-    // for (let i = 0; i < candidatePools.length; i++) {
-    //   console.log({before: candidatePools[i].sqrtPrice, after: refreshedSlots0[i].sqrtPriceX96.toString()});
-    //   console.log({beforeTick: candidatePools[i].tick, afterTick: refreshedSlots0[i].tick});
-    //   candidatePools[i].sqrtPrice = refreshedSlots0[i].sqrtPriceX96.toString();
-    //   candidatePools[i].tick = refreshedSlots0[i].tick;
-    // }
-
     const pools = [];
     for (const pool of candidatePools) {
       const {tokenA, tokenB} = instantiateTokens(
         {address: pool.token0?.id, symbol: pool.token0?.symbol, decimals: pool.token0?.decimals},
         {address: pool.token1?.id, symbol: pool.token1?.symbol, decimals: pool.token1?.decimals},
       );
-      
-      // const { tick: safeTick, sqrt: sqrtAligned } =
-      //   alignTickAndPrice(pool.sqrtPrice, Number(pool.tickSpacing));
       
       const cleanedTicks  = sanitiseTicks(pool.ticks, Number(pool.tickSpacing))
       const tickProvider  = new TickListDataProvider(cleanedTicks, Number(pool.tickSpacing))
@@ -225,10 +196,8 @@ export function useUniswapV4() {
         Number(pool.feeTier),
         Number(pool.tickSpacing),
         '0x0000000000000000000000000000000000000000', // pool.hooks
-        // sqrtAligned,
         pool.sqrtPrice,
         JSBI.BigInt(pool.liquidity),
-        // safeTick,
         Number(pool.tick),
         tickProvider,
       );
@@ -236,13 +205,6 @@ export function useUniswapV4() {
       pools.push(poolInstance);
     }
     return pools;
-  }
-
-  function alignTickAndPrice(sqrtPriceDecStr, spacing) {
-    const exactTick  = TickMath.getTickAtSqrtRatio(JSBI.BigInt(sqrtPriceDecStr));
-    const aligned    = Math.ceil(exactTick / spacing) * spacing;
-    const sqrtAtTick = TickMath.getSqrtRatioAtTick(aligned);
-    return {tick: aligned, sqrt: sqrtAtTick}
   }
 
   function sanitiseTicks(raw, spacing) {
@@ -347,186 +309,6 @@ export function useUniswapV4() {
   async function findAndSelectBestPath(tokenInObject, tokenOutObject, amountIn) {
     const pools = await findPossiblePools(tokenInObject, tokenOutObject);
     return await selectBestPath(tokenInObject, tokenOutObject, pools, amountIn);
-  }
-
-  async function executeSwapExactIn(tradeDetails, senderDetails, slippageBips = 50, gasPrice) {
-    const trade = tradeDetails.swap;
-    if (!trade.route.pools || !trade.route.pools[0])
-      return {success: false, error: new Error('Missing route pools')};
-
-    if (senderDetails?.balances) {
-      const balance = senderDetails?.balances[trade.inputAmount.currency.address.toLowerCase()];
-      const inputAmount = Number(trade.inputAmount.quotient) / (10**trade.inputAmount.currency.decimals);
-      if (balance < inputAmount)
-        return {success: false, error: new Error('Insufficient balance of ' + trade.inputAmount.currency.symbol )}
-    }
-
-    try {
-      // 1) Pull out the route and amounts from the SDK Trade
-      const route       = trade.route
-      const amountIn    = trade.inputAmount         // CurrencyAmount
-      const amountOut   = trade.outputAmount        // CurrencyAmount
-
-      // 2) Build the PoolKey struct to identify our v4 pool
-      const poolKeys = route.pools.map(pool => ({
-        currency0: pool.token0.address,      // lower-sorted token
-        currency1: pool.token1.address,      // higher-sorted token
-        fee:       pool.fee,                 // e.g. 3000
-        tickSpacing: pool.tickSpacing,       // e.g. 60
-        hooks:     pool.hooks                // usually the zero-address
-      }));
-
-      // 3) Compute minimumAmountOut based on slippage tolerance
-      //    (e.g. amountOut * (1 - slippageBips/10_000))
-      const minAmountOut = BigNumber.from(amountOut.quotient.toString())
-        .mul(BigNumber.from(10_000 - slippageBips))
-        .div(BigNumber.from(10_000))
-
-      // 4) Encode the single byte command V4_SWAP
-      //    (Commands.V4_SWAP === the 5-bit command ID for v4 swaps)
-      const commands = ethers.utils.solidityPack(
-        ['uint8'],
-        [Commands.V4_SWAP]
-      )
-
-      // 5) Encode the V4Router actions: SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL
-      //    (this tells the router exactly which steps to run)
-      const actions = ethers.utils.solidityPack(
-        ['uint8','uint8','uint8'],
-        [
-          route.pools.length === 1 ? Actions.SWAP_EXACT_IN_SINGLE : Actions.SWAP_EXACT_IN,
-          Actions.SETTLE_ALL,
-          Actions.TAKE_ALL
-        ]
-      )
-
-      const zeroForOnes = route.pools.map(p =>
-        p.token0.address.toLowerCase() === trade.inputAmount.currency.address.toLowerCase()
-      );
-
-      let params = []
-      if (route.pools.length === 1) {
-        params.push(
-          ethers.utils.defaultAbiCoder.encode(
-            [
-              `(tuple(
-                address currency0,
-                address currency1,
-                uint24 fee,
-                int24 tickSpacing,
-                address hooks
-              ) poolKey,
-              bool zeroForOne,
-              uint128 amountIn,
-              uint128 amountOutMinimum,
-              bytes hookData)`
-            ],
-            [
-              {
-                poolKey: poolKeys[0],
-                zeroForOne: zeroForOnes[0],
-                amountIn: BigNumber.from(amountIn.quotient.toString()),
-                amountOutMinimum: minAmountOut,
-                hookData: '0x'
-              }
-            ]
-          )
-        )
-      } else {
-        const currencyIn =
-          trade.inputAmount.currency.isNative
-            ? ethers.constants.AddressZero
-            : trade.inputAmount.currency.address;
-
-        // 2. Build each PathKey in the expected shape
-        const path = route.pools.map((pool, i) => ({
-          intermediateCurrency:
-            route.currencyPath[i + 1]?.address ?? ethers.constants.AddressZero,
-          fee:         pool.fee,          // uint24
-          tickSpacing: pool.tickSpacing,  // int24
-          hooks:       pool.hooks,
-          hookData:    '0x'
-        }));
-
-        const exactInputEncoded = ethers.utils.defaultAbiCoder.encode(
-          [
-            'tuple(address,(address,uint24,int24,address,bytes)[],uint128,uint128)'
-          ],
-          [[
-            currencyIn,
-            path.map(p => [              // each PathKey also positional
-              p.intermediateCurrency,
-              p.fee,
-              p.tickSpacing,
-              p.hooks,
-              p.hookData
-            ]),
-            BigNumber.from(amountIn.quotient.toString()),
-            minAmountOut
-          ]]
-        );
-
-        params.push(exactInputEncoded)
-      }
-
-      params.push(
-        // --- 1) SETTLE_ALL params: pull `amountIn` of currency0 from user via Permit2 ---
-        ethers.utils.defaultAbiCoder.encode(
-          ['address','uint256'],
-          [ trade.inputAmount.currency.address, amountIn.quotient.toString() ]
-        ),
-
-        // --- 2) TAKE_ALL params: send at least `minAmountOut` of currency1 to user ---
-        ethers.utils.defaultAbiCoder.encode(
-          ['address','uint256'],
-          [ trade.outputAmount.currency.address, minAmountOut.toString() ]
-        )
-      )
-
-      // 7) Finally, bundle actions+params into the single `inputs[0]`
-      //    (the Universal Router expects inputs[i] = abi.encode(actions, params)) :contentReference[oaicite:4]{index=4}
-      const inputs = [
-        ethers.utils.defaultAbiCoder.encode(
-          ['bytes','bytes[]'],
-          [ actions, params ]
-        )
-      ]
-
-      // 8) Build a tight deadline (now + 120s) to protect from stale execution
-      const deadline = Math.floor(Date.now() / 1_000) + 120
-
-      // 9) Call the router — include ETH value if swapping native token → ERC20
-      console.log(trade);
-      const useNative = trade.inputAmount.currency.isNative
-      console.log(useNative)
-      console.log('before window')
-      // it then call router.execute(...args)
-      return await window.electronAPI.sendTrade({
-        tradeDetailsString: JSON.stringify(tradeDetails),
-        args: [
-          commands,
-          inputs,
-          deadline,
-          {
-            value: useNative ? amountIn.quotient.toString() : 0,
-            maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.65 / 1000000000).toFixed(3), 9),
-            maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
-          }
-        ]
-      })
-    } catch (e) {
-      console.error(e);
-      return {success: false, error: e}
-    }
-  }
-
-  async function quoteSinglePool(pool, amountIn, tokenOut) {
-    try {
-      const [out] = await pool.getOutputAmount(amountIn);
-      return out;
-    } catch {
-      return CurrencyAmount.fromRawAmount(tokenOut, '0');
-    }
   }
 
   /**
@@ -784,15 +566,9 @@ export function useUniswapV4() {
   }
 
   return {
-    txHash,
-    error,
-    loading,
-    priceHistory,
     findPossiblePools,
     selectBestPath,
     findAndSelectBestPath,
-    executeSwapExactIn,
-    quoteSinglePool,
     findBestSplitHillClimb,
     executeMixedSwaps,
   };
