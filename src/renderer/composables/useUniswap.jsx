@@ -370,14 +370,13 @@ export function useUniswapV4() {
         const bestSplit = await findBestSplitHillClimb(poolsDirect[0], poolsDirect[1], rawIn, tokenA, tokenB);
         console.log({f: bestSplit.fraction, o: bestSplit.output.toString()});
 
-        if (bestSplit.fraction && bestSplit.fraction <= 1) {
+        if (bestSplit.fraction && bestSplit.fraction <= .95) {
           const splitOutRaw = bestSplit.output.toString();
 
           const singleOutRaw = trades[0]
             ? BigNumber.from(trades[0].outputAmount.quotient.toString()).toString()
             : '0';
           if (BigNumber.from(splitOutRaw).gt(BigNumber.from(singleOutRaw))) {
-            console.log('should split the trade for better output amount');
             const in0 = rawIn.mul(Math.floor(bestSplit.fraction * 1e4)).div(1e4);
             const in1 = rawIn.sub(in0);
             const c0 = CurrencyAmount.fromRawAmount(tokenA, in0.toString());
@@ -611,7 +610,7 @@ export function useUniswapV4() {
    */
   async function findBestSplitHillClimb(
     pool0, pool1, rawIn, tokenA, tokenB,
-    { initialFrac = 0.7, initialStep = 0.1, minStep = 0.05 } = {}
+    { initialFrac = 0.8, initialStep = 0.1, minStep = 0.05 } = {}
   ) {
     let frac   = initialFrac;
     let step   = initialStep;
@@ -627,8 +626,10 @@ export function useUniswapV4() {
       const amt0 = CurrencyAmount.fromRawAmount(tokenA, in0.toString());
       const amt1 = CurrencyAmount.fromRawAmount(tokenA, in1.toString());
 
-      const out0 = await quoteSinglePool(pool0, amt0, tokenB);
-      const out1 = await quoteSinglePool(pool1, amt1, tokenB);
+      const [out0, out1] = await Promise.all([
+        quoteSinglePool(pool0, amt0, tokenB),
+        quoteSinglePool(pool1, amt1, tokenB),
+      ])
 
       return JSBI.add(out0.quotient, out1.quotient);
     }
