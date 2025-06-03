@@ -321,27 +321,27 @@ async function approveSpender({from, contractAddress, spender}) {
   }
 }
 
-async function sendTrade({tradeDetailsString, args, onlyEstimate}) {
+async function sendTrade({tradeSummary, args, onlyEstimate}) {
   const warnings = [];
-
+  console.log(tradeSummary);
+  
   try {
-    const tradeDetails = JSON.parse(tradeDetailsString);
-    const wallet = getWallet(tradeDetails.sender?.address?.toLowerCase());
+    const wallet = getWallet(tradeSummary.sender?.address?.toLowerCase());
 
-    if (!tradeDetails.fromToken?.address) throw new Error('Missing from token address in trade details')
-    if (!tradeDetails.toToken?.address) throw new Error('Missing to token address in trade details')
-    if (!tradeDetails.sender?.address) throw new Error('Missing sender address in trade details')
+    if (!tradeSummary.fromToken?.address) throw new Error('Missing from token address in trade details')
+    if (!tradeSummary.toToken?.address) throw new Error('Missing to token address in trade details')
+    if (!tradeSummary.sender?.address) throw new Error('Missing sender address in trade details')
 
-    if (tradeDetails.fromToken.address !== '0x0000000000000000000000000000000000000000') {
+    if (tradeSummary.fromToken.address !== '0x0000000000000000000000000000000000000000') {
 
       const erc20 = new ethers.Contract(
-        tradeDetails?.fromToken?.address,
+        tradeSummary?.fromToken?.address,
         ERC20_ABI,
         provider
       );
       let rawAllowance = await erc20.allowance(wallet.address, PERMIT2_UNISWAPV4_ADDRESS);
       if (Number(rawAllowance) === 0) {
-        throw new Error('Insufficient allowance on ' + tradeDetails.fromToken.symbol);
+        throw new Error('Insufficient allowance on ' + tradeSummary.fromToken.symbol);
       }
 
       const PERMIT2_ABI = [
@@ -350,9 +350,9 @@ async function sendTrade({tradeDetailsString, args, onlyEstimate}) {
       ];
       const permit2Contract = new ethers.Contract(PERMIT2_UNISWAPV4_ADDRESS, PERMIT2_ABI, wallet);
 
-      let results = await permit2Contract.allowance(wallet.address, tradeDetails?.fromToken?.address, UNIVERSAL_ROUTER_ADDRESS);
+      let results = await permit2Contract.allowance(wallet.address, tradeSummary?.fromToken?.address, UNIVERSAL_ROUTER_ADDRESS);
       if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
-        throw new Error('Insufficient allowance on ' + tradeDetails.fromToken.symbol + ' on PERMIT2');
+        throw new Error('Insufficient allowance on ' + tradeSummary.fromToken.symbol + ' on PERMIT2');
       }
     }
     const router = new ethers.Contract(UNIVERSAL_ROUTER_ADDRESS, UNIVERSAL_ROUTER_ABI, wallet);
@@ -378,7 +378,7 @@ async function sendTrade({tradeDetailsString, args, onlyEstimate}) {
     const tx = await router.execute(
       ...args,
     )
-    saveTradeInDB({...tradeDetails, txId: tx?.hash});
+    saveTradeInDB({...tradeSummary, txId: tx?.hash});
 
     return {success: true, warnings, tx: JSON.parse(JSON.stringify(tx))};
   } catch (err) {

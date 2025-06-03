@@ -343,17 +343,67 @@ export function useUniswapV4() {
       console.log('Sane pools: ' + pools.length);
       if (!pools.length) return []
 
-      trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 5 });
-      console.log(trades);
+      trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 8 });
+
+      const poolsDirect = [];
+      const pools0 = [];
+      const pools1 = [];
+      for (const trade of trades) {
+        for (let i = 0; i < trade.swaps[0].route.pools.length; i++) {
+          if (i === 0 && !trade.swaps[0].route.pools[1]) {
+            if (poolsDirect.findIndex((p) => p.id === trade.swaps[0].route.pools[0].poolId) === -1)
+              poolsDirect.push(trade.swaps[0].route.pools[0]);
+          } else if (i === 0) {
+            if (pools0.findIndex((p) => p.id === trade.swaps[0].route.pools[0].poolId) === -1)
+              pools0.push(trade.swaps[0].route.pools[0])
+          } else if (i === 1) {
+            if (pools1.findIndex((p) => p.id === trade.swaps[0].route.pools[1].poolId) === -1)
+              pools1.push(trade.swaps[0].route.pools[1])
+          }
+        }
+      }
+      console.log(poolsDirect)
+      console.log(pools0)
+      console.log(pools1)
+      if (poolsDirect.length < 2) {
+        return trades[0]
+      } else {
+        const bestSplit = await findBestSplitHillClimb(poolsDirect[0], poolsDirect[1], rawIn, tokenA, tokenB);
+        console.log({f: bestSplit.fraction, o: bestSplit.output.toString()});
+
+        if (bestSplit.fraction && bestSplit.fraction <= 0.95) {
+          const splitOutRaw = bestSplit.output.toString();
+
+          const singleOutRaw = trades[0]
+            ? BigNumber.from(trades[0].outputAmount.quotient.toString()).toString()
+            : '0';
+          if (BigNumber.from(splitOutRaw).gt(BigNumber.from(singleOutRaw))) {
+            console.log('should split the trade for better output amount');
+            const in0 = rawIn.mul(Math.floor(bestSplit.fraction * 1e6)).div(1e6);
+            const in1 = rawIn.sub(in0);
+            const c0 = CurrencyAmount.fromRawAmount(tokenA, in0.toString());
+            const c1 = CurrencyAmount.fromRawAmount(tokenA, in1.toString());
+            const [[trade0], [trade1]] = await Promise.all([
+              Trade.bestTradeExactIn(
+                [ poolsDirect[0] ], c0, tokenB,
+                { maxHops: 1, maxNumResults: 1 }
+              ),
+              Trade.bestTradeExactIn(
+                [ poolsDirect[1] ], c1, tokenB,
+                { maxHops: 1, maxNumResults: 1 }
+              ),
+            ])
+            return [trade0, trade1];
+          }
+        }
+      }
     } catch (err) {
       /* The only error the SDK throws here is the dreaded “Invariant failed”.
       Wrap it to give the caller real insight. */
       console.error('[selectBestPath] SDK invariant blew up:', err);
     }
 
-    // console.log({out: trade.outputAmount, cost: trade.executionPrice});
     return trades ? trades[0] : undefined;
-      // trade.minimumAmountOut(slippageTolerance)
   }
 
   /** Combined helper: find and quote best path, stores price */
@@ -626,6 +676,151 @@ export function useUniswapV4() {
     return { fraction: frac, output: bestOutput };
   }
 
+  async function executeMixedSwaps(trades, tradeSummary, slippageBips = 50, gasPrice) {
+    if (tradeSummary.sender?.balances) {
+      let totalInBN = BigNumber.from(0);
+      for (const t of trades) {
+        const legInBN = BigNumber.from(t.inputAmount.quotient.toString());
+        totalInBN = totalInBN.add(legInBN);
+      }
+
+      const balance = tradeSummary.sender?.balances[trades[0].inputAmount.currency.address.toLowerCase()];
+      const decimals = trades[0].inputAmount.currency.decimals;
+      const balanceBN = ethers.utils.parseUnits(
+        balance + '',
+        decimals,
+      );
+      if (balanceBN.lt(totalInBN))
+        return {success: false, error: new Error('Insufficient balance of ' + trades[0].inputAmount.currency.symbol )}
+    }
+    
+    const N = trades.length;
+    // 2) Build commands array: one V4_SWAP per trade
+    const commands = ethers.utils.solidityPack(
+      Array(N).fill('uint8'),
+      Array(N).fill(Commands.V4_SWAP)
+    );
+
+    // 3) Build flat actions array:
+    //    for each leg choose SWAP_EXACT_IN_SINGLE or SWAP_EXACT_IN, then SETTLE_ALL, TAKE_ALL
+    const flatActions = trades.flatMap(trade => {
+      const swapA = trade.route.pools.length === 1
+        ? Actions.SWAP_EXACT_IN_SINGLE
+        : Actions.SWAP_EXACT_IN;
+      return [ swapA, Actions.SETTLE_ALL, Actions.TAKE_ALL ];
+    });
+    const actions = ethers.utils.solidityPack(
+      Array(flatActions.length).fill('uint8'),
+      flatActions
+    );
+
+    // 4) Encode each leg’s params
+    const params = [];
+    for (const trade of trades) {
+      const amountInBn  = BigNumber.from(trade.inputAmount.quotient.toString());
+      const minOutBn    = BigNumber.from(
+        trade.outputAmount.quotient.toString()
+      )
+        .mul(10_000 - slippageBips)
+        .div(10_000);
+
+      // a) exact-input encoding
+      if (trade.route.pools.length === 1) {
+        const zeroForOne = trade.route.pools[0].token0.address.toLowerCase() === trade.inputAmount.currency.address.toLowerCase();
+
+        params.push(
+          ethers.utils.defaultAbiCoder.encode(
+            ['(tuple(address,address,uint24,int24,address) poolKey,bool zeroForOne,uint128 amountIn,uint128 amountOutMinimum,bytes hookData)'],
+            [
+              {
+                poolKey: trade.route.pools[0].poolKey,
+                zeroForOne,
+                amountIn: amountInBn,
+                amountOutMinimum: minOutBn,
+                hookData: '0x'
+              }
+            ]
+          )
+        );
+      } else {
+        // MULTI‐HOP (2 pools)
+        const currencyIn = trade.inputAmount.currency.isNative
+          ? ethers.constants.AddressZero
+          : trade.inputAmount.currency.address;
+
+        // build PathKey tuple array
+        const path = trade.route.pools.map((pool,i) => ({
+          intermediateCurrency: trade.route.currencyPath[i+1]?.address ?? ethers.constants.AddressZero,
+          fee: pool.fee,
+          tickSpacing: pool.tickSpacing,
+          hooks: pool.hooks,
+          hookData: '0x'
+        }));
+
+        params.push(
+          ethers.utils.defaultAbiCoder.encode(
+            ['tuple(address,(address,uint24,int24,address,bytes)[],uint128,uint128)'],
+            [[
+              currencyIn,
+              path.map(p => [
+                p.intermediateCurrency,
+                p.fee,
+                p.tickSpacing,
+                p.hooks,
+                p.hookData
+              ]),
+              amountInBn,
+              minOutBn
+            ]]
+          )
+        );
+      }
+
+      // b) settle: pull `amountIn` of the input token
+      params.push(
+        ethers.utils.defaultAbiCoder.encode(
+          ['address','uint256'],
+          [ trade.inputAmount.currency.address, amountInBn ]
+        )
+      );
+
+      // c) take: send `minOut` of the output token
+      params.push(
+        ethers.utils.defaultAbiCoder.encode(
+          ['address','uint256'],
+          [ trade.outputAmount.currency.address, minOutBn ]
+        )
+      );
+    }
+
+    // 5) Final bundle
+    const inputs = [
+      ethers.utils.defaultAbiCoder.encode(['bytes','bytes[]'], [ actions, params ])
+    ];
+
+    // deadline + call
+    const deadline = Math.floor(Date.now()/1e3) + 120;
+    return window.electronAPI.sendTrade({
+      tradeSummary: JSON.parse(JSON.stringify(tradeSummary)),
+      args: [
+        commands,
+        inputs,
+        deadline,
+        {
+          value: trades
+            .filter(t => t.inputAmount.currency.isNative)
+            .reduce((sum,t) => sum.add(t.inputAmount.quotient.toString()), BigNumber.from(0)),
+          maxFeePerGas: ethers.utils.parseUnits(
+            (Number(gasPrice) * 1.65 / 1e9).toFixed(3), 9
+          ),
+          maxPriorityFeePerGas: ethers.utils.parseUnits(
+            (0.02 + Math.random()*0.05 + Number(gasPrice)/(50e9)).toFixed(3), 9
+          ),
+        }
+      ]
+    });
+  }
+
   return {
     txHash,
     error,
@@ -637,5 +832,6 @@ export function useUniswapV4() {
     executeSwapExactIn,
     quoteSinglePool,
     findBestSplitHillClimb,
+    executeMixedSwaps,
   };
 }

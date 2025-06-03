@@ -23,11 +23,9 @@
             </div>
           </div>
           <div class="from-swap">
-            <p>
-              Sell
-            </p>
+            <p>Sell</p>
             <div class="amount-token">
-              <input   
+              <input
                 v-model.number="fromAmount"
                 type="number"
                 inputmode="decimal"
@@ -36,26 +34,29 @@
               />
               <select id="from-token" v-model="fromTokenAddress">
                 <option 
-                  v-for="(token, index) in tokens.filter((token) => token.symbol && token.address && token.decimals && token.symbol !== '' && token.address !== '' )"
+                  v-for="(token, index) in filteredTokens" 
                   :key="'fromToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} ({{ computedBalancesByAddress[senderDetails?.address] && computedBalancesByAddress[senderDetails.address][token.address] ? computedBalancesByAddress[senderDetails.address][token.address].toFixed(5) : 0 }})
+                  {{ token.symbol }} ({{ balanceString(senderDetails?.address, token.address) }})
                 </option>
               </select>
             </div>
-            <span v-if="fromAmount" class="usd-amount">${{ spaceThousands((fromAmount * tokensByAddresses[fromTokenAddress].price).toFixed(1))  }}</span>
+            <span v-if="fromAmount" class="usd-amount">
+              ${{ spaceThousands((fromAmount * tokensByAddresses[fromTokenAddress].price).toFixed(1)) }}
+            </span>
           </div>
+
           <div class="to-swap">
             <img :src="downArrowImage" class="down-arrow-image" @click="switchTokens"/>
-            <p>
-              Buy 
-            </p>
+            <p>Buy</p>
             <div class="amount-token">
-              <span class="amount-out" :class="{'fetching-price': isFetchingPrice}"> {{ spaceThousands(trade?.toAmount) }}</span>
+              <span class="amount-out" :class="{'fetching-price': isFetchingPrice}">
+                {{ spaceThousands(tradeSummary.toAmount) }}
+              </span>
               <select id="to-token" v-model="toTokenAddress">
                 <option 
-                  v-for="(token, index) in tokens.filter((token) => token.symbol && token.address && token.decimals && token.symbol !== '' && token.address !== '' )"
+                  v-for="(token, index) in filteredTokens" 
                   :key="'toToken-' + index" 
                   :value="token.address"
                 >
@@ -63,35 +64,52 @@
                 </option>
               </select>
             </div>
-            <span v-if="trade?.toAmount && !isFetchingPrice" class="usd-amount">
+            <span v-if="tradeSummary.toAmount && !isFetchingPrice" class="usd-amount">
               <span v-if="tokensByAddresses[toTokenAddress].price">
-                ${{ spaceThousands((Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1)) }}
+                ${{ spaceThousands((Number(tradeSummary.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1)) }}
               </span>
               <span v-if="tokensByAddresses[fromTokenAddress].price && tokensByAddresses[toTokenAddress].price">
-                ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price -Number(trade.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(3) }}%)
+                ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price - Number(tradeSummary.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(3) }}%)
               </span>
             </span>
           </div>
+
           <p class="details-message">{{ priceFetchingMessage }}</p>
           <div class="address-form">
-            <p v-if="trade?.swap">{{ trade?.swap?.swaps?.length }} trade </p> 
+            <!-- <p v-if="trades.length">{{ trades.length }} leg<span v-if="trades.length > 1">s</span> </p> -->
             <p>with</p>
             <select id="sender-address" v-model="senderDetails">
-              <option v-for="(address, index) in addresses" :value="address" :key="'sender-' + address.address">
-                {{ address.name }} -  0x{{ address?.address.substring(2, 6) }}:
-                {{ computedBalancesByAddress[address.address] && computedBalancesByAddress[address.address][fromTokenAddress] ? computedBalancesByAddress[address.address][fromTokenAddress].toFixed(5) : 0 }} {{ tokensByAddresses[fromTokenAddress].symbol }}
+              <option 
+                v-for="(address, index) in addresses" 
+                :value="address" 
+                :key="'sender-' + address.address"
+              >
+                {{ address.name }} - 0x{{ address.address.substring(2, 6) }}:
+                {{ balanceString(address.address, fromTokenAddress) }} {{ tokensByAddresses[fromTokenAddress].symbol }}
               </option>
             </select>
           </div>
+
           <p class="details-message">{{ swapMessage }}</p>
-          <button v-if="!needsToApprove" @click="triggerTrade()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || !trade?.swap" class="swap-button">
-            {{ isSwapButtonDisabled && trade?.swap && isFetchingPrice ? 'Swapping...' : 'Swap' }}
+          <button
+            v-if="!needsToApprove"
+            @click="triggerTrade()"
+            :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
+            class="swap-button"
+          >
+            {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : 'Swap' }}
           </button>
-          <button v-else @click="approveSpending()" :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || !trade?.swap" class="swap-button">
-            {{ (isSwapButtonDisabled && trade.swap) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
+          <button
+            v-else
+            @click="approveSpending()"
+            :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
+            class="swap-button"
+          >
+            {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
           </button>
         </div>
-        <!-- EDITING -->
+
+        <!-- EDITING TOKENS -->
         <div v-else>
           <p class="text-center">Editing Tokens</p>
           <ul class="two-column-list">
@@ -100,8 +118,12 @@
               <label v-else class="checkbox-label edit-label">
                 <!-- First line: Token address and delete icon -->
                 <div class="line">
-                  <input v-model="token.address" @input="findSymbol(index, token.address)" placeholder="Address" />
-                  <img :src="deleteImage" class="delete" @click="deleteToken(index)"/>
+                  <input
+                    v-model="token.address"
+                    @input="findSymbol(index, token.address)"
+                    placeholder="Address"
+                  />
+                  <img :src="deleteImage" class="delete" @click="deleteToken(index)" />
                   <div class="compensate-delete"></div>
                 </div>
               </label>
@@ -129,94 +151,74 @@
           </ul>
         </div>
       </div>
-      <p v-if="trade && trade.txId === 'pending' && !trade.isConfirmed && swapMessage === ''">
+
+      <p v-if="tradeSummary.txId === 'pending' && !tradeSummary.isConfirmed && swapMessage === ''">
         Swapping
-        {{ trade.fromAmount }} {{ trade.fromTokenName || trade.fromToken?.symbol }} -> {{ trade.toAmount }} {{ trade.toTokenName || trade.toToken?.symbol }}
-        from {{ trade.fromAddress || trade.sender?.name }} on {{ (new Date(trade.sentDate || trade.timestamp)).toLocaleString() }} ...
+        {{ tradeSummary.fromAmount }} {{ tradeSummary.fromTokenSymbol }} →
+        {{ tradeSummary.toAmount }} {{ tradeSummary.toTokenSymbol }}
+        from {{ tradeSummary.fromAddressName }} on
+        {{ (new Date(tradeSummary.sentDate)).toLocaleString() }} …
       </p>
-      <!-- <div class="trades">
-        Pending trades
-        <ul>
-          <li v-for="t in trades">
-            {{ t.isConfirmed || !t.sender ? '✅' : '⏳' }}
-            {{ t.fromAmount }} {{ t.fromTokenName || t.fromToken?.symbol }} -> {{ t.toAmount }} {{ t.toTokenName || t.toToken?.symbol }}
-            from {{ t.fromAddress || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
-          </li>
-        </ul>
-      </div> -->
+      <!-- Pending trades list -->
     </div>
   </div>
 </template>
 
 <script>
-import { ref, reactive, watch, onMounted, toRaw, computed } from 'vue';
+import { ref, reactive, watch, onMounted, computed, toRaw } from 'vue';
+import { ethers, BigNumber } from 'ethers';
 import chevronDownImage from '@/../assets/chevron-down.svg';
 import reverseImage from '@/../assets/reverse.svg';
 import downArrowImage from '@/../assets/down-arrow.svg';
 import deleteImage from '@/../assets/delete.svg';
-import { Contract, ethers, BigNumber } from 'ethers';
 import { useUniswapV4 } from '../composables/useUniswap';
-import { Percent } from '@uniswap/sdk-core';
 import spaceThousands from '../composables/spaceThousands';
+import JSBI from 'jsbi';
 
 export default {
   name: 'ManualTrading',
-  components: {
-  },
   props: {
-    addresses: {
-      type: Array,
-      default: () => ([]),
-    },
-    gasPrice: {
-      type: Number,
-      default: 2000000000,
-    },
-    maxGasPrice: {
-      type: Number,
-      default: 2000000000,
-    },
-    ethPrice: {
-      type: Number,
-    },
-    provider: {
-      type: Object,
-    },
-    confirmedTrade: {
-      type: Object,
-    }
+    addresses: { type: Array, default: () => ([]) },
+    gasPrice:   { type: Number, default: 2000000000 },
+    maxGasPrice:{ type: Number, default: 2000000000 },
+    ethPrice:   { type: Number },
+    provider:   { type: Object },
+    confirmedTrade: { type: Object },
   },
   emits: ['update:settings', 'update:trade', 'refreshBalance'],
-  setup(props, { emit } ) {
+  setup(props, { emit }) {
+    // ─── Constants & Composables ───────────────────────────────────────────
     const PERMIT2_UNISWAPV4_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
-    const PERMIT2_ABI = [
-      "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
+    const UNIVERSAL_ROUTER_ADDRESS   = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
+    const ERC20_ABI = [
+      "function symbol() view returns (string)",
+      "function decimals() view returns (uint256)",
+      "function balanceOf(address) view returns (uint256)",
+      "function allowance(address owner, address spender) view returns (uint256)",
+      "function approve(address spender, uint256 amount) returns (bool)",
     ];
-
-    const UNIVERSAL_ROUTER_ADDRESS = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
 
     const {
       findAndSelectBestPath,
       executeSwapExactIn,
+      executeMixedSwaps,
     } = useUniswapV4();
-    const trade = ref();
-    const trades = ref([]);
 
+    // ─── Reactive State ─────────────────────────────────────────────────────
     const isEditingTokens = ref(false);
-    const fromAmount = ref(null);
+    const fromAmount       = ref(null);
     const fromTokenAddress = ref(null);
-    const toTokenAddress = ref(null);
-    const senderDetails = ref(null);
-    const tabOrder = ref('market');
+    const toTokenAddress   = ref(null);
+    const senderDetails    = ref(null);
+    const tabOrder         = ref('market');
     const isSwapButtonDisabled = ref(false);
-    const needsToApprove = ref(false);
-    const slippage = ref(50);
+    const needsToApprove   = ref(false);
+    const slippage         = ref(50);
 
-    // Token selection list with on/off toggles.
     const tokens = reactive([
-      { price: 0, address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18},
-      { price: 0, address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6},
-      { price: 0, address: '0x514910771af9ca656af840dff83e8264ecf986ca', symbol: 'LINK', decimals: 18},
+      { price: 0, address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18 },
+      { price: 0, address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6 },
+      { price: 0, address: '0x514910771af9ca656af840dff83e8264ecf986ca', symbol: 'LINK', decimals: 18 },
       { price: 0, address: '', symbol: '', decimals: null},
       { price: 0, address: '', symbol: '', decimals: null},
       { price: 0, address: '', symbol: '', decimals: null},
@@ -236,457 +238,559 @@ export default {
       { price: 0, address: '', symbol: '', decimals: null},
     ]);
 
-    const balanceOffsetByTokenByAddress = reactive({});
+    // Map of tokenAddress → { price, symbol, decimals }
+    const tokensByAddresses = ref({});
 
-    watch(() => props.confirmedTrade, (confirmedTradeValue) => {
-      console.log('CONFIRMED TRADE VALUUUUUE')
-      console.log(confirmedTradeValue)
-      const sender = confirmedTradeValue?.sender?.address;
-      const tokenAddress = confirmedTradeValue?.fromToken?.address;
+    // Array of raw SDK‐Trade instances returned from findAndSelectBestPath
+    const trades = ref([]); // each entry has .inputAmount, .outputAmount, .route, etc.
 
-      if (!sender || !tokenAddress) return
-      if (!balanceOffsetByTokenByAddress[tokenAddress]) return
-      if (!balanceOffsetByTokenByAddress[tokenAddress][sender]) return
-
-      if (balanceOffsetByTokenByAddress[tokenAddress][sender] >= Number(confirmedTradeValue.fromAmount))
-        balanceOffsetByTokenByAddress[tokenAddress][sender] -= Number(confirmedTradeValue.fromAmount);
+    // A small “summary” object for UI binding
+    const tradeSummary = reactive({
+      fromAmount:    null,    // string
+      toAmount:      null,    // string (aggregated across all legs)
+      fromTokenSymbol: null,
+      toTokenSymbol:   null,
+      fromAddressName: null,  // e.g. “Alice - 0xABCD”
+      txId:          null,
+      sentDate:      null,
+      isConfirmed:   false,
     });
 
+    const isFetchingPrice    = ref(false);
+    const priceFetchingMessage = ref('');
+    const swapMessage        = ref('');
+
+    // We keep a small “offset” map so that once a trade is sent, we subtract it from balance
+    const balanceOffsetByTokenByAddress = reactive({});
+
+    // ─── Computed Helpers ────────────────────────────────────────────────────
+
+    // Filter out tokens without valid symbol/address
+    const filteredTokens = computed(() =>
+      tokens.filter(t => t.symbol && t.address && t.decimals != null && t.symbol !== '' && t.address !== '')
+    );
+
+    // Build a nested map: { [userAddress]: { [tokenAddress]: availableBalance } }
     const computedBalancesByAddress = computed(() => {
-      let computedBalances = {};
+      const result = {};
       for (const detail of props.addresses) {
-        if (!computedBalances[detail.address.toLowerCase()]) computedBalances[detail.address.toLowerCase()] = {}
-        
+        const addr = detail.address.toLowerCase();
+        if (!result[addr]) result[addr] = {};
+
         if (!detail.balances) continue;
-        for (const tokenAddress in detail.balances) {
-          computedBalances[detail.address.toLowerCase()][tokenAddress] = detail.balances[tokenAddress];
-          if (balanceOffsetByTokenByAddress[tokenAddress] && balanceOffsetByTokenByAddress[tokenAddress][detail.address.toLowerCase()])
-            computedBalances[detail.address.toLowerCase()][tokenAddress] -= balanceOffsetByTokenByAddress[tokenAddress][detail.address.toLowerCase()];
+        for (const tokAddr in detail.balances) {
+          let bal = detail.balances[tokAddr];
+          if (balanceOffsetByTokenByAddress[tokAddr] &&
+              balanceOffsetByTokenByAddress[tokAddr][addr]) {
+            bal -= balanceOffsetByTokenByAddress[tokAddr][addr];
+          }
+          result[addr][tokAddr] = bal;
         }
       }
-      return computedBalances;
-    })
+      return result;
+    });
 
-    const ERC20_ABI = [
-      "function symbol() view returns (string)",
-      "function decimals() view returns (uint256)",
-      "function balanceOf(address) view returns (uint256)",
-      "function allowance(address owner, address spender) view returns (uint256)",
-      "function approve(address spender, uint256 amount) returns (bool)",
-    ];
+    // Helper: “5.12345” → formatted string with spaces every 3 digits
+    const spaceThousandsFn = (str) => spaceThousands(str);
 
-    const tokensByAddresses = ref({});
-    const isFetchingPrice = ref(false);
-    const priceFetchingMessage = ref('');
+    // Helper: get a user’s token‐balance as a string with 5 decimals
+    const balanceString = (ownerAddress, tokenAddr) => {
+      if (!ownerAddress || !tokenAddr) return '0.00000';
+      const b = computedBalancesByAddress.value[ownerAddress?.toLowerCase()]?.[tokenAddr] || 0;
+      return b.toFixed(5);
+    };
 
+    // ─── Watchers ─────────────────────────────────────────────────────────────
+
+    // Whenever props.confirmedTrade changes, adjust our offset map
+    watch(() => props.confirmedTrade, (confirmed) => {
+      if (!confirmed) return;
+      const sender = confirmed.sender?.address?.toLowerCase();
+      const tok    = confirmed.fromToken?.address;
+      const amt    = Number(confirmed.fromAmount);
+      if (!sender || !tok || isNaN(amt)) return;
+
+      if (
+        balanceOffsetByTokenByAddress[tok] &&
+        balanceOffsetByTokenByAddress[tok][sender] >= amt
+      ) {
+        balanceOffsetByTokenByAddress[tok][sender] -= amt;
+      }
+    });
+
+    // Whenever fromToken, toToken, fromAmount, trades, or sender changes → re‐quote
     let debounceTimer = null;
     watch(
-      [() => fromTokenAddress.value, () => toTokenAddress.value, () => fromAmount.value, () => trades.value, () => senderDetails.value], 
-      async ([fromTokenAddressValue, toTokenAddressValue, fromAmountValue], [oldFromTokenAddressValue, oldToTokenAddressValue]) => {
-         if (debounceTimer) {
-          clearTimeout(debounceTimer)
-        }
-        
+      [
+        () => fromTokenAddress.value,
+        () => toTokenAddress.value,
+        () => fromAmount.value,
+        () => senderDetails.value
+      ],
+      async ([_newFrom, _newTo, _newAmt, _newSender], [_oldFrom, _oldTo]) => {
+        if (debounceTimer) clearTimeout(debounceTimer);
         priceFetchingMessage.value = '';
         swapMessage.value = '';
+        trades.value = [];
+        tradeSummary.toAmount = null;
+        isFetchingPrice.value = true;
 
-        if (!fromAmountValue || !fromTokenAddressValue || !toTokenAddressValue || fromAmountValue === '.') {
-          if (trade.value)
-            trade.value.toAmount = 0;
+        // If any of the essentials is missing or invalid, skip re‐quoting
+        if (
+          !_newFrom ||
+          !_newTo ||
+          !_newSender?.address ||
+          !_newAmt ||
+          _newAmt === '.' ||
+          _newAmt <= 0
+        ) {
           isFetchingPrice.value = false;
           return;
         }
-        if (oldFromTokenAddressValue !== fromTokenAddressValue || oldToTokenAddressValue !== toTokenAddressValue) {
-          trade.value = {
-            toAmount: 0
-          };
+
+        // If tokens changed, reset summary & approval state
+        if (_oldFrom !== _newFrom || _oldTo !== _newTo) {
+          tradeSummary.toAmount = '0';
           needsToApprove.value = false;
         }
-        isFetchingPrice.value = true;      
+
         debounceTimer = setTimeout(async () => {
           try {
-            if (!senderDetails.value?.address) 
-              throw new Error('No wallet selected');
-
-            priceFetchingMessage.value = '';
-            const fromAmount = ethers.utils.parseUnits(fromAmountValue + '', tokensByAddresses.value[fromTokenAddressValue].decimals);
-            const bestTrade = await findAndSelectBestPath(
-              tokensByAddresses.value[fromTokenAddressValue],
-              tokensByAddresses.value[toTokenAddressValue],
-              fromAmount
+            // Parse the “From” amount into raw BigNumber using token decimals
+            const fromAmtRaw = ethers.utils.parseUnits(
+              _newAmt.toString(),
+              tokensByAddresses.value[_newFrom].decimals
             );
-            isSwapButtonDisabled.value = false;
-            console.log(bestTrade)
-            if (!bestTrade || !bestTrade.minimumAmountOut)
-              throw new Error('No output amount found')
 
-            // SECURITY TO AVOID SETTING TRADE OF CALCULATIONS FOR PREVIOUS TOKEN PAIR
-            if (bestTrade?.swaps[0]?.outputAmount?.currency?.address.toLowerCase() !== toTokenAddress.value.toLowerCase()) {
-              console.log('outdated to token')
-              isSwapButtonDisabled.value = false;
-              return;
-            }
-            if (bestTrade?.swaps[0]?.inputAmount?.currency?.address.toLowerCase() !== fromTokenAddress.value.toLowerCase()) {
-              console.log('outdated from token')
-              isSwapButtonDisabled.value = false;
-              return;
-            }
-            // SECURITY TO AVOID SETTING TRADE OF CALCULATIONS FOR PREVIOUS FROM AMOUNT
-            if (bestTrade?.swaps[0]?.inputAmount.toSignificant(18) !== (fromAmountValue + '')) {
-              console.log('outdated input amount')
-              isSwapButtonDisabled.value = false;
-              return;
-            }
+            // 1) Run the new findAndSelectBestPath → now returns an ARRAY of Trade instances
+            const bestTrades = await findAndSelectBestPath(
+              tokensByAddresses.value[_newFrom],
+              tokensByAddresses.value[_newTo],
+              fromAmtRaw
+            );
 
-            trade.value = {
-              swap: bestTrade,
-              fromToken: tokensByAddresses.value[fromTokenAddressValue],
-              toToken: tokensByAddresses.value[toTokenAddressValue],
-              fromAmount: fromAmountValue + '',
-              toAmount: bestTrade?.outputAmount?.toSignificant(5),
-              // toAmount: bestTrade.minimumAmountOut(slippagePercent),
-            }
+            // Ensure it’s an array; if single‐trade, wrap it
+            const tradeArray = Array.isArray(bestTrades) ? bestTrades : [bestTrades];
 
-            if (trade.value.fromToken.address !== '0x0000000000000000000000000000000000000000') {
-              const erc20 = new ethers.Contract(
-                fromTokenAddressValue,
-                ERC20_ABI,
-                toRaw(props.provider),
-              );
-              let rawAllowance = await erc20.allowance(senderDetails.value.address, PERMIT2_UNISWAPV4_ADDRESS);
-              
-              if (Number(rawAllowance) === 0 || Number(rawAllowance) < 1e27) {
-                console.log(Number(rawAllowance));
-                needsToApprove.value = true;
-              } else {
-                const PERMIT2_CONTRACT = new ethers.Contract(
-                  PERMIT2_UNISWAPV4_ADDRESS,
-                  PERMIT2_ABI,
-                  toRaw(props.provider),
-                )
-                let results = await PERMIT2_CONTRACT.allowance(senderDetails.value.address, fromTokenAddressValue, UNIVERSAL_ROUTER_ADDRESS);
-                if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
-                  console.log(Number[results[0].toString()])
-                  needsToApprove.value = true;
-                }
-                console.log(results);
+            // Filter out any null/undefined
+            const validTrades = tradeArray.filter(t => t && t.outputAmount);
+            if (validTrades.length === 0) {
+              throw new Error('No output amount found');
+            }
+            let totalOutJSBI = validTrades.reduce(
+              (acc, t) => JSBI.add(acc, t.outputAmount.quotient),
+              JSBI.BigInt(0)
+            );
+
+            const outCurrency = validTrades[0].outputAmount.currency;
+            const decimals = outCurrency.decimals;
+            // Convert totalOutJSBI → BigNumber → string with decimals
+            const totalBig = BigNumber.from(totalOutJSBI.toString());
+            // Divide by 10**decimals to get a decimal string
+            const totalHuman = ethers.utils.formatUnits(totalBig, decimals);
+
+            // 3) SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
+            for (const t of validTrades) {
+              const inAddr  = t.inputAmount.currency.address.toLowerCase();
+              const outAddr = t.outputAmount.currency.address.toLowerCase();
+              if (inAddr !== _newFrom.toLowerCase() || outAddr !== _newTo.toLowerCase()) {
+                console.log('Outdated token pair in one of the legs');
+                return;
               }
             }
 
+            const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
+            const expectedInRawBN = ethers.utils.parseUnits(_newAmt.toString(), decimalsIn);
+            const totalInJSBI = validTrades.reduce(
+              (acc, t) => JSBI.add(acc, t.inputAmount.quotient),
+              JSBI.BigInt(0)
+            );
+            const totalInBN = BigNumber.from(totalInJSBI.toString());
+            if (!totalInBN.eq(expectedInRawBN)) {
+              console.log('Outdated input amount');
+              return;
+            }
+
+            // 4) Populate our reactive state
+            trades.value = validTrades;
+
+            tradeSummary.sender    = _newSender;
+            tradeSummary.fromAmount    = _newAmt.toString();
+            tradeSummary.toAmount      = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(5);
+            tradeSummary.fromTokenSymbol = tokensByAddresses.value[_newFrom].symbol;
+            tradeSummary.toTokenSymbol   = tokensByAddresses.value[_newTo].symbol;
+            tradeSummary.fromAddressName = `${senderDetails.value.name}`;
+            tradeSummary.fromToken = tokensByAddresses.value[_newFrom];
+            tradeSummary.toToken = tokensByAddresses.value[_newTo];
+
+            // 5) Check if approval is needed (only for the “from” token)
+            if (_newFrom !== ethers.constants.AddressZero) {
+              const erc20 = new ethers.Contract(
+                _newFrom, ERC20_ABI, toRaw(props.provider)
+              );
+              const rawAllowance = await erc20.allowance(
+                senderDetails.value.address,
+                PERMIT2_UNISWAPV4_ADDRESS
+              );
+              // If allowance < 1e27 (arbitrary “sufficient” threshold), require approval
+              if (BigNumber.from(rawAllowance).lt(BigNumber.from('1000000000000000000000000000'))) {
+                needsToApprove.value = true;
+              } else {
+                // double‐check Permit2 → Router allowance
+                const permit2 = new ethers.Contract(
+                  PERMIT2_UNISWAPV4_ADDRESS, 
+                  ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
+                  toRaw(props.provider)
+                );
+                const [remaining] = await permit2.allowance(
+                  senderDetails.value.address,
+                  _newFrom,
+                  UNIVERSAL_ROUTER_ADDRESS
+                );
+                if (BigNumber.from(remaining).lt(BigNumber.from('1000000000000000000000000000'))) {
+                  needsToApprove.value = true;
+                } else {
+                  needsToApprove.value = false;
+                }
+              }
+            } else {
+              needsToApprove.value = false;
+            }
+
+            isSwapButtonDisabled.value = false;
           } catch (err) {
+            console.error(err);
+            // If any check fails, or no trades found, disable the Swap button
             isSwapButtonDisabled.value = true;
             if (err.toString().includes('fractional component exceeds decimals')) {
-              priceFetchingMessage.value = 'Error: Too much decimals in the input amount';
-            } else
-              priceFetchingMessage.value = err;
-            needsToApprove.value = false;
-            console.error(err);
+              priceFetchingMessage.value = 'Error: Too many decimals in the input amount';
+            } else {
+              priceFetchingMessage.value = err.message || String(err);
+            }
+            trades.value = [];
+            tradeSummary.toAmount = null;
           }
+
           isFetchingPrice.value = false;
         }, 500);
-      }
-    )
+      },
+      { deep: true }
+    );
 
-    const API_KEY                    = '85a93cb8cc32fa52390e51a09125a6fc';
-    const SUBGRAPH_ID                = 'DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G';
-    const SUBGRAPH_URL               = `https://gateway.thegraph.com/api/${API_KEY}/subgraphs/id/${SUBGRAPH_ID}`;
-
-    async function tokenUsd (tokenAddr, ethUsd) {
+    // Whenever props.ethPrice changes, re‐fetch token prices
+    const SUBGRAPH_URL = `https://gateway.thegraph.com/api/85a93cb8cc32fa52390e51a09125a6fc/subgraphs/id/DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G`;
+    async function tokenUsd(tokenAddr, ethUsd) {
       if (!tokenAddr) return 0;
-
-      if (tokenAddr === '0x0000000000000000000000000000000000000000')
-        return ethUsd;
-
-      if (tokenAddr.toLowerCase() === '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48')
-        return 1;
-      if (tokenAddr.toLowerCase() === '0xdac17f958d2ee523a2206206994597c13d831ec7')
-        return 1;
+      if (tokenAddr === ethers.constants.AddressZero) return ethUsd;
+      const lc = tokenAddr.toLowerCase();
+      if (lc === '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') return 1;
+      if (lc === '0xdac17f958d2ee523a2206206994597c13d831ec7') return 1;
 
       const qry = `
         query ($id: String!) {
           token(id: $id) { derivedETH }
         }`;
-      const body = JSON.stringify({ query: qry, variables: { id: tokenAddr.toLowerCase() } });
-
-      const { data } = await fetch(SUBGRAPH_URL, {
+      const resp = await fetch(SUBGRAPH_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body
-      }).then(r => r.json());
-
-      console.log(tokenAddr, data?.token)
-      // token not found ⇢ return 0
-      const derivedEth = data?.token?.derivedETH
-        ? Number(data.token.derivedETH)
-        : 0;
-
-      return derivedEth * ethUsd;          // USD price
+        body: JSON.stringify({ query: qry, variables: { id: lc } })
+      });
+      const data = await resp.json();
+      const d = data?.data?.token?.derivedETH ? Number(data.data.token.derivedETH) : 0;
+      return d * ethUsd;
     }
 
     const setTokenPrices = async (tokenArray) => {
-      if (!tokens) return;
       for (const token of tokenArray) {
-        console.log('fetching price of ' + token.symbol)
-        token.price = await tokenUsd(token.address, props.ethPrice)
+        if (!token.address) continue;
+        try {
+          token.price = await tokenUsd(token.address, props.ethPrice);
+        } catch {
+          token.price = 0;
+        }
       }
-    }
-
-    // setAllTokenPrices();
-    watch(() => props.ethPrice, setTokenPrices(tokens));
-    setInterval(() => setTokenPrices(tokens), 180000);
-  
-
-    watch(() => tokens, async (tokensValue) => {
-      if (!tokensValue) return;
-      if (!fromTokenAddress.value) fromTokenAddress.value = tokensValue[0].address;
-      if (!toTokenAddress.value) toTokenAddress.value = tokensValue[1].address;
-
-      tokensByAddresses.value = {};
-      for (const token of tokensValue) {
-        tokensByAddresses.value[token.address] = token;
-      }
-    }, {immediate: true, deep: true});
-
-    const emitSettings = () => {
-      const settings = {
-        tokens: tokens.filter((token) => token.symbol && token.address && (ethers.utils.isAddress(token.address) || token.address === '0x0000000000000000000000000000000000000000')).map((token) => ({...token})),
-      };
-
-      emit('update:settings', settings);
-      
-      settings.tokens = [...tokens];
     };
+    watch(() => props.ethPrice, () => setTokenPrices(tokens), { immediate: true });
+    setInterval(() => setTokenPrices(tokens), 180_000);
 
+    // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
+    watch(
+      () => tokens,
+      (newTokens) => {
+        const map = {};
+        for (const t of newTokens) {
+          if (t.address && t.symbol && t.decimals != null) {
+            map[t.address] = t;
+          }
+        }
+        tokensByAddresses.value = map;
+
+        // Initialize default selection if not set
+        if (!fromTokenAddress.value && filteredTokens.value.length > 0) {
+          fromTokenAddress.value = filteredTokens.value[0].address;
+        }
+        if (!toTokenAddress.value && filteredTokens.value.length > 1) {
+          toTokenAddress.value = filteredTokens.value[1].address;
+        }
+      },
+      { immediate: true, deep: true }
+    );
+
+    // Persist tokens configuration on mount
     onMounted(async () => {
       const settings = await window.electronAPI.loadSettings();
-      if (settings) {
-        if (settings.tokens) {
-          for (let i = 0 ; i < settings.tokens.length ; i++ ) {
-            if (settings.tokens[i]?.address?.length && settings.tokens[i]?.symbol?.length)
-              tokens[i] = settings.tokens[i];
+      if (settings?.tokens) {
+        for (let i = 0; i < settings.tokens.length; i++) {
+          if (settings.tokens[i]?.address && settings.tokens[i]?.symbol) {
+            tokens[i] = settings.tokens[i];
           }
         }
       }
     });
+    watch(() => tokens, () => emit('update:settings', { tokens: [...tokens] }), { deep: true });
 
-    watch(() => tokens, () => emitSettings(), {deep: true});
-    watch(() => fromTokenAddress.value, (fromTokenAddressValue, oldFromTokenAddressValue) => {
-      if (toTokenAddress.value === fromTokenAddressValue) {
-        toTokenAddress.value = oldFromTokenAddressValue
-      }
-      emit('refreshBalance', senderDetails.value, tokensByAddresses.value[fromTokenAddressValue]);
-    })
-    watch(() => toTokenAddress.value, (toTokenAddressValue, oldToTokenAddressValue) => {
-      if (fromTokenAddress.value === toTokenAddressValue) {
-        fromTokenAddress.value = oldToTokenAddressValue
-      }
-      emit('refreshBalance', senderDetails.value, tokensByAddresses.value[toTokenAddressValue]);
-    })
-    watch(() => props.addresses, (addressesValue) => {
-      if (addressesValue && addressesValue[0])
-        senderDetails.value = addressesValue[0];
-    }, {immediate: true})
+    // Keep senderDetails in sync
+    watch(
+      () => props.addresses,
+      (addrs) => {
+        if (addrs && addrs[0]) {
+          senderDetails.value = addrs[0];
+        }
+      },
+      { immediate: true }
+    );
+    watch(
+      () => senderDetails.value,
+      (val) => {
+        if (!val) {
+          isSwapButtonDisabled.value = true;
+        } else {
+          needsToApprove.value = false;
+        }
+      },
+      { immediate: true }
+    );
 
-    watch(() => senderDetails.value, (senderDetailsValue) => {
-      if (!senderDetailsValue) isSwapButtonDisabled.value = true;
-      else needsToApprove.value = false;
-    }, {immediate: true})
+    // ─── Methods ─────────────────────────────────────────────────────────────
 
-    const getTokenSymbol = async (contractAddress) => {
-      // Create a Contract instance pointing to your ERC20
-      const contract = new Contract(contractAddress, ERC20_ABI, toRaw(props.provider));
-      
-      // Call the 'symbol()' method
-      const symbol = await contract.symbol();
-      console.log("ERC20 Symbol:", symbol);
-      return symbol;
-    };
-
-    const getTokenDecimals = async (contractAddress) => {
-      // Create a Contract instance pointing to your ERC20
-      const contract = new Contract(contractAddress, ERC20_ABI, toRaw(props.provider));
-      
-      // Call the 'symbol()' method
-      let decimals = await contract.decimals();
-      if (!decimals) return 0;
-
-      console.log("ERC20 decimals:", decimals);
-      return Number(decimals.toString());
-    };
-
-    const findSymbol = async (index, contractAddress) => {
+    async function getTokenSymbol(contractAddress) {
+      const c = new ethers.Contract(contractAddress, ERC20_ABI, toRaw(props.provider));
+      return await c.symbol();
+    }
+    async function getTokenDecimals(contractAddress) {
+      const c = new ethers.Contract(contractAddress, ERC20_ABI, toRaw(props.provider));
+      const d = await c.decimals();
+      return Number(d.toString());
+    }
+    async function findSymbol(index, contractAddress) {
       try {
-        if (contractAddress === '0x0000000000000000000000000000000000000000') {
+        if (contractAddress === ethers.constants.AddressZero) {
           tokens[index].decimals = 18;
           tokens[index].symbol = 'ETH';
+          tokens[index].price = await tokenUsd(contractAddress, props.ethPrice);
         } else if (ethers.utils.isAddress(contractAddress)) {
           tokens[index].decimals = await getTokenDecimals(contractAddress);
-          tokens[index].symbol = await getTokenSymbol(contractAddress);
-          tokens[index].price = await tokenUsd(contractAddress, props.ethPrice);
-        } else
-          null;
-          // TODO: throw error
-        if (!tokens[index].symbol)
+          tokens[index].symbol   = await getTokenSymbol(contractAddress);
+          tokens[index].price    = await tokenUsd(contractAddress, props.ethPrice);
+        } else {
           tokens[index].symbol = null;
-
-      } catch (err) {
-        console.error(err);
+        }
+      } catch {
         tokens[index].symbol = null;
       }
-    };
+    }
+    function deleteToken(index) {
+      tokens[index].address = '';
+      tokens[index].symbol = '';
+      tokens[index].decimals = null;
+      tokens[index].price = 0;
+    }
 
-    const deleteToken = (index) => {
-      const token = tokens[index];
-      token.address = null;
-      token.symbol = null;
-      token.decimals = null;
-    };
-
-    const switchTokens = () => {
-      let buffer = toTokenAddress.value;
+    function switchTokens() {
+      const tmp = toTokenAddress.value;
       toTokenAddress.value = fromTokenAddress.value;
-      fromTokenAddress.value = buffer;
+      fromTokenAddress.value = tmp;
       shouldSwitchTokensForLimit.value = !shouldSwitchTokensForLimit.value;
-      if (trade.value?.toAmount) {
-        [fromAmount.value, trade.value.toAmount] = [trade.value.toAmount, fromAmount.value];
+      if (tradeSummary.toAmount) {
+        [fromAmount.value, tradeSummary.toAmount] = [tradeSummary.toAmount, fromAmount.value];
       }
     }
 
     const shouldSwitchTokensForLimit = ref(false);
 
-    const swapMessage = ref('');
+
+    // ─── triggerTrade(): Execute *all* legs in one Universal Router call ────
     const triggerTrade = async () => {
       try {
         isSwapButtonDisabled.value = true;
         swapMessage.value = '';
-        trade.value.sender = senderDetails.value;
-        trade.value.sentDate = new Date();
-        trade.value.txId = 'pending';
 
-        if (fromTokenAddress.value === '0x0000000000000000000000000000000000000000') {
-          if (!senderDetails.value.balances || !senderDetails.value.balances[fromTokenAddress.value])
-            throw new Error('Insufficient ETH balance on ' + senderDetails.value.address)
-          if ((computedBalancesByAddress.value[senderDetails.value.address][fromTokenAddress.value] - fromAmount.value) < .004)
-            throw new Error('You must keep more ETH for gas cost on ' + senderDetails.value.address)
+        // Mark summary as “pending”
+        tradeSummary.txId = 'pending';
+        tradeSummary.sentDate = new Date();
+        tradeSummary.isConfirmed = false;
+
+        // Basic balance check for ETH → gas
+        if (fromTokenAddress.value === ethers.constants.AddressZero) {
+          const addr = senderDetails.value.address.toLowerCase();
+          const bal = computedBalancesByAddress.value[addr]?.[fromTokenAddress.value] || 0;
+          if (bal - Number(fromAmount.value) < 0.004) {
+            throw new Error('Insufficient ETH for gas on ' + addr);
+          }
         }
 
-        const {success, tx, warnings, error} = await executeSwapExactIn(trade.value, senderDetails.value, 50, props.gasPrice);
-        if (!success || !tx) {
-          if (error)
-            console.error(error)
+        // Call our adapted executeSwapExactIn, passing the *array* of trades
+        const { success, tx, error } = await executeMixedSwaps(
+          trades.value,
+          tradeSummary,
+          slippage.value,
+          props.gasPrice
+        );
 
-          trade.value.sender = null;
-          trade.value.sentDate = null;
-          trade.value.txId = null;
-          if (error.toString().includes('insufficient funds for intrinsic transaction cost'))
+        if (!success) {
+          // Roll back summary
+          tradeSummary.txId     = null;
+          tradeSummary.sentDate = null;
+          if (error.toString().includes('insufficient funds for intrinsic transaction cost')) {
             swapMessage.value = 'Error: Not enough ETH on the address';
-          else if (error.toString().includes('cannot estimate gas; transaction may fail or may require manual gas limit'))
+          } else if (error.toString().includes('cannot estimate gas')) {
             swapMessage.value = 'Error: Preventing failed swap';
-          else
-            swapMessage.value = error;
-
-          if (warnings && warnings.length)
-            swapMessage.value += '    | Warnings: ' + warnings.join(' ; ')
-          console.log({success, tx, warnings});
-          return false;
+          } else {
+            swapMessage.value = error.message || String(error);
+          }
+          return;
         }
 
-        if (!balanceOffsetByTokenByAddress[fromTokenAddress.value]) 
-          balanceOffsetByTokenByAddress[fromTokenAddress.value] = {}
-        if (!balanceOffsetByTokenByAddress[fromTokenAddress.value][senderDetails.value.address])
-          balanceOffsetByTokenByAddress[fromTokenAddress.value][senderDetails.value.address] = 0
-        
-        balanceOffsetByTokenByAddress[fromTokenAddress.value][senderDetails.value.address] += fromAmount.value;
+        // Subtract “from amount” from our local offset map
+        const tokLower = fromTokenAddress.value.toLowerCase();
+        const senderLc = senderDetails.value.address.toLowerCase();
+        if (!balanceOffsetByTokenByAddress[tokLower]) {
+          balanceOffsetByTokenByAddress[tokLower] = {};
+        }
+        if (!balanceOffsetByTokenByAddress[tokLower][senderLc]) {
+          balanceOffsetByTokenByAddress[tokLower][senderLc] = 0;
+        }
+        balanceOffsetByTokenByAddress[tokLower][senderLc] += Number(fromAmount.value);
 
-        trade.value.expectedToAmount = trade.value.toAmount;
-        trade.value.txId = tx?.hash;
-        emit('update:trade', trade.value);
+        // Finalize summary & emit upwards
+        tradeSummary.txId = tx.hash;
+        tradeSummary.fromTokenSymbol = tokensByAddresses.value[fromTokenAddress.value].symbol;
+        tradeSummary.toTokenSymbol   = tokensByAddresses.value[toTokenAddress.value].symbol;
+        emit('update:trade', { ...tradeSummary });
       } catch (err) {
-        swapMessage.value = err;
+        swapMessage.value = err.message || String(err);
         console.error(err);
+      } finally {
+        isSwapButtonDisabled.value = false;
       }
-      isSwapButtonDisabled.value = false;
-    }
+    };
 
+    // ─── approveSpending(): Approve ERC20 → Permit2 → Router ───────────────
     const approveSpending = async () => {
       try {
         isSwapButtonDisabled.value = true;
         const originalAddress = senderDetails.value.address;
-        const {success, error } = await window.electronAPI.approveSpender(
+
+        const { success, error } = await window.electronAPI.approveSpender(
           originalAddress,
           fromTokenAddress.value,
           PERMIT2_UNISWAPV4_ADDRESS,
           props.gasPrice
         );
+        if (!success) throw error;
 
-        if (!success) {
-          throw error;
-        }
-        
-        let allowance = 0;
-        while (allowance = 0 && originalAddress === senderDetails.value.address) {
+        // Poll until allowance has shown up on‐chain
+        let allowance = BigNumber.from(0);
+        while (allowance.isZero() && originalAddress === senderDetails.value.address) {
           const erc20 = new ethers.Contract(
-            fromTokenAddress.value,
-            ERC20_ABI,
-            toRaw(props.provider),
+            fromTokenAddress.value, ERC20_ABI, toRaw(props.provider)
           );
-          allowance = Number(await erc20.allowance(originalAddress, PERMIT2_UNISWAPV4_ADDRESS));
-          console.log(allowance)
-          if (!allowance) await new Promise(r => setTimeout(r, 2000))
-        }
-        const PERMIT2_CONTRACT = new ethers.Contract(
-          PERMIT2_UNISWAPV4_ADDRESS,
-          PERMIT2_ABI,
-          toRaw(props.provider),
-        )
-        while (allowance = 0 && originalAddress === senderDetails.value.address) {
-          let results = await PERMIT2_CONTRACT.allowance(originalAddress, fromTokenAddress.value, UNIVERSAL_ROUTER_ADDRESS);
-          if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
-            await new Promise(r => setTimeout(r, 2000))
+          allowance = await erc20.allowance(originalAddress, PERMIT2_UNISWAPV4_ADDRESS);
+          if (allowance.isZero()) {
+            await new Promise(r => setTimeout(r, 2000));
           }
-          allowance = results[0];
         }
+
+        // Now check Permit2's allowance → Router
+        const permit2 = new ethers.Contract(
+          PERMIT2_UNISWAPV4_ADDRESS,
+          ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
+          toRaw(props.provider)
+        );
+        let p2allow = BigNumber.from(0);
+        while (p2allow.isZero() && originalAddress === senderDetails.value.address) {
+          const [remaining] = await permit2.allowance(
+            originalAddress,
+            fromTokenAddress.value,
+            UNIVERSAL_ROUTER_ADDRESS
+          );
+          p2allow = BigNumber.from(remaining.toString());
+          if (p2allow.isZero()) {
+            await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+
         needsToApprove.value = false;
       } catch (err) {
         console.error(err);
-        if (err?.toString().includes('insufficient funds for intrinsic transaction cost'))
-          swapMessage.value = 'Error: Not enough ETH on the address ' + originalAddress;
-        else
-          swapMessage.value = err;
+        if (err.message.includes('insufficient funds for intrinsic transaction cost')) {
+          swapMessage.value = 'Error: Not enough ETH on the address ' + senderDetails.value.address;
+        } else {
+          swapMessage.value = err.message || String(err);
+        }
+      } finally {
+        isSwapButtonDisabled.value = false;
       }
-      isSwapButtonDisabled.value = false;
-    }
+    };
+
+    // Emit when tokens scaffold changes
+    const emitSettings = () => {
+      const cleaned = tokens.filter(t =>
+        t.symbol &&
+        t.address &&
+        (ethers.utils.isAddress(t.address) || t.address === ethers.constants.AddressZero)
+      ).map(t => ({ ...t }));
+      emit('update:settings', { tokens: cleaned });
+    };
+
+    watch(() => tokens, () => emitSettings(), { deep: true });
 
     return {
-      tokens,
-      chevronDownImage,
-      deleteImage,
-      reverseImage,
-      downArrowImage,
+      // state
       isEditingTokens,
-      isAddress: ethers.utils.isAddress,
-      findSymbol,
-      deleteToken,
       fromAmount,
       fromTokenAddress,
       toTokenAddress,
       senderDetails,
       tabOrder,
-      tokensByAddresses,
-      switchTokens,
-      shouldSwitchTokensForLimit,
-      trade,
-      trades,
-      triggerTrade,
-      isFetchingPrice,
       isSwapButtonDisabled,
+      needsToApprove,
+      trades,
+      tradeSummary,
+      isFetchingPrice,
       priceFetchingMessage,
       swapMessage,
-      needsToApprove,
-      approveSpending,
-      balanceOffsetByTokenByAddress,
+
+      // refs & images
+      chevronDownImage,
+      reverseImage,
+      downArrowImage,
+      deleteImage,
+
+      // computed
+      filteredTokens,
+      tokensByAddresses,
       computedBalancesByAddress,
-      spaceThousands,
+      balanceString,
+      spaceThousands: spaceThousandsFn,
+
+      // methods
+      switchTokens,
+      triggerTrade,
+      approveSpending,
+      findSymbol,
+      deleteToken,
+      shouldSwitchTokensForLimit,
     };
   }
 };
@@ -936,7 +1040,7 @@ input.token-name {
 .from-swap, .to-swap {
   border-radius: 15px;
   padding: 5px;
-  max-width: 380px;
+  max-width: 420px;
   margin-left: auto;
   margin-right: auto;
   border: 1px solid #ccc;
@@ -958,7 +1062,7 @@ input.token-name {
 }
 .from-swap input {
   background-color: #fff;
-  width: 200px;
+  width: 240px;
   border: none;
   text-align: left;
   padding: 10px;
@@ -968,7 +1072,7 @@ input.token-name {
 }
 .to-swap span {
   background-color: #fff;
-  width: 200px;
+  width: 240px;
   border: none;
   text-align: left;
   padding: 5px;
@@ -1006,7 +1110,7 @@ input.token-name {
   display: block;
   margin-left: auto;
   margin-right: auto;
-  width: 360px;
+  width: 400px;
 }
 input:focus,
 textarea:focus {
