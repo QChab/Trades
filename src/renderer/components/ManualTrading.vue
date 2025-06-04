@@ -563,14 +563,50 @@ export default {
       return d * ethUsd;
     }
 
-    const setTokenPrices = async (tokenArray) => {
+    async function tokensUsd(tokenArray, ethUsd) {
+      const addressesToFetch = []
+      const tokenPrices = {}
       for (const token of tokenArray) {
         if (!token.address) continue;
-        try {
-          token.price = await tokenUsd(token.address, props.ethPrice);
-        } catch {
-          token.price = 0;
-        }
+        const lc = token.address.toLowerCase();
+        if (lc === ethers.constants.AddressZero)
+          tokenPrices[lc] = ethUsd;
+        else if (lc === '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48')
+          tokenPrices[lc] = 1;
+        else if (lc === '0xdac17f958d2ee523a2206206994597c13d831ec7')
+          tokenPrices[lc] = 1;
+        else
+          addressesToFetch.push(token.address)
+      }
+
+      const qry = `
+        query ($ids: [String]!) {
+          tokens(where: {id_in: $ids}) {
+            id
+            derivedETH
+          }
+        }`;
+      const resp = await fetch(SUBGRAPH_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query: qry, variables: { ids: addressesToFetch } })
+      });
+      const data = await resp.json();
+      for (const token of (data?.data?.tokens || [])) {
+        if (!token.id) continue;
+
+        const d = token?.derivedETH ? Number(token.derivedETH) : 0;
+        tokenPrices[token.id] = d * ethUsd;
+      }
+
+      return tokenPrices;
+    }
+
+    const setTokenPrices = async (tokenArray) => {
+      const tokenPrices = await tokensUsd(tokenArray, props.ethPrice);
+      for (const tokenAddress in tokenPrices) {
+        let index = tokenArray.findIndex((t) => t.address.toLowerCase() === tokenAddress)
+        tokenArray[index].price = tokenPrices[tokenAddress]
       }
     };
     watch(() => props.ethPrice, () => setTokenPrices(tokens), { immediate: true });
