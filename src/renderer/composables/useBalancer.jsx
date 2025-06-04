@@ -28,7 +28,7 @@ const API_KEY                    = '85a93cb8cc32fa52390e51a09125a6fc';
 const BALANCER_SUBGRAPH_URL = `https://gateway.thegraph.com/api/${API_KEY}/subgraphs/id/4rixbLvpuBCwXTJSwyAzQgsLR8KprnyMfyCuXT8Fj5cd`;
 
 export function useBalancerV3() {
-  async function findTradeBalancer(tokenInObject, tokenOutObject, amountIn) {
+  async function findTradeBalancer(tokenInObject, tokenOutObject, amountIn, senderAddress) {
     const tokenIn = new Token(
       chainId,
       tokenInObject.address === nativeAddress ? nativeAddressE : tokenInObject.address,
@@ -83,8 +83,8 @@ export function useBalancerV3() {
         deadline,
         queryOutput: updated,
         wethIsEth,
-        // sender: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-        // recipient: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+        sender: senderAddress,
+        recipient: senderAddress,
       };
     } else {
       buildInput = {

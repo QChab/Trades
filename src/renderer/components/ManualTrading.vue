@@ -189,7 +189,7 @@ export default {
     // ─── Constants & Composables ───────────────────────────────────────────
     const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
     const UNIVERSAL_ROUTER_ADDRESS   = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
-    const BALANCER_VAULT_ADDRESS   = '"0xBA12222222228d8Ba445958a75a0704d566BF2C8"';
+    const BALANCER_VAULT_ADDRESS   = '0xBA12222222228d8Ba445958a75a0704d566BF2C8';
     const ERC20_ABI = [
       "function symbol() view returns (string)",
       "function decimals() view returns (uint256)",
@@ -418,7 +418,7 @@ export default {
             console.log('Fetching quotes on exchanges')
             const results = await Promise.allSettled([
               getTradesUniswap(_newFrom, _newTo, _newAmt),
-              getTradesBalancer(_newFrom, _newTo, _newAmt)
+              getTradesBalancer(_newFrom, _newTo, _newAmt, _newSender.address)
             ])
             console.log(results);
 
@@ -426,7 +426,7 @@ export default {
             let validTrades, totalHuman, totalBig;
             if (results[0] && results[0].status === 'fulfilled' && results[0].value) {
               if (results[0].value === 'outdated') return
-              
+
               validTrades = results[0].value.validTrades;
               totalHuman = results[0].value.totalHuman;
               totalBig = results[0].value.totalBig;
@@ -529,8 +529,8 @@ export default {
       }
     );
 
-    const getTradesBalancer = async (_newFrom, _newTo, _newAmt) => {
-      const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt);
+    const getTradesBalancer = async (_newFrom, _newTo, _newAmt, _newSenderAddress) => {
+      const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, _newSenderAddress);
       console.log(result);
 
       return {outputAmount: result.expectedAmountOut, callData: result.callData}
@@ -893,7 +893,7 @@ export default {
           const [remaining] = await permit2.allowance(
             originalAddress,
             fromTokenAddress.value,
-            UNIVERSAL_ROUTER_ADDRESS
+            tradeSummary.protocol === 'Uniswap' ? UNIVERSAL_ROUTER_ADDRESS : BALANCER_VAULT_ADDRESS
           );
           p2allow = BigNumber.from(remaining.toString());
           if (p2allow.isZero()) {

@@ -22,7 +22,7 @@ let infuraKeys = [];
 
 import { ethers } from 'ethers';
 const UNIVERSAL_ROUTER_ADDRESS = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
-const BALANCER_VAULT_ADDRESS   = '"0xBA12222222228d8Ba445958a75a0704d566BF2C8"';
+const BALANCER_VAULT_ADDRESS   = '0xBA12222222228d8Ba445958a75a0704d566BF2C8';
 const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
 const UNIVERSAL_ROUTER_ABI       = [
@@ -303,7 +303,11 @@ async function approveSpender({from, contractAddress, spender, protocol}) {
     ];
     const permit2Contract = new ethers.Contract(PERMIT2_ADDRESS, PERMIT2_ABI, wallet);
 
-    let results = await permit2Contract.allowance(from, contractAddress, UNIVERSAL_ROUTER_ADDRESS);
+    let results = await permit2Contract.allowance(
+      from,
+      contractAddress,
+      protocol === 'Uniswap' ? UNIVERSAL_ROUTER_ADDRESS : BALANCER_VAULT_ADDRESS,
+    );
     if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
       const tx2 = await permit2Contract.approve(
         contractAddress,
