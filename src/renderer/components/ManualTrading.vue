@@ -460,16 +460,16 @@ export default {
 
             if (validTrades && validTrades.length && tokensByAddresses.value[_newTo].price) {
               uniswapGasLimit = 100000 + 50000 * trades.value.length;
-              offsetUniswap = BigNumber.from(-((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
-              totalBig = totalBig.add(offsetUniswap)
+              offsetUniswap = BigNumber.from(((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
+              totalBig = totalBig.sub(offsetUniswap)
             }
             let offsetBalancer, outputBalancer;
             if (gasLimit) {
-              offsetBalancer = BigNumber.from(-((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
-              outputBalancer = BigNumber.from(outputAmount).add(offsetBalancer)
+              offsetBalancer = BigNumber.from(((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
+              outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
             }
-            
             let output = outputBalancer || outputAmount;
+            console.log({output: output.toString(), totalBig: totalBig.toString()})
 
             if (totalBig && output) {
               if (totalBig.gt(output)) {
