@@ -197,6 +197,7 @@ export default {
       "function allowance(address owner, address spender) view returns (uint256)",
       "function approve(address spender, uint256 amount) returns (bool)",
     ];
+    const SUBGRAPH_URL = `https://gateway.thegraph.com/api/85a93cb8cc32fa52390e51a09125a6fc/subgraphs/id/DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G`;
 
     const {
       findPossiblePools,
@@ -542,7 +543,7 @@ export default {
       const pools = await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo]);
       
       // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
-      if (_newFrom !== fromTokenAddress.value.toLowerCase() || _newTo !== toTokenAddress.value.toLowerCase()) {
+      if (_newFrom !== fromTokenAddress.value || _newTo !== toTokenAddress.value) {
         console.log('Outdated token pair in first check');
         return 'outdated';
       }
@@ -603,8 +604,6 @@ export default {
       return {validTrades, totalHuman, totalBig};
     }
 
-    // Whenever props.ethPrice changes, re‐fetch token prices
-    const SUBGRAPH_URL = `https://gateway.thegraph.com/api/85a93cb8cc32fa52390e51a09125a6fc/subgraphs/id/DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G`;
     async function tokenUsd(tokenAddr, ethUsd) {
       if (!tokenAddr) return 0;
       if (tokenAddr === ethers.constants.AddressZero) return ethUsd;
@@ -757,6 +756,7 @@ export default {
         } else {
           tokens[index].symbol = null;
         }
+        tokens[index].address = tokens[index].address.toLowerCase();
       } catch {
         tokens[index].symbol = null;
       }
