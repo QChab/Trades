@@ -90,22 +90,27 @@
           </div>
 
           <p class="details-message">{{ swapMessage }}</p>
-          <button
-            v-if="!needsToApprove"
-            @click="triggerTrade()"
-            :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
-            class="swap-button"
-          >
-            {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : 'Swap' }}
-          </button>
-          <button
-            v-else
-            @click="approveSpending()"
-            :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
-            class="swap-button"
-          >
-            {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
-          </button>
+          <div v-if="!needsToApprove">
+            <p class="details-message" v-if="tradeSummary?.gasLimit">Gas cost ~ ${{ (tradeSummary.gasLimit * ethPrice * Number(gasPrice) / 1e18).toFixed(2) }}</p>
+            <button
+              v-if="!needsToApprove"
+              @click="triggerTrade()"
+              :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
+              class="swap-button"
+            >
+              {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : 'Swap' }}
+            </button>
+          </div>
+          <div v-else>
+            <p class="details-message">Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 50000) * ethPrice * Number(gasPrice) / 1e18).toFixed(2) }}</p>
+            <button
+              @click="approveSpending()"
+              :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
+              class="swap-button"
+            >
+              {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
+            </button>
+          </div>
         </div>
 
         <!-- EDITING TOKENS -->
@@ -286,11 +291,11 @@ export default {
         if (!detail.balances) continue;
         for (const tokAddr in detail.balances) {
           let bal = detail.balances[tokAddr];
-          if (balanceOffsetByTokenByAddress[tokAddr] &&
-              balanceOffsetByTokenByAddress[tokAddr][addr]) {
-            bal -= balanceOffsetByTokenByAddress[tokAddr][addr];
+          if (balanceOffsetByTokenByAddress[tokAddr.toLowerCase()] &&
+              balanceOffsetByTokenByAddress[tokAddr.toLowerCase()][addr]) {
+            bal -= balanceOffsetByTokenByAddress[tokAddr.toLowerCase()][addr];
           }
-          result[addr][tokAddr] = bal;
+          result[addr][tokAddr.toLowerCase()] = bal;
         }
       }
       return result;
@@ -302,7 +307,7 @@ export default {
     // Helper: get a user’s token‐balance as a string with 5 decimals
     const balanceString = (ownerAddress, tokenAddr) => {
       if (!ownerAddress || !tokenAddr) return '0.00000';
-      const b = computedBalancesByAddress.value[ownerAddress?.toLowerCase()]?.[tokenAddr] || 0;
+      const b = computedBalancesByAddress.value[ownerAddress?.toLowerCase()]?.[tokenAddr.toLowerCase()] || 0;
       return b.toFixed(5);
     };
 
@@ -336,7 +341,7 @@ export default {
     watch(() => props.confirmedTrade, (confirmed) => {
       if (!confirmed) return;
       const sender = confirmed.sender?.address?.toLowerCase();
-      const tok    = confirmed.fromToken?.address;
+      const tok    = confirmed.fromToken?.address.toLowerCase();
       const amt    = Number(confirmed.fromAmount);
       if (!sender || !tok || isNaN(amt)) return;
 
@@ -439,18 +444,35 @@ export default {
                 console.error(reason);
             }
 
-            let callData, outputAmount, value;
+            let callData, outputAmount, value, gasLimit;
             if (results[1] && results[1].status === 'fulfilled' && results[1].value) {
               callData = results[1].value.callData;
               outputAmount = results[1].value.outputAmount;
               value = results[1].value.value;
+              gasLimit = results[1].value.gasLimit;
             } else if (!isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
               if (results[1] && results[1].reason)
                 throw reason;
             }
 
-            if (totalBig && outputAmount) {
-              if (totalBig.gt(outputAmount)) {
+            let uniswapGasLimit = 0
+            let offsetUniswap;
+
+            if (validTrades && validTrades.length && tokensByAddresses.value[_newTo].price) {
+              uniswapGasLimit = 100000 + 50000 * trades.value.length;
+              offsetUniswap = BigNumber.from(-((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
+              totalBig = totalBig.add(offsetUniswap)
+            }
+            let offsetBalancer, outputBalancer;
+            if (gasLimit) {
+              offsetBalancer = BigNumber.from(-((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
+              outputBalancer = BigNumber.from(outputAmount).add(offsetBalancer)
+            }
+            
+            let output = outputBalancer || outputAmount;
+
+            if (totalBig && output) {
+              if (totalBig.gt(output)) {
                 isUsingUniswap = true;
                 console.log('Using Uniswap')
               } else {
@@ -479,6 +501,7 @@ export default {
             tradeSummary.fromTokenAddress = tokensByAddresses.value[_newFrom].address;
             tradeSummary.toToken = tokensByAddresses.value[_newTo];
             tradeSummary.toTokenAddress = tokensByAddresses.value[_newTo].address;
+            tradeSummary.gasLimit = isUsingUniswap ? uniswapGasLimit : gasLimit;
 
             // 5) Check if approval is needed
             if (_newFrom !== ethers.constants.AddressZero) {
@@ -546,8 +569,14 @@ export default {
         maxFeePerGas: ethers.utils.parseUnits((Number(props.gasPrice) * 1.65 / 1000000000).toFixed(3), 9),
         maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(props.gasPrice) / (50 * 1000000000))).toFixed(3), 9)
       }
-      console.log('before estimate Gas');
-      const gasLimit = await toRaw(props.provider).estimateGas(txData);
+      console.log('before estimateGas');
+      let gasLimit = 400000;
+      try {
+        gasLimit = await toRaw(props.provider).estimateGas(txData);
+      } catch (err) {
+        console.log('Error in estimateGas');
+        console.error(err);
+      }
       console.log(gasLimit);
 
       return {outputAmount: result.expectedAmountOut, callData: result.callData, value: result.value, gasLimit: gasLimit}
