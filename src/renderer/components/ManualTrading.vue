@@ -686,7 +686,7 @@ export default {
         if (contractAddress === ethers.constants.AddressZero) {
           tokens[index].decimals = 18;
           tokens[index].symbol = 'ETH';
-          tokens[index].price = await tokenUsd(contractAddress, props.ethPrice);
+          tokens[index].price = props.ethPrice;
         } else if (ethers.utils.isAddress(contractAddress)) {
           tokens[index].decimals = await getTokenDecimals(contractAddress);
           tokens[index].symbol   = await getTokenSymbol(contractAddress);
