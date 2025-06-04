@@ -458,13 +458,13 @@ export default {
             let uniswapGasLimit = 0
             let offsetUniswap;
 
-            if (validTrades && validTrades.length && tokensByAddresses.value[_newTo].price) {
+            if (validTrades && validTrades.length && tokensByAddresses.value[_newTo].price && props.gasPrice && props.ethPrice) {
               uniswapGasLimit = 100000 + 50000 * trades.value.length;
               offsetUniswap = BigNumber.from(((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
               totalBig = totalBig.sub(offsetUniswap)
             }
             let offsetBalancer, outputBalancer;
-            if (gasLimit) {
+            if (gasLimit && props.gasPrice && props.ethPrice && tokensByAddresses.value[_newTo].price) {
               offsetBalancer = BigNumber.from(((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
               outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
             }
@@ -866,6 +866,7 @@ export default {
             outputAmount: trades.value[0].outputAmount.toString(),
             value: trades.value[0].value.toString(),
             from: senderDetails.value.address,
+            tradeSummary: JSON.parse(JSON.stringify(tradeSummary)),
           }
           const response = await window.electronAPI.sendTransaction(args);
           if (!response.success)
@@ -886,12 +887,12 @@ export default {
         balanceOffsetByTokenByAddress[tokLower][senderLc] += Number(fromAmount.value);
 
         // Finalize summary & emit upwards
-        tradeSummary.txId = tx.hash;
+        tradeSummary.txId = globalTx.hash;
         tradeSummary.fromTokenSymbol = tokensByAddresses.value[fromTokenAddress.value].symbol;
         tradeSummary.toTokenSymbol   = tokensByAddresses.value[toTokenAddress.value].symbol;
 
-        if (warnings && warnings.length) {
-          swapMessage.value = 'Warnings: ' + warnings.join(' ; ');
+        if (globalWarnings && globalWarnings.length) {
+          swapMessage.value = 'Warnings: ' + globalWarnings.join(' ; ');
         }
         emit('update:trade', { ...tradeSummary });
       } catch (error) {
@@ -937,28 +938,30 @@ export default {
           const erc20 = new ethers.Contract(
             fromTokenAddress.value, ERC20_ABI, toRaw(props.provider)
           );
-          allowance = await erc20.allowance(originalAddress, PERMIT2_ADDRESS);
+          allowance = await erc20.allowance(originalAddress, tradeSummary.protocol === 'Uniswap' ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS);
           if (allowance.isZero()) {
             await new Promise(r => setTimeout(r, 2000));
           }
         }
 
-        // Now check Permit2's allowance
-        const permit2 = new ethers.Contract(
-          PERMIT2_ADDRESS,
-          ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
-          toRaw(props.provider)
-        );
-        let p2allow = BigNumber.from(0);
-        while (p2allow.isZero() && originalAddress === senderDetails.value.address) {
-          const [remaining] = await permit2.allowance(
-            originalAddress,
-            fromTokenAddress.value,
-            tradeSummary.protocol === 'Uniswap' ? UNIVERSAL_ROUTER_ADDRESS : BALANCER_VAULT_ADDRESS
+        if (tradeSummary.protocol === 'Uniswap') {
+          // Now check Permit2's allowance
+          const permit2 = new ethers.Contract(
+            PERMIT2_ADDRESS,
+            ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
+            toRaw(props.provider)
           );
-          p2allow = BigNumber.from(remaining.toString());
-          if (p2allow.isZero()) {
-            await new Promise(r => setTimeout(r, 2000));
+          let p2allow = BigNumber.from(0);
+          while (p2allow.isZero() && originalAddress === senderDetails.value.address) {
+            const [remaining] = await permit2.allowance(
+              originalAddress,
+              fromTokenAddress.value,
+              UNIVERSAL_ROUTER_ADDRESS
+            );
+            p2allow = BigNumber.from(remaining.toString());
+            if (p2allow.isZero()) {
+              await new Promise(r => setTimeout(r, 2000));
+            }
           }
         }
 

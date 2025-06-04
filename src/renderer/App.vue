@@ -294,10 +294,34 @@
       const ethPrice = ref(0);
 
       async function getEthUsd () {
-        const url =
-          'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd';
-        const { ethereum } = await fetch(url).then(r => r.json());
-        return Number(ethereum.usd);
+        try {
+          const url =
+            'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd';
+          const { ethereum } = await fetch(url).then(r => r.json());
+          if (ethereum.usd !== '0' && ethereum.usd !== 0)
+            return Number(ethereum.usd);
+        } catch (err) {
+          console.error(err)
+        }
+        try {
+          const url =
+            'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd';
+          const { ethereum } = await fetch(url).then(r => r.json());
+          if (ethereum.usd !== '0' && ethereum.usd !== 0)
+            return Number(ethereum.usd);
+        } catch (err) {
+          console.error(err)
+        }
+        try {
+          const url =
+            'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd';
+          const { ethereum } = await fetch(url).then(r => r.json());
+          if (ethereum.usd !== '0' && ethereum.usd !== 0)
+            return Number(ethereum.usd);
+        } catch (err) {
+          console.error(err)
+        }
+        return 0;
       }
       ( async () => ethPrice.value = await getEthUsd())();
       setTimeout(async () => ethPrice.value = await getEthUsd(), 120000)

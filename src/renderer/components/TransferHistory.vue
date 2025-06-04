@@ -1,8 +1,20 @@
 <template>
   <div class="transfer-history">
     <!-- Wrap the list in a transition-group to animate new items -->
+    <span class="bold">
+      Swap
+    </span>
+    <span class="from" style="margin-left: 20px;">
+      From
+    </span>
+    <span class="date">
+      Date
+    </span>
+    <span class="gas">
+      Gas
+    </span>
     <transition-group name="transfer" tag="ul">
-      <li v-for="(t, index) in trades" :key="t.timestamp" @click="openTxDetails(t.txId)">
+      <li v-for="(t, index) in trades" :key="t.timestamp">
         {{ t.hasFailed ? '❌' : (t.isConfirmed ? '✅' : '⏳') }}
         <span class="bold">
           {{ t.fromAmount }} {{ t.fromTokenSymbol || t.fromToken?.symbol }} -> 
@@ -10,11 +22,14 @@
           <span v-else> {{ t.toAmount || t.expectedToAmount }} </span>
           {{ t.toTokenSymbol || t.toToken?.symbol }}
         </span>
-        from {{ t.senderName || t.sender?.name }} on {{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}
-        <span v-if="t.gasCost">; gas: ${{ t.gasCost.substring(0, 4)}} </span>
+        <span class="from">{{ t.senderName || t.sender?.name }} on {{ t.protocol }}</span>
+        <span class="date">{{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}</span>
+        <span class="gas" v-if="t.gasCost"> ${{ t.gasCost.substring(0, 4)}} </span>
+        <span @click.stop="openTxDetails(t.txId)" class="view">View</span>
         <span @click.stop="deleteTrade(t, index)" class="delete">Delete</span>
       </li>
     </transition-group>
+    <button @click="deleteAll">Delete all</button>
   </div>
 </template>
 
@@ -144,10 +159,16 @@ export default {
       window.electronAPI.deleteTrade(trade.txId);
     }
 
+    const deleteAll = () => {
+      props.trades.splice(0, props.trades.length);
+      window.electronAPI.deleteHistory();
+    }
+
     return { 
       formatTimestamp,
       openTxDetails,
       deleteTrade,
+      deleteAll,
     };
   }
 };
@@ -191,19 +212,46 @@ li {
   font-weight: 600;
   font-size: 14px !important;
 }
-
+.bold {
+  width: 500px;
+  display: inline-block;
+}
+.from {
+  width: 250px;
+  text-align: center;
+  display: inline-block;
+  text-align: center;
+}
+.date {
+  margin-left: 5px;
+  display: inline-block;
+  width: 200px;
+  text-align: center;
+}
+.gas {
+  text-align: center;
+  width: 100px;
+  display: inline-block;
+}
 .delete {
   display: none;
   right: 0px;
   position: absolute;
   cursor: pointer;
+  color: rgb(171, 37, 37);
+}
+.view {
+  display: none;
+  right: 50px;
+  position: absolute;
+  cursor: pointer;
 }
 
-li:hover .delete {
+li:hover .delete, li:hover .view {
   display: inline-block;
 }
 
-.delete:hover {
+.delete:hover, .view:hover {
   text-decoration: underline;
 }
 </style>

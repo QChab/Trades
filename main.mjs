@@ -199,6 +199,14 @@ async function sendTransaction(transaction) {
 
   try {
     const wallet = getWallet(transaction.from);
+
+    const balance = await provider.getBalance(wallet.address);
+    const balanceEth = Number(ethers.utils.formatEther(balance));
+    if (balanceEth < 0.0005)
+      throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.0005)`)
+    else if (balanceEth < 0.01)
+      warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
+    
     const txData = {
       from: await wallet.getAddress(),
       to: BALANCER_VAULT_ADDRESS,
