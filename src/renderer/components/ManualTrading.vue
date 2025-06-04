@@ -76,7 +76,7 @@
 
           <p class="details-message">{{ priceFetchingMessage }}</p>
           <div class="address-form">
-            <p>with</p>
+            <p><span v-if="tradeSummary.protocol">On {{tradeSummary.protocol}}</span> with</p>
             <select id="sender-address" v-model="senderDetails">
               <option 
                 v-for="(address, index) in addresses" 
@@ -187,8 +187,9 @@ export default {
   emits: ['update:settings', 'update:trade', 'refreshBalance'],
   setup(props, { emit }) {
     // ─── Constants & Composables ───────────────────────────────────────────
-    const PERMIT2_UNISWAPV4_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+    const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
     const UNIVERSAL_ROUTER_ADDRESS   = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
+    const BALANCER_VAULT_ADDRESS   = '"0xBA12222222228d8Ba445958a75a0704d566BF2C8"';
     const ERC20_ABI = [
       "function symbol() view returns (string)",
       "function decimals() view returns (uint256)",
@@ -257,6 +258,7 @@ export default {
       txId:          null,
       sentDate:      null,
       isConfirmed:   false,
+      protocol: null,
     });
 
     const isFetchingPrice    = ref(false);
@@ -423,6 +425,8 @@ export default {
             let isUsingUniswap = true;
             let validTrades, totalHuman, totalBig;
             if (results[0] && results[0].status === 'fulfilled' && results[0].value) {
+              if (results[0].value === 'outdated') return
+              
               validTrades = results[0].value.validTrades;
               totalHuman = results[0].value.totalHuman;
               totalBig = results[0].value.totalBig;
@@ -435,8 +439,8 @@ export default {
 
             let callData, outputAmount;
             if (results[1] && results[1].status === 'fulfilled' && results[1].value) {
-              callData = results[1].callData;
-              outputAmount = results[1].outputAmount;
+              callData = results[1].value.callData;
+              outputAmount = results[1].value.outputAmount;
             } else if (!isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
               if (results[1] && results[1].reason)
                 throw reason;
@@ -456,10 +460,11 @@ export default {
             if (isUsingUniswap)
               trades.value = validTrades;
             else {
-              trades.value = [{callData, outputAmount}];
+              trades.value = [{callData, outputAmount, isUsingUniswap}];
               totalHuman = ethers.utils.formatUnits(outputAmount, tokensByAddresses.value[_newTo].decimals);
             }
 
+            tradeSummary.protocol  = isUsingUniswap ? 'Uniswap' : 'Balancer';
             tradeSummary.sender    = _newSender;
             tradeSummary.fromAmount    = _newAmt.toString();
             tradeSummary.toAmount      = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(5);
@@ -477,7 +482,7 @@ export default {
               );
               const rawAllowance = await erc20.allowance(
                 senderDetails.value.address,
-                PERMIT2_UNISWAPV4_ADDRESS
+                PERMIT2_ADDRESS
               );
               // If allowance < 1e27 (arbitrary “sufficient” threshold), require approval
               if (BigNumber.from(rawAllowance).lt(BigNumber.from('100000000000000000000000000'))) {
@@ -485,14 +490,14 @@ export default {
               } else {
                 // double‐check Permit2 → Router allowance
                 const permit2 = new ethers.Contract(
-                  isUsingUniswap ? PERMIT2_UNISWAPV4_ADDRESS : 0x000000000022D473030F116dDEE9F6B43aC78BA3,
+                  PERMIT2_ADDRESS,
                   ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
                   toRaw(props.provider)
                 );
                 const [remaining] = await permit2.allowance(
                   senderDetails.value.address,
                   _newFrom,
-                  UNIVERSAL_ROUTER_ADDRESS
+                  isUsingUniswap ? UNIVERSAL_ROUTER_ADDRESS : BALANCER_VAULT_ADDRESS
                 );
                 if (BigNumber.from(remaining).lt(BigNumber.from('100000000000000000000000000'))) {
                   needsToApprove.value = true;
@@ -516,6 +521,7 @@ export default {
             }
             trades.value = [];
             tradeSummary.toAmount = null;
+            tradeSummary.protocol = null;
           }
 
           isFetchingPrice.value = false;
@@ -858,8 +864,9 @@ export default {
         const { success, error } = await window.electronAPI.approveSpender(
           originalAddress,
           fromTokenAddress.value,
-          PERMIT2_UNISWAPV4_ADDRESS,
-          props.gasPrice
+          PERMIT2_ADDRESS,
+          props.gasPrice,
+          tradeSummary.protocol
         );
         if (!success) throw error;
 
@@ -869,7 +876,7 @@ export default {
           const erc20 = new ethers.Contract(
             fromTokenAddress.value, ERC20_ABI, toRaw(props.provider)
           );
-          allowance = await erc20.allowance(originalAddress, PERMIT2_UNISWAPV4_ADDRESS);
+          allowance = await erc20.allowance(originalAddress, PERMIT2_ADDRESS);
           if (allowance.isZero()) {
             await new Promise(r => setTimeout(r, 2000));
           }
@@ -877,7 +884,7 @@ export default {
 
         // Now check Permit2's allowance → Router
         const permit2 = new ethers.Contract(
-          PERMIT2_UNISWAPV4_ADDRESS,
+          PERMIT2_ADDRESS,
           ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
           toRaw(props.provider)
         );

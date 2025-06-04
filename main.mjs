@@ -22,7 +22,8 @@ let infuraKeys = [];
 
 import { ethers } from 'ethers';
 const UNIVERSAL_ROUTER_ADDRESS = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
-const PERMIT2_UNISWAPV4_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+const BALANCER_VAULT_ADDRESS   = '"0xBA12222222228d8Ba445958a75a0704d566BF2C8"';
+const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
 const UNIVERSAL_ROUTER_ABI       = [
   'function execute(bytes commands, bytes[] inputs, uint256 deadline) external payable returns (bytes[] memory results)'
@@ -265,7 +266,7 @@ const ERC20_ABI = [
 ];
 
 // APPROVE TOKEN OF SPENDER FOR PERMIT2
-async function approveSpender({from, contractAddress, spender}) {
+async function approveSpender({from, contractAddress, spender, protocol}) {
   console.log({from, contractAddress, spender});
   const warnings = [];
 
@@ -300,13 +301,13 @@ async function approveSpender({from, contractAddress, spender}) {
       "function approve(address token, address spender, uint160 amount, uint48 expiration) external",
       "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
     ];
-    const permit2Contract = new ethers.Contract(PERMIT2_UNISWAPV4_ADDRESS, PERMIT2_ABI, wallet);
+    const permit2Contract = new ethers.Contract(PERMIT2_ADDRESS, PERMIT2_ABI, wallet);
 
     let results = await permit2Contract.allowance(from, contractAddress, UNIVERSAL_ROUTER_ADDRESS);
     if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
       const tx2 = await permit2Contract.approve(
         contractAddress,
-        UNIVERSAL_ROUTER_ADDRESS,
+        protocol === 'Uniswap' ? UNIVERSAL_ROUTER_ADDRESS : BALANCER_VAULT_ADDRESS,
         '1000000000000000000000000000000000000000000000',
         Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50,
         overrides
@@ -339,7 +340,7 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
         ERC20_ABI,
         provider
       );
-      let rawAllowance = await erc20.allowance(wallet.address, PERMIT2_UNISWAPV4_ADDRESS);
+      let rawAllowance = await erc20.allowance(wallet.address, PERMIT2_ADDRESS);
       if (Number(rawAllowance) === 0) {
         throw new Error('Insufficient allowance on ' + tradeSummary.fromToken.symbol);
       }
@@ -348,7 +349,7 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
         "function approve(address token, address spender, uint160 amount, uint48 expiration) external",
         "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
       ];
-      const permit2Contract = new ethers.Contract(PERMIT2_UNISWAPV4_ADDRESS, PERMIT2_ABI, wallet);
+      const permit2Contract = new ethers.Contract(PERMIT2_ADDRESS, PERMIT2_ABI, wallet);
 
       let results = await permit2Contract.allowance(wallet.address, tradeSummary?.fromToken?.address, UNIVERSAL_ROUTER_ADDRESS);
       if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e26) {
@@ -638,8 +639,8 @@ function createWindow() {
     return sendTrade(trade);
   });
 
-  ipcMain.handle('approve-spender', (event, from, contractAddress, spender, gasPrice) => {
-    return approveSpender({from, contractAddress, spender, gasPrice});
+  ipcMain.handle('approve-spender', (event, from, contractAddress, spender, protocol) => {
+    return approveSpender({from, contractAddress, spender, protocol});
   });
 
   ipcMain.handle('confirm-trade', (event, txId, gasCost, toAmount) => {
