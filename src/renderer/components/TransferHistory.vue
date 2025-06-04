@@ -239,12 +239,14 @@ li {
   position: absolute;
   cursor: pointer;
   color: rgb(171, 37, 37);
+  padding: 5px;
 }
 .view {
   display: none;
   right: 50px;
   position: absolute;
   cursor: pointer;
+  padding: 5px;
 }
 
 li:hover .delete, li:hover .view {
