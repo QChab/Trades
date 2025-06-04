@@ -172,8 +172,8 @@ import reverseImage from '@/../assets/reverse.svg';
 import downArrowImage from '@/../assets/down-arrow.svg';
 import deleteImage from '@/../assets/delete.svg';
 import { useUniswapV4 } from '../composables/useUniswap';
+import { useBalancerV3 } from '../composables/useBalancer';
 import spaceThousands from '../composables/spaceThousands';
-import JSBI from 'jsbi';
 
 export default {
   name: 'ManualTrading',
@@ -201,9 +201,12 @@ export default {
     const {
       findPossiblePools,
       selectBestPath,
-      executeSwapExactIn,
       executeMixedSwaps,
     } = useUniswapV4();
+
+    const {
+      findTradeBalancer,
+    } = useBalancerV3();
 
     // ─── Reactive State ─────────────────────────────────────────────────────
     const isEditingTokens = ref(false);
@@ -378,6 +381,11 @@ export default {
         () => senderDetails.value
       ],
       async ([_newFrom, _newTo, _newAmt, _newSender], [_oldFrom, _oldTo]) => {
+        if (!_newSender?.address) {
+          swapMessage.value = 'No wallet selected';
+          return;
+        }
+
         if (debounceTimer) clearTimeout(debounceTimer);
         priceFetchingMessage.value = '';
         swapMessage.value = '';
@@ -389,7 +397,6 @@ export default {
         if (
           !_newFrom ||
           !_newTo ||
-          !_newSender?.address ||
           !_newAmt ||
           _newAmt === '.' ||
           _newAmt <= 0
@@ -407,71 +414,19 @@ export default {
         debounceTimer = setTimeout(async () => {
           try {
             // FINDING POOLS
-            const pools = await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo]);
-            
-            // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
-            if (_newFrom !== fromTokenAddress.value.toLowerCase() || _newTo !== toTokenAddress.value.toLowerCase()) {
-              console.log('Outdated token pair in first check');
-              // isFetchingPrice.value = false;
-              return;
-            }
-            if (_newAmt !== fromAmount.value) {
-              console.log('Outdated input amount in first check');
-              // isFetchingPrice.value = false;
-              return;
-            }
+            const results = await Promise.all([
+              getTradesUniswap(_newFrom, _newTo, _newAmt),
+              getTradesBalancer(_newFrom, _newTo, _newAmt)
+            ])
+            console.log(results);
 
-            // FINDING TRADES
-            const fromAmtRaw = ethers.utils.parseUnits(
-              _newAmt.toString(),
-              tokensByAddresses.value[_newFrom].decimals
-            );
-            const bestTrades = await selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw);
+            const {validTrades, totalHuman, totalBig} = results[0];
+            const {callData, outputAmount} = results[1];
 
-            console.log(bestTrades);
-
-            // Filter out any null/undefined
-            const validTrades = bestTrades.filter(t => t && t.outputAmount);
-            if (validTrades.length === 0) {
-              throw new Error('No output amount found');
-            }
-
-            const totalBig = validTrades.reduce(
-              (acc, t) => {
-                const legInBN = BigNumber.from(t.outputAmount.quotient.toString());
-                return acc.add(legInBN);
-              },
-              BigNumber.from(0)
-            );
-            const totalHuman = ethers.utils.formatUnits(totalBig, tokensByAddresses.value[_newTo].decimals);
-
-            // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
-            for (const t of validTrades) {
-              const inAddr  = t.inputAmount.currency.address.toLowerCase();
-              const outAddr = t.outputAmount.currency.address.toLowerCase();
-              if (inAddr !== fromTokenAddress.value.toLowerCase() || outAddr !== toTokenAddress.value.toLowerCase()) {
-                console.log('Outdated token pair');
-                // isFetchingPrice.value = false;
-                return;
-              }
-            }
-
-            const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
-            const expectedInRawBN = ethers.utils.parseUnits(fromAmount.value + '', decimalsIn);
-            
-            const totalInBN = validTrades.reduce(
-              (acc, t) => {
-                // Convert each JSBI quotient → string → BigNumber, then add
-                const legInBN = BigNumber.from(t.inputAmount.quotient.toString());
-                return acc.add(legInBN);
-              },
-              BigNumber.from(0)
-            );
-
-            if (!totalInBN.eq(expectedInRawBN)) {
-              console.log('Outdated input amount, sum of input of trades: ' + totalInBN.toString());
-              // isFetchingPrice.value = false;
-              return;
+            if (totalBig.gt(outputAmount)) {
+              console.log('Using Uniswap')
+            } else {
+              console.log('Using Balancer')
             }
 
             // 4) Populate our reactive state
@@ -539,6 +494,78 @@ export default {
         }, 400);
       }
     );
+
+    const getTradesBalancer = async (_newFrom, _newTo, _newAmt) => {
+      const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt);
+      console.log(result);
+
+      return {outputAmount: result.expectedAmountOut, callData: result.callData}
+    }
+
+    const getTradesUniswap = async (_newFrom, _newTo, _newAmt) => {
+      const pools = await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo]);
+      
+      // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
+      if (_newFrom !== fromTokenAddress.value.toLowerCase() || _newTo !== toTokenAddress.value.toLowerCase()) {
+        console.log('Outdated token pair in first check');
+        return 'outdated';
+      }
+      if (_newAmt !== fromAmount.value) {
+        console.log('Outdated input amount in first check');
+        return 'outdated';
+      }
+
+      // FINDING TRADES
+      const fromAmtRaw = ethers.utils.parseUnits(
+        _newAmt.toString(),
+        tokensByAddresses.value[_newFrom].decimals
+      );
+      const bestTrades = await selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw);
+
+      // Filter out any null/undefined
+      const validTrades = bestTrades.filter(t => t && t.outputAmount);
+      if (validTrades.length === 0) {
+        return [];
+      }
+
+      const totalBig = validTrades.reduce(
+        (acc, t) => {
+          const legInBN = BigNumber.from(t.outputAmount.quotient.toString());
+          return acc.add(legInBN);
+        },
+        BigNumber.from(0)
+      );
+      const totalHuman = ethers.utils.formatUnits(totalBig, tokensByAddresses.value[_newTo].decimals);
+
+      // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
+      for (const t of validTrades) {
+        const inAddr  = t.inputAmount.currency.address.toLowerCase();
+        const outAddr = t.outputAmount.currency.address.toLowerCase();
+        if (inAddr !== fromTokenAddress.value.toLowerCase() || outAddr !== toTokenAddress.value.toLowerCase()) {
+          console.log('Outdated token pair');
+          return 'outdated';
+        }
+      }
+
+      const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
+      const expectedInRawBN = ethers.utils.parseUnits(fromAmount.value + '', decimalsIn);
+      
+      const totalInBN = validTrades.reduce(
+        (acc, t) => {
+          // Convert each JSBI quotient → string → BigNumber, then add
+          const legInBN = BigNumber.from(t.inputAmount.quotient.toString());
+          return acc.add(legInBN);
+        },
+        BigNumber.from(0)
+      );
+
+      if (!totalInBN.eq(expectedInRawBN)) {
+        console.log('Outdated input amount, sum of input of trades: ' + totalInBN.toString());
+        return 'outdated';
+      }
+
+      return {validTrades, totalHuman, totalBig};
+    }
 
     // Whenever props.ethPrice changes, re‐fetch token prices
     const SUBGRAPH_URL = `https://gateway.thegraph.com/api/85a93cb8cc32fa52390e51a09125a6fc/subgraphs/id/DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G`;
