@@ -220,7 +220,7 @@ export default {
     const slippage         = ref(70);
 
     const tokens = reactive([
-      { price: 0, address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18 },
+      { price: 0, address: ethers.constants.AddressZero, symbol: 'ETH', decimals: 18 },
       { price: 0, address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6 },
       { price: 0, address: '0x514910771af9ca656af840dff83e8264ecf986ca', symbol: 'LINK', decimals: 18 },
       { price: 0, address: '', symbol: '', decimals: null},
@@ -392,6 +392,7 @@ export default {
         swapMessage.value = '';
         trades.value = [];
         tradeSummary.toAmount = null;
+        tradeSummary.protocol = null;
         isFetchingPrice.value = true;
 
         // If any of the essentials is missing or invalid, skip re‐quoting
@@ -437,10 +438,11 @@ export default {
                 console.error(reason);
             }
 
-            let callData, outputAmount;
+            let callData, outputAmount, value;
             if (results[1] && results[1].status === 'fulfilled' && results[1].value) {
               callData = results[1].value.callData;
               outputAmount = results[1].value.outputAmount;
+              value = results[1].value.value;
             } else if (!isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
               if (results[1] && results[1].reason)
                 throw reason;
@@ -460,15 +462,15 @@ export default {
             if (isUsingUniswap)
               trades.value = validTrades;
             else {
-              trades.value = [{callData, outputAmount, isUsingUniswap}];
+              trades.value = [{callData, outputAmount, value, tradeSummary}];
               totalHuman = ethers.utils.formatUnits(outputAmount, tokensByAddresses.value[_newTo].decimals);
             }
 
             tradeSummary.protocol  = isUsingUniswap ? 'Uniswap' : 'Balancer';
             tradeSummary.sender    = _newSender;
             tradeSummary.fromAmount    = _newAmt.toString();
-            tradeSummary.toAmount      = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(5);
-            tradeSummary.expectedToAmount = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(5);
+            tradeSummary.toAmount      = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(6);
+            tradeSummary.expectedToAmount = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(6);
             tradeSummary.fromTokenSymbol = tokensByAddresses.value[_newFrom].symbol;
             tradeSummary.toTokenSymbol   = tokensByAddresses.value[_newTo].symbol;
             tradeSummary.fromAddressName = `${senderDetails.value.name}`;
@@ -533,7 +535,7 @@ export default {
       const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, _newSenderAddress);
       console.log(result);
 
-      return {outputAmount: result.expectedAmountOut, callData: result.callData}
+      return {outputAmount: result.expectedAmountOut, callData: result.callData, value: result.value}
     }
 
     const getTradesUniswap = async (_newFrom, _newTo, _newAmt) => {
@@ -800,20 +802,24 @@ export default {
           }
         }
 
-        // Call our adapted executeSwapExactIn, passing the *array* of trades
-        const { success, warnings, tx, error } = await executeMixedSwaps(
-          trades.value,
-          tradeSummary,
-          slippage.value,
-          props.gasPrice
-        );
+        if (tradeSummary.protocol === 'Uniswap') {
+          // Call our adapted executeSwapExactIn, passing the *array* of trades
+          const { success, warnings, tx, error } = await executeMixedSwaps(
+            trades.value,
+            tradeSummary,
+            slippage.value,
+            props.gasPrice
+          );
 
-        if (!success && error) {
-          if (warnings) globalWarnings = warnings;
-          throw error;
+          if (!success && error) {
+            if (warnings) globalWarnings = warnings;
+            throw error;
+          }
+        } else if (tradeSummary.protocol === 'Balancer') {
+          const response = await window.electronAPI.sendTransaction(JSON.parse(JSON.stringify(trades.value[0])));
         }
-
-        // Subtract “from amount” from our local offset map
+        
+        // Subtract “from amount” from our local offset ma
         const tokLower = fromTokenAddress.value.toLowerCase();
         const senderLc = senderDetails.value.address.toLowerCase();
         if (!balanceOffsetByTokenByAddress[tokLower]) {
@@ -870,7 +876,7 @@ export default {
         );
         if (!success) throw error;
 
-        // Poll until allowance has shown up on‐chain
+        // Pull until allowance has shown up on‐chain
         let allowance = BigNumber.from(0);
         while (allowance.isZero() && originalAddress === senderDetails.value.address) {
           const erc20 = new ethers.Contract(
@@ -882,7 +888,7 @@ export default {
           }
         }
 
-        // Now check Permit2's allowance → Router
+        // Now check Permit2's allowance
         const permit2 = new ethers.Contract(
           PERMIT2_ADDRESS,
           ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],

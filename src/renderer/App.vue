@@ -279,7 +279,7 @@
           token.decimals = await contract.decimals();
 
         let balance;
-        if (token.address === '0x0000000000000000000000000000000000000000')
+        if (token.address === ethers.constants.AddressZero)
           balance = await toRaw(provider.value).getBalance(address);
         else
           balance = await contract.balanceOf(address)

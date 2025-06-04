@@ -194,50 +194,26 @@ function refreshProviders () {
   provider = new ethers.providers.FallbackProvider(providersList, 1);
 }
 
-async function sendTransaction(transfer) {
-  if (!privateKeys) return {success: false, error: 'No private keys found'}
+async function sendTransaction(transaction) {
   const warnings = [];
 
   try {
-    const from = transfer.sender;
-    const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from.toLowerCase());
-    const PRIVATE_KEY = pk.pk;
-    
-    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    if (!wallet || !wallet.address || wallet.address.toLowerCase() !== transfer.from.toLowerCase()) {
-      throw new Error(`Incorrect private key for address ${transfer.from}`)
-    }
-    
-    if (!transfer.isTestMode) {
-      const balance = await provider.getBalance(from);
-      const balanceEth = Number(ethers.utils.formatEther(balance));
-      if (balanceEth < 0.0005)
-        throw new Error(`Eth Balance of address ${from} too low (< 0.0005)`)
-      else if (balanceEth < 0.01)
-        warnings.push(`Beware eth Balance of address ${from} low (< 0.01)`)
+    const wallet = getWallet(from);
+    const txData = {
+      from: wallet.getAddress(),
+      to: BALANCER_VAULT_ADDRESS,
+      data: transaction.callData,
+      value: transaction.value,
+      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.65 / 1000000000).toFixed(3), 9),
+      maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9)
     }
 
-    const erc20Abi = [
-      'function transfer(address to, uint256 value) returns (bool)',
-    ];
-    const tokenAddress = transfer.token.address;
-    const erc20Contract = new ethers.Contract(tokenAddress, erc20Abi, provider);
-
-    const recipient = transfer.to;
-    const amount = ethers.utils.parseUnits(transfer.amount.toString(), transfer.token.decimals);
-
-    const txData = await erc20Contract['transfer'].populateTransaction(recipient, amount);
-    txData.gasLimit = 500000;
-    txData.maxFeePerGas = ethers.utils.parseUnits((Number(gasPrice) * 1.65 / 1000000000).toFixed(3), 9);
-    txData.maxPriorityFeePerGas = ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9);
     console.log(txData);
-    let txResponse;
-    if (!transfer.isTestMode) {
-      txResponse = await wallet.sendTransaction(txData);
-    }
-    saveTradeInDB({...transfer, txId: txResponse?.hash});
+    let txResponse = await wallet.sendTransaction(txData);
 
-    return {success: true, warnings, txId: txResponse?.hash};
+    saveTradeInDB({...transaction.tradeSummary, txId: txResponse?.hash});
+
+    return {success: true, warnings, tx: JSON.parse(JSON.stringify(txResponse))};
   } catch (err) {
     console.error(err);
     console.log(err);
@@ -337,8 +313,7 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
     if (!tradeSummary.toToken?.address) throw new Error('Missing to token address in trade details')
     if (!tradeSummary.sender?.address) throw new Error('Missing sender address in trade details')
 
-    if (tradeSummary.fromToken.address !== '0x0000000000000000000000000000000000000000') {
-
+    if (tradeSummary.fromToken.address !== ethers.constants.AddressZero) {
       const erc20 = new ethers.Contract(
         tradeSummary?.fromToken?.address,
         ERC20_ABI,
