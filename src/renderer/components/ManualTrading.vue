@@ -91,7 +91,7 @@
 
           <p class="details-message">{{ swapMessage }}</p>
           <div v-if="!needsToApprove">
-            <p class="details-message" v-if="tradeSummary?.gasLimit">Gas cost ~ ${{ (tradeSummary.gasLimit * ethPrice * Number(gasPrice) / 1e18).toFixed(2) }}</p>
+            <p class="details-message" v-if="tradeSummary?.gasLimit">Gas cost ~ ${{ (tradeSummary.gasLimit * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
             <button
               v-if="!needsToApprove"
               @click="triggerTrade()"
@@ -102,7 +102,7 @@
             </button>
           </div>
           <div v-else>
-            <p class="details-message">Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 50000) * ethPrice * Number(gasPrice) / 1e18).toFixed(2) }}</p>
+            <p class="details-message">Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 50000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
             <button
               @click="approveSpending()"
               :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
