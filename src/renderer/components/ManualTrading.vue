@@ -462,25 +462,25 @@ export default {
             let offsetUniswap, outputUniswap;
             if (validTrades && validTrades.length && tokensByAddresses.value[_newTo].price && props.gasPrice && props.ethPrice) {
               uniswapGasLimit = 100000 + 50000 * trades.value.length;
-              offsetUniswap = BigNumber.from(((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
+              offsetUniswap = BigNumber.from(Math.ceil((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price))
               outputUniswap = totalBig.sub(offsetUniswap)
             }
             let offsetBalancer, outputBalancer;
             if (gasLimit && props.gasPrice && props.ethPrice && tokensByAddresses.value[_newTo].price) {
-              offsetBalancer = BigNumber.from(((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
+              offsetBalancer = BigNumber.from(Math.ceil((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price))
               outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
             }
             let outputU = outputUniswap || totalBig || BigNumber.from('-10000000000000000000000000');;
             let outputB = outputBalancer || outputAmount || BigNumber.from('-10000000000000000000000000');;
             console.log({outputB: outputB.toString(), outputU: outputU.toString()})
 
-            let bestOutputLessGas = outputUniswap;
+            let bestOutputLessGas = outputU;
             if (outputU && outputB) {
               if (outputU.gt(outputB)) {
                 isUsingUniswap = true;
                 console.log('Using Uniswap')
               } else {
-                bestOutputLessGas = outputBalancer;
+                bestOutputLessGas = outputB;
                 isUsingUniswap = false;
                 console.log('Using Balancer')
               }
