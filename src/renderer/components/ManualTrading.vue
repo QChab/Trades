@@ -425,23 +425,26 @@ export default {
             console.log('Fetching quotes on exchanges')
             const results = await Promise.allSettled([
               getTradesUniswap(_newFrom, _newTo, _newAmt),
-              getTradesBalancer(_newFrom, _newTo, _newAmt, _newSender.address)
+              getTradesBalancer(_newFrom, _newTo, _newAmt, _newSender.address, true),
+              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : {outputAmount: 0n},
             ])
             console.log(results);
 
             let isUsingUniswap = true;
             let validTrades, totalHuman, totalBig;
-            if (results[0] && results[0].status === 'fulfilled' && results[0].value) {
-              if (results[0].value === 'outdated') return
+            if (results[0] && results[0].status === 'fulfilled' && results[0].value && results[0].value[100]) {
+              if (results[0].value[100] === 'outdated') return
 
-              validTrades = results[0].value.validTrades;
-              totalHuman = results[0].value.totalHuman;
-              totalBig = results[0].value.totalBig;
+              validTrades = results[0].value[100].validTrades;
+              totalHuman = results[0].value[100].totalHuman;
+              totalBig = results[0].value[100].totalBig;
             } else if (!results[0] || results[0].status === 'rejected') {
               isUsingUniswap = false;
 
               if (results[0] && results[0].reason)
-                console.error(reason);
+                console.error(results[0].reason);
             }
 
             let callData, outputAmount, value, gasLimit;
@@ -452,30 +455,32 @@ export default {
               gasLimit = results[1].value.gasLimit;
             } else if (!isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
               if (results[1] && results[1].reason)
-                throw reason;
+                throw results[1].reason;
             }
 
             let uniswapGasLimit = 0
-            let offsetUniswap;
-
+            let offsetUniswap, outputUniswap;
             if (validTrades && validTrades.length && tokensByAddresses.value[_newTo].price && props.gasPrice && props.ethPrice) {
               uniswapGasLimit = 100000 + 50000 * trades.value.length;
               offsetUniswap = BigNumber.from(((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
-              totalBig = totalBig.sub(offsetUniswap)
+              outputUniswap = totalBig.sub(offsetUniswap)
             }
             let offsetBalancer, outputBalancer;
             if (gasLimit && props.gasPrice && props.ethPrice && tokensByAddresses.value[_newTo].price) {
               offsetBalancer = BigNumber.from(((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
               outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
             }
-            let output = outputBalancer || outputAmount;
-            console.log({output: output.toString(), totalBig: totalBig.toString()})
+            let outputU = outputUniswap || totalBig || BigNumber.from('-10000000000000000000000000');;
+            let outputB = outputBalancer || outputAmount || BigNumber.from('-10000000000000000000000000');;
+            console.log({outputB: outputB.toString(), outputU: outputU.toString()})
 
-            if (totalBig && output) {
-              if (totalBig.gt(output)) {
+            let bestOutputLessGas = outputUniswap;
+            if (outputU && outputB) {
+              if (outputU.gt(outputB)) {
                 isUsingUniswap = true;
                 console.log('Using Uniswap')
               } else {
+                bestOutputLessGas = outputBalancer;
                 isUsingUniswap = false;
                 console.log('Using Balancer')
               }
@@ -488,6 +493,30 @@ export default {
               trades.value = [{callData, outputAmount, value, tradeSummary}];
               totalHuman = ethers.utils.formatUnits(outputAmount, tokensByAddresses.value[_newTo].decimals);
             }
+
+            let best75U;
+            let best50U;
+            let best25U;
+            if (results[2])
+              best75U = findBestMixedTrades(results[0].value[75], results[2], _newTo, gasLimit);
+            if (results[3])
+              best50U = findBestMixedTrades(results[0].value[50], results[3], _newTo, gasLimit);
+            if (results[2])
+              best25U = findBestMixedTrades(results[0].value[25], results[4], _newTo, gasLimit);
+
+            console.log({
+              best25U: best25U.outputAmount.toString(),
+              best50U: best50U.outputAmount.toString(),
+              best75U: best75U.outputAmount.toString(),
+            })
+
+            if (best25U.outputAmount.gt(bestOutputLessGas)) {
+              console.log('should split 25% to U and 75% to B');
+            } else if (best50U.outputAmount.gt(bestOutputLessGas)) {
+              console.log('should split 50% to U and 50% to B');
+            } else if (best75U.outputAmount.gt(bestOutputLessGas)) {
+              console.log('should split 75% to U and 25% to B');
+            } 
 
             tradeSummary.protocol  = isUsingUniswap ? 'Uniswap' : 'Balancer';
             tradeSummary.sender    = _newSender;
@@ -557,7 +586,52 @@ export default {
       }
     );
 
-    const getTradesBalancer = async (_newFrom, _newTo, _newAmt, _newSenderAddress) => {
+    const findBestMixedTrades = (resultsU, rawResultsB, _newTo, gasLimitBalancer) => {
+      let validTrades, totalHuman, totalBig;
+      if (resultsU) {
+        validTrades = resultsU.validTrades;
+        totalHuman = resultsU.totalHuman;
+        totalBig = resultsU.totalBig;
+      }
+      let callData, outputAmount, value;
+      if (rawResultsB && rawResultsB.status === 'fulfilled' && rawResultsB.value) {
+        callData = rawResultsB.value.callData;
+        outputAmount = rawResultsB.value.outputAmount;
+        value = rawResultsB.value.value;
+      }
+
+      let uniswapGasLimit = 0
+      let offsetUniswap, outputUniswap;
+      if (validTrades && validTrades.length && tokensByAddresses.value[_newTo].price && props.gasPrice && props.ethPrice) {
+        uniswapGasLimit = 100000 + 50000 * trades.value.length;
+        offsetUniswap = BigNumber.from(((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
+        outputUniswap = totalBig.sub(offsetUniswap)
+      }
+      let offsetBalancer, outputBalancer;
+      if (gasLimitBalancer && props.gasPrice && props.ethPrice && tokensByAddresses.value[_newTo].price) {
+        offsetBalancer = BigNumber.from(((gasLimitBalancer * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
+        outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
+      }
+      let outputU = outputUniswap || totalBig || BigNumber.from('-100000000000000000');
+      let outputB = outputBalancer || outputAmount || BigNumber.from('-100000000000000000');
+      console.log({outputB: outputB.toString(), outputU: outputU.toString()})
+
+      return {
+        outputAmount: outputB.add(outputU),
+        tradesU: {
+          validTrades,
+          totalHuman,
+          totalBig,
+        },
+        tradesB: {
+          callData,
+          outputAmount,
+          value,
+        }
+      }
+    }
+
+    const getTradesBalancer = async (_newFrom, _newTo, _newAmt, _newSenderAddress, shouldFetchGasLimit) => {
       const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, _newSenderAddress);
       console.log(result);
 
@@ -572,7 +646,8 @@ export default {
       console.log('before estimateGas');
       let gasLimit = 400000;
       try {
-        gasLimit = await toRaw(props.provider).estimateGas(txData);
+        if (shouldFetchGasLimit)
+          gasLimit = await toRaw(props.provider).estimateGas(txData);
       } catch (err) {
         console.log('Error in estimateGas');
         console.error(err);
@@ -600,8 +675,50 @@ export default {
         _newAmt.toString(),
         tokensByAddresses.value[_newFrom].decimals
       );
-      const bestTrades = await selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw);
+      const [bestTrades, bestTrades25, bestTrades50, bestTrades75] = await Promise.all([
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .25).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .50).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .75).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+      ])
 
+      const tradesByPercent = {
+        100: processBestTrades(bestTrades, _newFrom, _newTo),
+        25: processBestTrades(bestTrades25, _newFrom, _newTo),
+        50: processBestTrades(bestTrades50, _newFrom, _newTo),
+        75: processBestTrades(bestTrades75, _newFrom, _newTo),
+      }
+
+      const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
+      const expectedInRawBN = ethers.utils.parseUnits(fromAmount.value + '', decimalsIn);
+      
+      const totalInBN = tradesByPercent[100].validTrades.reduce(
+        (acc, t) => {
+          // Convert each JSBI quotient → string → BigNumber, then add
+          const legInBN = BigNumber.from(t.inputAmount.quotient.toString());
+          return acc.add(legInBN);
+        },
+        BigNumber.from(0)
+      );
+
+      if (!totalInBN.eq(expectedInRawBN)) {
+        console.log('Outdated input amount, sum of input of trades: ' + totalInBN.toString());
+        return 'outdated';
+      }
+
+      return tradesByPercent
+    }
+
+    const processBestTrades = (bestTrades, _newFrom, _newTo) => {
       // Filter out any null/undefined
       const validTrades = bestTrades.filter(t => t && t.outputAmount);
       if (validTrades.length === 0) {
@@ -625,23 +742,6 @@ export default {
           console.log('Outdated token pair');
           return 'outdated';
         }
-      }
-
-      const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
-      const expectedInRawBN = ethers.utils.parseUnits(fromAmount.value + '', decimalsIn);
-      
-      const totalInBN = validTrades.reduce(
-        (acc, t) => {
-          // Convert each JSBI quotient → string → BigNumber, then add
-          const legInBN = BigNumber.from(t.inputAmount.quotient.toString());
-          return acc.add(legInBN);
-        },
-        BigNumber.from(0)
-      );
-
-      if (!totalInBN.eq(expectedInRawBN)) {
-        console.log('Outdated input amount, sum of input of trades: ' + totalInBN.toString());
-        return 'outdated';
       }
 
       return {validTrades, totalHuman, totalBig};

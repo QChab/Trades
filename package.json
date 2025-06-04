@@ -27,6 +27,7 @@
           ]
         }
       ],
+      "icon": "src/assets/icon.icns",
       "category": "public.app-category.finance",
       "identity": "Thibault Glaunez (BAXBQTTS3U)"
     }
