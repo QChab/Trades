@@ -76,7 +76,6 @@
 
           <p class="details-message">{{ priceFetchingMessage }}</p>
           <div class="address-form">
-            <!-- <p v-if="trades.length">{{ trades.length }} leg<span v-if="trades.length > 1">s</span> </p> -->
             <p>with</p>
             <select id="sender-address" v-model="senderDetails">
               <option 
@@ -413,24 +412,53 @@ export default {
 
         debounceTimer = setTimeout(async () => {
           try {
-            // FINDING POOLS
-            const results = await Promise.all([
+            // Fetching quotes
+            console.log('Fetching quotes on exchanges')
+            const results = await Promise.allSettled([
               getTradesUniswap(_newFrom, _newTo, _newAmt),
               getTradesBalancer(_newFrom, _newTo, _newAmt)
             ])
             console.log(results);
 
-            const {validTrades, totalHuman, totalBig} = results[0];
-            const {callData, outputAmount} = results[1];
+            let isUsingUniswap = true;
+            let validTrades, totalHuman, totalBig;
+            if (results[0] && results[0].status === 'fulfilled' && results[0].value) {
+              validTrades = results[0].value.validTrades;
+              totalHuman = results[0].value.totalHuman;
+              totalBig = results[0].value.totalBig;
+            } else if (!results[0] || results[0].status === 'rejected') {
+              isUsingUniswap = false;
 
-            if (totalBig.gt(outputAmount)) {
-              console.log('Using Uniswap')
-            } else {
-              console.log('Using Balancer')
+              if (results[0] && results[0].reason)
+                console.error(reason);
+            }
+
+            let callData, outputAmount;
+            if (results[1] && results[1].status === 'fulfilled' && results[1].value) {
+              callData = results[1].callData;
+              outputAmount = results[1].outputAmount;
+            } else if (!isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
+              if (results[1] && results[1].reason)
+                throw reason;
+            }
+
+            if (totalBig && outputAmount) {
+              if (totalBig.gt(outputAmount)) {
+                isUsingUniswap = true;
+                console.log('Using Uniswap')
+              } else {
+                isUsingUniswap = false;
+                console.log('Using Balancer')
+              }
             }
 
             // 4) Populate our reactive state
-            trades.value = validTrades;
+            if (isUsingUniswap)
+              trades.value = validTrades;
+            else {
+              trades.value = [{callData, outputAmount}];
+              totalHuman = ethers.utils.formatUnits(outputAmount, tokensByAddresses.value[_newTo].decimals);
+            }
 
             tradeSummary.sender    = _newSender;
             tradeSummary.fromAmount    = _newAmt.toString();
@@ -442,7 +470,7 @@ export default {
             tradeSummary.fromToken = tokensByAddresses.value[_newFrom];
             tradeSummary.toToken = tokensByAddresses.value[_newTo];
 
-            // 5) Check if approval is needed (only for the “from” token)
+            // 5) Check if approval is needed
             if (_newFrom !== ethers.constants.AddressZero) {
               const erc20 = new ethers.Contract(
                 _newFrom, ERC20_ABI, toRaw(props.provider)
@@ -457,7 +485,7 @@ export default {
               } else {
                 // double‐check Permit2 → Router allowance
                 const permit2 = new ethers.Contract(
-                  PERMIT2_UNISWAPV4_ADDRESS, 
+                  isUsingUniswap ? PERMIT2_UNISWAPV4_ADDRESS : 0x000000000022D473030F116dDEE9F6B43aC78BA3,
                   ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
                   toRaw(props.provider)
                 );
