@@ -215,6 +215,7 @@ li {
 .bold {
   width: 500px;
   display: inline-block;
+  text-align: center;
 }
 .from {
   width: 250px;
