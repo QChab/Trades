@@ -476,7 +476,9 @@ export default {
             tradeSummary.toTokenSymbol   = tokensByAddresses.value[_newTo].symbol;
             tradeSummary.fromAddressName = `${senderDetails.value.name}`;
             tradeSummary.fromToken = tokensByAddresses.value[_newFrom];
+            tradeSummary.fromTokenAddress = tokensByAddresses.value[_newFrom].address;
             tradeSummary.toToken = tokensByAddresses.value[_newTo];
+            tradeSummary.toTokenAddress = tokensByAddresses.value[_newTo].address;
 
             // 5) Check if approval is needed
             if (_newFrom !== ethers.constants.AddressZero) {
@@ -485,12 +487,12 @@ export default {
               );
               const rawAllowance = await erc20.allowance(
                 senderDetails.value.address,
-                PERMIT2_ADDRESS
+                isUsingUniswap ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS,
               );
               // If allowance < 1e27 (arbitrary “sufficient” threshold), require approval
               if (BigNumber.from(rawAllowance).lt(BigNumber.from('100000000000000000000000000'))) {
                 needsToApprove.value = true;
-              } else {
+              } else if (isUsingUniswap) {
                 // double‐check Permit2 → Router allowance
                 const permit2 = new ethers.Contract(
                   PERMIT2_ADDRESS,
@@ -536,7 +538,19 @@ export default {
       const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, _newSenderAddress);
       console.log(result);
 
-      return {outputAmount: result.expectedAmountOut, callData: result.callData, value: result.value}
+      const txData = {
+        from: _newSenderAddress,
+        to: BALANCER_VAULT_ADDRESS,
+        data: result.callData,
+        value: result.value,
+        maxFeePerGas: ethers.utils.parseUnits((Number(props.gasPrice) * 1.65 / 1000000000).toFixed(3), 9),
+        maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(props.gasPrice) / (50 * 1000000000))).toFixed(3), 9)
+      }
+      console.log('before estimate Gas');
+      const gasLimit = await toRaw(props.provider).estimateGas(txData);
+      console.log(gasLimit);
+
+      return {outputAmount: result.expectedAmountOut, callData: result.callData, value: result.value, gasLimit: gasLimit}
     }
 
     const getTradesUniswap = async (_newFrom, _newTo, _newAmt) => {
@@ -802,6 +816,7 @@ export default {
           }
         }
 
+        let globalTx;
         if (tradeSummary.protocol === 'Uniswap') {
           // Call our adapted executeSwapExactIn, passing the *array* of trades
           const { success, warnings, tx, error } = await executeMixedSwaps(
@@ -815,8 +830,19 @@ export default {
             if (warnings) globalWarnings = warnings;
             throw error;
           }
+          globalTx = tx;
         } else if (tradeSummary.protocol === 'Balancer') {
-          const response = await window.electronAPI.sendTransaction(JSON.parse(JSON.stringify(trades.value[0])));
+          const args = {
+            callData: trades.value[0].callData,
+            outputAmount: trades.value[0].outputAmount.toString(),
+            value: trades.value[0].value.toString(),
+            from: senderDetails.value.address,
+          }
+          const response = await window.electronAPI.sendTransaction(args);
+          if (!response.success)
+            throw new Error('Problem in sending transaction to Balancer');
+
+          globalTx = response.tx;
         }
         
         // Subtract “from amount” from our local offset ma
@@ -870,7 +896,7 @@ export default {
         const { success, error } = await window.electronAPI.approveSpender(
           originalAddress,
           fromTokenAddress.value,
-          PERMIT2_ADDRESS,
+          tradeSummary.protocol === 'Uniswap' ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS,
           props.gasPrice,
           tradeSummary.protocol
         );

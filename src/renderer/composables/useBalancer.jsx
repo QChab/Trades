@@ -68,7 +68,7 @@ export function useBalancerV3() {
     });
 
     console.log(
-      `Output token: ${swap.outputAmount.token.address}, Amount: ${swap.outputAmount.amount}`
+      `Amount: ${swap.outputAmount.amount}`
     );
 
     const rpcUrls = await window.electronAPI.getInfuraKeys();
@@ -95,7 +95,6 @@ export function useBalancerV3() {
       };
     }
     const callData = swap.buildCall(buildInput);
-    console.log(callData);
     // console.log(
     //   `Min Amount Out: ${callData.minAmountOut.amount}\n\nTx Data:\nTo: ${callData.to}\nCallData: ${callData.callData}\nValue: ${callData.value}`
     // );

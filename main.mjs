@@ -90,7 +90,7 @@ async function saveTradeInDB(trade) {
       trade.fromAmount,
       trade.toAmount,
       trade.txId,
-      'uniswap-v4',
+      trade.protocol,
       trade.sender?.name,
     ], function (err) {
       if (err) {
@@ -198,9 +198,9 @@ async function sendTransaction(transaction) {
   const warnings = [];
 
   try {
-    const wallet = getWallet(from);
+    const wallet = getWallet(transaction.from);
     const txData = {
-      from: wallet.getAddress(),
+      from: await wallet.getAddress(),
       to: BALANCER_VAULT_ADDRESS,
       data: transaction.callData,
       value: transaction.value,
@@ -273,26 +273,28 @@ async function approveSpender({from, contractAddress, spender, protocol}) {
       await tx1.wait();
     }
 
-    const PERMIT2_ABI = [
-      "function approve(address token, address spender, uint160 amount, uint48 expiration) external",
-      "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
-    ];
-    const permit2Contract = new ethers.Contract(PERMIT2_ADDRESS, PERMIT2_ABI, wallet);
+    if (protocol === 'Uniswap') {
+      const PERMIT2_ABI = [
+        "function approve(address token, address spender, uint160 amount, uint48 expiration) external",
+        "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
+      ];
+      const permit2Contract = new ethers.Contract(PERMIT2_ADDRESS, PERMIT2_ABI, wallet);
 
-    let results = await permit2Contract.allowance(
-      from,
-      contractAddress,
-      protocol === 'Uniswap' ? UNIVERSAL_ROUTER_ADDRESS : BALANCER_VAULT_ADDRESS,
-    );
-    if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
-      const tx2 = await permit2Contract.approve(
+      let results = await permit2Contract.allowance(
+        from,
         contractAddress,
-        protocol === 'Uniswap' ? UNIVERSAL_ROUTER_ADDRESS : BALANCER_VAULT_ADDRESS,
-        '1000000000000000000000000000000000000000000000',
-        Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50,
-        overrides
+        UNIVERSAL_ROUTER_ADDRESS,
       );
-      await tx2.wait();
+      if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
+        const tx2 = await permit2Contract.approve(
+          contractAddress,
+          UNIVERSAL_ROUTER_ADDRESS,
+          '1000000000000000000000000000000000000000000000',
+          Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50,
+          overrides
+        );
+        await tx2.wait();
+      }
     }
 
     return {success: true, warnings}
