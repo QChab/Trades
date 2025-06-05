@@ -14,7 +14,7 @@
       Gas
     </span>
     <transition-group name="transfer" tag="ul">
-      <li v-for="(t, index) in trades" :key="t.timestamp">
+      <li v-for="(t, index) in trades" :key="t.timestamp + t.txId">
         {{ t.hasFailed ? '❌' : (t.isConfirmed ? '✅' : '⏳') }}
         <span class="bold">
           {{ t.fromAmount }} {{ t.fromTokenSymbol || t.fromToken?.symbol }} -> 

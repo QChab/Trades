@@ -265,6 +265,11 @@ export default {
       sentDate:      null,
       isConfirmed:   false,
       protocol: null,
+      gasLimit: null,
+      toAmountU: null,
+      toAmountB: null,
+      fromAmountU: null,
+      fromAmountB: null,
     });
 
     const isFetchingPrice    = ref(false);
@@ -426,17 +431,18 @@ export default {
             const results = await Promise.allSettled([
               getTradesUniswap(_newFrom, _newTo, _newAmt),
               getTradesBalancer(_newFrom, _newTo, _newAmt, _newSender.address, true),
-              _newAmt * tokensByAddresses.value[_newFrom].price > 100 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : {outputAmount: 0n},
-              _newAmt * tokensByAddresses.value[_newFrom].price > 100 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : {outputAmount: 0n},
-              _newAmt * tokensByAddresses.value[_newFrom].price > 100 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : {outputAmount: 0n},
-              _newAmt * tokensByAddresses.value[_newFrom].price > 100 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : {outputAmount: 0n},
             ])
             console.log(results);
 
             let isUsingUniswap = true;
             let validTrades, totalHuman, totalBig;
-            if (results[0] && results[0].status === 'fulfilled' && results[0].value && results[0].value[100]) {
-              if (results[0].value[100] === 'outdated') return
+            if (results[0] && results[0].status === 'fulfilled' && results[0].value) {
+              if (results[0].value === 'outdated') return
+              if (!results[0].value[100] || results[0].value[100] === 'outdated') return
 
               validTrades = results[0].value[100].validTrades;
               totalHuman = results[0].value[100].totalHuman;
@@ -497,37 +503,59 @@ export default {
             }
 
             let best90U, best75U, best50U, best25U;
-            if (results[5])
-              best90U = findBestMixedTrades(results[0].value[90], results[5], _newTo, gasLimit);
-            if (results[2])
-              best75U = findBestMixedTrades(results[0].value[75], results[2], _newTo, gasLimit);
-            if (results[3])
-              best50U = findBestMixedTrades(results[0].value[50], results[3], _newTo, gasLimit);
-            if (results[4])
-              best25U = findBestMixedTrades(results[0].value[25], results[4], _newTo, gasLimit);
+            let bestMixed, fractionMixed;
 
-            console.log({
-              best25U: best25U.outputAmount.toString(),
-              best50U: best50U.outputAmount.toString(),
-              best75U: best75U.outputAmount.toString(),
-              best90U: best90U.outputAmount.toString(),
-            })
+            if (results[0] && results[0].value) {
+              if (results[5])
+                best90U = findBestMixedTrades(results[0].value[90], results[5], _newTo, gasLimit);
+              if (results[2])
+                best75U = findBestMixedTrades(results[0].value[75], results[2], _newTo, gasLimit);
+              if (results[3])
+                best50U = findBestMixedTrades(results[0].value[50], results[3], _newTo, gasLimit);
+              if (results[4])
+                best25U = findBestMixedTrades(results[0].value[25], results[4], _newTo, gasLimit);
 
-            if (best25U.outputAmount.gt(bestOutputLessGas) && best25U.outputAmount.gt(best50U.outputAmount) && best25U.outputAmount.gt(best75U.outputAmount) && best25U.outputAmount.gt(best90U.outputAmount)) {
-              console.log('should split 25% to U and 75% to B');
-            } else if (best50U.outputAmount.gt(bestOutputLessGas) && best50U.outputAmount.gt(best25U.outputAmount) && best50U.outputAmount.gt(best75U.outputAmount) && best50U.outputAmount.gt(best90U.outputAmount)) {
-              console.log('should split 50% to U and 50% to B');
-            } else if (best75U.outputAmount.gt(bestOutputLessGas) && best75U.outputAmount.gt(best25U.outputAmount) && best75U.outputAmount.gt(best50U.outputAmount) && best75U.outputAmount.gt(best90U.outputAmount)) {
-              console.log('should split 75% to U and 25% to B');
-            } else if (best90U.outputAmount.gt(bestOutputLessGas) && best90U.outputAmount.gt(best25U.outputAmount) && best90U.outputAmount.gt(best50U.outputAmount) && best90U.outputAmount.gt(best75U.outputAmount)) {
-              console.log('should split 90% to U and 10% to B');
-            } 
+              console.log({
+                best25U: best25U.outputAmount.toString(),
+                best50U: best50U.outputAmount.toString(),
+                best75U: best75U.outputAmount.toString(),
+                best90U: best90U.outputAmount.toString(),
+              })
 
-            tradeSummary.protocol  = isUsingUniswap ? 'Uniswap' : 'Balancer';
+              if (best25U.outputAmount.gt(bestOutputLessGas) && best25U.outputAmount.gt(best50U.outputAmount) && best25U.outputAmount.gt(best75U.outputAmount) && best25U.outputAmount.gt(best90U.outputAmount)) {
+                console.log('should split 25% to U and 75% to B');
+                bestMixed = best25U;
+                fractionMixed = .25;
+              } else if (best50U.outputAmount.gt(bestOutputLessGas) && best50U.outputAmount.gt(best25U.outputAmount) && best50U.outputAmount.gt(best75U.outputAmount) && best50U.outputAmount.gt(best90U.outputAmount)) {
+                console.log('should split 50% to U and 50% to B');
+                bestMixed = best50U;
+                fractionMixed = .5;
+              } else if (best75U.outputAmount.gt(bestOutputLessGas) && best75U.outputAmount.gt(best25U.outputAmount) && best75U.outputAmount.gt(best50U.outputAmount) && best75U.outputAmount.gt(best90U.outputAmount)) {
+                console.log('should split 75% to U and 25% to B');
+                bestMixed = best75U;
+                fractionMixed = .75;
+              } else if (best90U.outputAmount.gt(bestOutputLessGas) && best90U.outputAmount.gt(best25U.outputAmount) && best90U.outputAmount.gt(best50U.outputAmount) && best90U.outputAmount.gt(best75U.outputAmount)) {
+                console.log('should split 90% to U and 10% to B');
+                bestMixed = best90U;
+                fractionMixed = .9;
+              } 
+            }
+
+            if (bestMixed) {
+              console.log(bestMixed)
+              totalHuman = ethers.utils.formatUnits(bestMixed.tradesU.totalBig.add(bestMixed.tradesB.outputAmount), tokensByAddresses.value[_newTo].decimals);
+              trades.value = [
+                ...bestMixed.tradesU.validTrades,
+                bestMixed.tradesB,
+              ]
+              uniswapGasLimit = 100000 + 50000 * bestMixed.tradesU.validTrades.length;
+            }
+
+            tradeSummary.protocol  = bestMixed ? 'Uniswap & Balancer' : (isUsingUniswap ? 'Uniswap' : 'Balancer');
             tradeSummary.sender    = _newSender;
             tradeSummary.fromAmount    = _newAmt.toString();
             tradeSummary.toAmount      = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(6);
-            tradeSummary.expectedToAmount = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(6);
+            tradeSummary.expectedToAmount = tradeSummary.toAmount;
             tradeSummary.fromTokenSymbol = tokensByAddresses.value[_newFrom].symbol;
             tradeSummary.toTokenSymbol   = tokensByAddresses.value[_newTo].symbol;
             tradeSummary.fromAddressName = `${senderDetails.value.name}`;
@@ -535,37 +563,20 @@ export default {
             tradeSummary.fromTokenAddress = tokensByAddresses.value[_newFrom].address;
             tradeSummary.toToken = tokensByAddresses.value[_newTo];
             tradeSummary.toTokenAddress = tokensByAddresses.value[_newTo].address;
-            tradeSummary.gasLimit = isUsingUniswap ? uniswapGasLimit : gasLimit;
-
+            tradeSummary.gasLimit = bestMixed ? Number(uniswapGasLimit) + Number(gasLimit) : (isUsingUniswap ? uniswapGasLimit : gasLimit);
+            if (bestMixed) {
+              tradeSummary.fromAmountU = (_newAmt * fractionMixed).toFixed(7);
+              tradeSummary.fromAmountB = (_newAmt - Number(tradeSummary.fromAmountU)).toFixed(7);
+              tradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestMixed.tradesU.totalBig, tokensByAddresses.value[_newTo].decimals)).toFixed(7);
+              tradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestMixed.tradesB.outputAmount, tokensByAddresses.value[_newTo].decimals)).toFixed(7);
+            }
             // 5) Check if approval is needed
             if (_newFrom !== ethers.constants.AddressZero) {
               const erc20 = new ethers.Contract(
                 _newFrom, ERC20_ABI, toRaw(props.provider)
               );
-              const rawAllowance = await erc20.allowance(
-                senderDetails.value.address,
-                isUsingUniswap ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS,
-              );
-              // If allowance < 1e27 (arbitrary “sufficient” threshold), require approval
-              if (BigNumber.from(rawAllowance).lt(BigNumber.from('100000000000000000000000000'))) {
-                needsToApprove.value = true;
-              } else if (isUsingUniswap) {
-                // double‐check Permit2 → Router allowance
-                const permit2 = new ethers.Contract(
-                  PERMIT2_ADDRESS,
-                  ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
-                  toRaw(props.provider)
-                );
-                const [remaining] = await permit2.allowance(
-                  senderDetails.value.address,
-                  _newFrom,
-                  isUsingUniswap ? UNIVERSAL_ROUTER_ADDRESS : BALANCER_VAULT_ADDRESS
-                );
-                if (BigNumber.from(remaining).lt(BigNumber.from('100000000000000000000000000'))) {
-                  needsToApprove.value = true;
-                } else {
-                  needsToApprove.value = false;
-                }
+              if (tradeSummary.protocol !== 'Uniswap & Balancer') {
+                
               }
             } else {
               needsToApprove.value = false;
@@ -591,6 +602,34 @@ export default {
       }
     );
 
+    const checkAllowances = async () => {
+      const rawAllowance = await erc20.allowance(
+        senderDetails.value.address,
+        isUsingUniswap ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS,
+      );
+      // If allowance < 1e27 (arbitrary “sufficient” threshold), require approval
+      if (BigNumber.from(rawAllowance).lt(BigNumber.from('100000000000000000000000000'))) {
+        needsToApprove.value = true;
+      } else if (tradeSummary.protocol === 'Uniswap') {
+        // double‐check Permit2 → Router allowance
+        const permit2 = new ethers.Contract(
+          PERMIT2_ADDRESS,
+          ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
+          toRaw(props.provider)
+        );
+        const [remaining] = await permit2.allowance(
+          senderDetails.value.address,
+          _newFrom,
+          UNIVERSAL_ROUTER_ADDRESS
+        );
+        if (BigNumber.from(remaining).lt(BigNumber.from('100000000000000000000000000'))) {
+          needsToApprove.value = true;
+        } else {
+          needsToApprove.value = false;
+        }
+      }
+    }
+
     const findBestMixedTrades = (resultsU, rawResultsB, _newTo, gasLimitBalancer) => {
       let validTrades, totalHuman, totalBig;
       if (resultsU) {
@@ -601,9 +640,10 @@ export default {
       let callData, outputAmount, value;
       if (rawResultsB && rawResultsB.status === 'fulfilled' && rawResultsB.value) {
         callData = rawResultsB.value.callData;
-        outputAmount = rawResultsB.value.outputAmount;
+        outputAmount = BigNumber.from(rawResultsB.value.outputAmount);
         value = rawResultsB.value.value;
       }
+      console.log({callData, outputAmount, value})
 
       let uniswapGasLimit = 0
       let offsetUniswap, outputUniswap;
@@ -955,7 +995,8 @@ export default {
           }
         }
 
-        let globalTx;
+        console.log(trades.value);
+        let globalTxs = [];
         if (tradeSummary.protocol === 'Uniswap') {
           // Call our adapted executeSwapExactIn, passing the *array* of trades
           const { success, warnings, tx, error } = await executeMixedSwaps(
@@ -969,7 +1010,7 @@ export default {
             if (warnings) globalWarnings = warnings;
             throw error;
           }
-          globalTx = tx;
+          globalTxs.push(tx);
         } else if (tradeSummary.protocol === 'Balancer') {
           const args = {
             callData: trades.value[0].callData,
@@ -982,7 +1023,39 @@ export default {
           if (!response.success)
             throw new Error('Problem in sending transaction to Balancer');
 
-          globalTx = response.tx;
+          globalTxs.push(response.tx);
+        } else if (tradeSummary.protocol === 'Uniswap & Balancer') {
+          const resultsU = await executeMixedSwaps(
+            trades.value.filter((t) => !t.callData),
+            {
+              ...tradeSummary,
+              fromAmount: tradeSummary.fromAmountU,
+              expectedToAmount: tradeSummary.toAmountU,
+              toAmount: tradeSummary.toAmountU,
+              protocol: 'Uniswap'
+            },
+            slippage.value,
+            props.gasPrice
+          )
+
+          const resultsB = await window.electronAPI.sendTransaction({
+            callData: trades.value.filter(t => t.callData)[0].callData,
+            outputAmount: trades.value.filter(t => t.callData)[0].outputAmount.toString(),
+            value: trades.value.filter(t => t.callData)[0].value.toString(),
+            from: senderDetails.value.address,
+            tradeSummary: JSON.parse(JSON.stringify({
+              ...tradeSummary,
+              fromAmount: tradeSummary.fromAmountB,
+              expectedToAmount: tradeSummary.toAmountB,
+              toAmount: tradeSummary.toAmountB,
+              protocol: 'Balancer'
+            })),
+          })
+
+          if (resultsU && resultsU.success)
+            globalTxs.push(resultsU.tx);
+          if (resultsB && resultsB.success)
+            globalTxs.push(resultsB.tx);
         }
         
         // Subtract “from amount” from our local offset ma
@@ -997,14 +1070,33 @@ export default {
         balanceOffsetByTokenByAddress[tokLower][senderLc] += Number(fromAmount.value);
 
         // Finalize summary & emit upwards
-        tradeSummary.txId = globalTx.hash;
         tradeSummary.fromTokenSymbol = tokensByAddresses.value[fromTokenAddress.value].symbol;
         tradeSummary.toTokenSymbol   = tokensByAddresses.value[toTokenAddress.value].symbol;
-
         if (globalWarnings && globalWarnings.length) {
           swapMessage.value = 'Warnings: ' + globalWarnings.join(' ; ');
         }
-        emit('update:trade', { ...tradeSummary });
+
+        if (tradeSummary.protocol === 'Uniswap & Balancer') {
+          tradeSummary.txId = globalTxs[0].hash;
+          emit('update:trade', {
+             ...tradeSummary,
+            fromAmount: tradeSummary.fromAmountU,
+            expectedToAmount: tradeSummary.toAmountU,
+            toAmount: tradeSummary.toAmountU,
+            protocol: 'Uniswap'
+          });
+          tradeSummary.txId = globalTxs[1].hash;
+          emit('update:trade', {
+            ...tradeSummary,
+            fromAmount: tradeSummary.fromAmountB,
+            expectedToAmount: tradeSummary.toAmountB,
+            toAmount: tradeSummary.toAmountB,
+            protocol: 'Balancer'
+          });
+        } else {
+          tradeSummary.txId = globalTxs[0].hash;
+          emit('update:trade', { ...tradeSummary });
+        }
       } catch (error) {
         tradeSummary.txId     = null;
         tradeSummary.sentDate = null;
@@ -1044,17 +1136,26 @@ export default {
 
         // Pull until allowance has shown up on‐chain
         let allowance = BigNumber.from(0);
+        const erc20 = new ethers.Contract(
+          fromTokenAddress.value, ERC20_ABI, toRaw(props.provider)
+        );
         while (allowance.isZero() && originalAddress === senderDetails.value.address) {
-          const erc20 = new ethers.Contract(
-            fromTokenAddress.value, ERC20_ABI, toRaw(props.provider)
-          );
           allowance = await erc20.allowance(originalAddress, tradeSummary.protocol === 'Uniswap' ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS);
           if (allowance.isZero()) {
             await new Promise(r => setTimeout(r, 2000));
           }
         }
+        if (tradeSummary.protocol === 'Uniswap & Balancer') {
+          allowance = BigNumber.from(0)
+          while (allowance.isZero() && originalAddress === senderDetails.value.address) {
+            allowance = await erc20.allowance(originalAddress, BALANCER_VAULT_ADDRESS);
+            if (allowance.isZero()) {
+              await new Promise(r => setTimeout(r, 2000));
+            }
+          }
+        }
 
-        if (tradeSummary.protocol === 'Uniswap') {
+        if (tradeSummary.protocol === 'Uniswap' || tradeSummary.protocol === 'Uniswap & Balancer') {
           // Now check Permit2's allowance
           const permit2 = new ethers.Contract(
             PERMIT2_ADDRESS,
