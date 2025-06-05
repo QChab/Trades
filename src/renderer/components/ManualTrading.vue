@@ -462,12 +462,12 @@ export default {
             let offsetUniswap, outputUniswap;
             if (validTrades && validTrades.length && tokensByAddresses.value[_newTo].price && props.gasPrice && props.ethPrice) {
               uniswapGasLimit = 100000 + 50000 * trades.value.length;
-              offsetUniswap = BigNumber.from(Math.ceil((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price))
+              offsetUniswap = BigNumber.from(Math.ceil((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toPrecision(50).split('.')[0])
               outputUniswap = totalBig.sub(offsetUniswap)
             }
             let offsetBalancer, outputBalancer;
             if (gasLimit && props.gasPrice && props.ethPrice && tokensByAddresses.value[_newTo].price) {
-              offsetBalancer = BigNumber.from(Math.ceil((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price))
+              offsetBalancer = BigNumber.from(Math.ceil((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toPrecision(50).split('.')[0])
               outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
             }
             let outputU = outputUniswap || totalBig || BigNumber.from('-10000000000000000000000000');;
@@ -604,16 +604,16 @@ export default {
       let offsetUniswap, outputUniswap;
       if (validTrades && validTrades.length && tokensByAddresses.value[_newTo].price && props.gasPrice && props.ethPrice) {
         uniswapGasLimit = 100000 + 50000 * trades.value.length;
-        offsetUniswap = BigNumber.from(((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
+        offsetUniswap = BigNumber.from(((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toPrecision(50).split('.')[0])
         outputUniswap = totalBig.sub(offsetUniswap)
       }
       let offsetBalancer, outputBalancer;
       if (gasLimitBalancer && props.gasPrice && props.ethPrice && tokensByAddresses.value[_newTo].price) {
-        offsetBalancer = BigNumber.from(((gasLimitBalancer * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toFixed(0))
+        offsetBalancer = BigNumber.from(((gasLimitBalancer * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toPrecision(50).split('.')[0])
         outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
       }
-      let outputU = outputUniswap || totalBig || BigNumber.from('-100000000000000000');
-      let outputB = outputBalancer || outputAmount || BigNumber.from('-100000000000000000');
+      let outputU = outputUniswap || totalBig || BigNumber.from('-10000000000000000000000000');
+      let outputB = outputBalancer || outputAmount || BigNumber.from('-10000000000000000000000000');
       console.log({outputB: outputB.toString(), outputU: outputU.toString()})
 
       return {
