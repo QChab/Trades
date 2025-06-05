@@ -431,10 +431,10 @@ export default {
             const results = await Promise.allSettled([
               getTradesUniswap(_newFrom, _newTo, _newAmt),
               getTradesBalancer(_newFrom, _newTo, _newAmt, _newSender.address, true),
-              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : {outputAmount: 0n},
-              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : {outputAmount: 0n},
-              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : {outputAmount: 0n},
-              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : {outputAmount: 0n},
             ])
             console.log(results);
 
