@@ -1035,7 +1035,7 @@ export default {
         // Basic balance check for ETH → gas
         if (fromTokenAddress.value === ethers.constants.AddressZero) {
           const addr = senderDetails.value.address.toLowerCase();
-          const bal = computedBalancesByAddress.value[addr]?.[fromTokenAddress.value] || 0;
+          const bal = computedBalancesByAddress.value[addr]?.[fromTokenAddress.value.toLowerCase()] || 0;
           if (bal - Number(fromAmount.value) < 0.004) {
             throw new Error('Insufficient ETH for gas on ' + addr);
           }

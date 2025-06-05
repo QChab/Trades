@@ -259,7 +259,8 @@
           balance = 0;
         }
         if (!addressDetail.balances) addressDetail.balances = {};
-          addressDetail.balances[token.address] = balance;
+        
+        addressDetail.balances[token.address.toLowerCase()] = balance;
       }
 
       const erc20Abi = [
