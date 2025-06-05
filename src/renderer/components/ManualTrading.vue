@@ -426,9 +426,10 @@ export default {
             const results = await Promise.allSettled([
               getTradesUniswap(_newFrom, _newTo, _newAmt),
               getTradesBalancer(_newFrom, _newTo, _newAmt, _newSender.address, true),
-              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : {outputAmount: 0n},
-              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : {outputAmount: 0n},
-              _newAmt * tokensByAddresses.value[_newFrom].price > 1 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 100 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 100 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 100 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 100 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : {outputAmount: 0n},
             ])
             console.log(results);
 
@@ -470,6 +471,7 @@ export default {
               offsetBalancer = BigNumber.from(Math.ceil((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toPrecision(50).split('.')[0])
               outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
             }
+            console.log({outputAmount})
             let outputU = outputUniswap || totalBig || BigNumber.from('-10000000000000000000000000');;
             let outputB = outputBalancer || outputAmount || BigNumber.from('-10000000000000000000000000');;
             console.log({outputB: outputB.toString(), outputU: outputU.toString()})
@@ -494,28 +496,31 @@ export default {
               totalHuman = ethers.utils.formatUnits(outputAmount, tokensByAddresses.value[_newTo].decimals);
             }
 
-            let best75U;
-            let best50U;
-            let best25U;
+            let best90U, best75U, best50U, best25U;
+            if (results[5])
+              best90U = findBestMixedTrades(results[0].value[90], results[5], _newTo, gasLimit);
             if (results[2])
               best75U = findBestMixedTrades(results[0].value[75], results[2], _newTo, gasLimit);
             if (results[3])
               best50U = findBestMixedTrades(results[0].value[50], results[3], _newTo, gasLimit);
-            if (results[2])
+            if (results[4])
               best25U = findBestMixedTrades(results[0].value[25], results[4], _newTo, gasLimit);
 
             console.log({
               best25U: best25U.outputAmount.toString(),
               best50U: best50U.outputAmount.toString(),
               best75U: best75U.outputAmount.toString(),
+              best90U: best90U.outputAmount.toString(),
             })
 
-            if (best25U.outputAmount.gt(bestOutputLessGas)) {
+            if (best25U.outputAmount.gt(bestOutputLessGas) && best25U.outputAmount.gt(best50U.outputAmount) && best25U.outputAmount.gt(best75U.outputAmount) && best25U.outputAmount.gt(best90U.outputAmount)) {
               console.log('should split 25% to U and 75% to B');
-            } else if (best50U.outputAmount.gt(bestOutputLessGas)) {
+            } else if (best50U.outputAmount.gt(bestOutputLessGas) && best50U.outputAmount.gt(best25U.outputAmount) && best50U.outputAmount.gt(best75U.outputAmount) && best50U.outputAmount.gt(best90U.outputAmount)) {
               console.log('should split 50% to U and 50% to B');
-            } else if (best75U.outputAmount.gt(bestOutputLessGas)) {
+            } else if (best75U.outputAmount.gt(bestOutputLessGas) && best75U.outputAmount.gt(best25U.outputAmount) && best75U.outputAmount.gt(best50U.outputAmount) && best75U.outputAmount.gt(best90U.outputAmount)) {
               console.log('should split 75% to U and 25% to B');
+            } else if (best90U.outputAmount.gt(bestOutputLessGas) && best90U.outputAmount.gt(best25U.outputAmount) && best90U.outputAmount.gt(best50U.outputAmount) && best90U.outputAmount.gt(best75U.outputAmount)) {
+              console.log('should split 90% to U and 10% to B');
             } 
 
             tradeSummary.protocol  = isUsingUniswap ? 'Uniswap' : 'Balancer';
@@ -582,7 +587,7 @@ export default {
           }
 
           isFetchingPrice.value = false;
-        }, 400);
+        }, 500);
       }
     );
 
@@ -675,7 +680,7 @@ export default {
         _newAmt.toString(),
         tokensByAddresses.value[_newFrom].decimals
       );
-      const [bestTrades, bestTrades25, bestTrades50, bestTrades75] = await Promise.all([
+      const [bestTrades, bestTrades25, bestTrades50, bestTrades75, bestTrades90] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
           (_newAmt * .25).toFixed(tokensByAddresses.value[_newFrom].decimals),
@@ -689,13 +694,18 @@ export default {
           (_newAmt * .75).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .90).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
       ])
 
       const tradesByPercent = {
-        100: processBestTrades(bestTrades, _newFrom, _newTo),
         25: processBestTrades(bestTrades25, _newFrom, _newTo),
         50: processBestTrades(bestTrades50, _newFrom, _newTo),
         75: processBestTrades(bestTrades75, _newFrom, _newTo),
+        90: processBestTrades(bestTrades90, _newFrom, _newTo),
+        100: processBestTrades(bestTrades, _newFrom, _newTo),
       }
 
       const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
