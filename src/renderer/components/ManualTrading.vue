@@ -21,6 +21,17 @@
                 <img :src="reverseImage" class="reverse-image" @click="shouldSwitchTokensForLimit = !shouldSwitchTokensForLimit"/>
               </p>
             </div>
+            <div v-else class="checkboxes">
+              <label>
+                <input type="checkbox" v-model="shouldUseUniswap"/> Uniswap
+              </label>
+              <label>
+                <input type="checkbox" v-model="shouldUseBalancer"/> Balancer
+              </label>
+              <label>
+                <input type="checkbox" v-model="shouldUseUniswapAndBalancer"/> Uniswap & Balancer
+              </label>
+            </div>
           </div>
           <div class="from-swap">
             <p>Sell</p>
@@ -224,6 +235,10 @@ export default {
     const isSwapButtonDisabled = ref(false);
     const needsToApprove   = ref(false);
     const slippage         = ref(70);
+    const shouldUseUniswap = ref(true);
+    const shouldUseBalancer = ref(true);
+    const shouldUseUniswapAndBalancer = ref(true);
+
 
     const tokens = reactive([
       { price: 0, address: ethers.constants.AddressZero, symbol: 'ETH', decimals: 18 },
@@ -390,14 +405,25 @@ export default {
         () => fromTokenAddress.value,
         () => toTokenAddress.value,
         () => fromAmount.value,
-        () => senderDetails.value
+        () => senderDetails.value,
+        () => shouldUseUniswap.value,
+        () => shouldUseBalancer.value,
+        () => shouldUseUniswapAndBalancer.value,
       ],
-      async ([_newFrom, _newTo, _newAmt, _newSender], [_oldFrom, _oldTo]) => {
+      async (
+        [_newFrom, _newTo, _newAmt, _newSender, shouldUseUniswapValue, shouldUseBalancerValue, shouldUseUniswapAndBalancerValue],
+        [_oldFrom, _oldTo]
+      ) => {
         if (!_newSender?.address) {
           swapMessage.value = 'No wallet selected';
           return;
         }
 
+        if (!shouldUseUniswapValue && !shouldUseBalancerValue && !shouldUseUniswapAndBalancerValue) {
+          swapMessage.value = 'Select at least one DEX type'
+          isSwapButtonDisabled.value = true;
+          return
+        }
         if (debounceTimer) clearTimeout(debounceTimer);
         priceFetchingMessage.value = '';
         swapMessage.value = '';
@@ -429,12 +455,18 @@ export default {
             // Fetching quotes
             console.log('Fetching quotes on exchanges')
             const results = await Promise.allSettled([
-              getTradesUniswap(_newFrom, _newTo, _newAmt),
-              getTradesBalancer(_newFrom, _newTo, _newAmt, _newSender.address, true),
-              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : null,
-              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : null,
-              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : null,
-              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : null,
+              (shouldUseUniswapValue || shouldUseUniswapAndBalancerValue) ? 
+                getTradesUniswap(_newFrom, _newTo, _newAmt) : null,
+              (shouldUseBalancerValue || shouldUseUniswapAndBalancerValue) ? 
+                getTradesBalancer(_newFrom, _newTo, _newAmt, _newSender.address, true) : null,
+              (shouldUseBalancerValue || shouldUseUniswapAndBalancerValue) && (_newAmt * tokensByAddresses.value[_newFrom].price > 150 || (!shouldUseBalancerValue && !shouldUseUniswapValue))
+                ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : null,
+              (shouldUseBalancerValue || shouldUseUniswapAndBalancerValue) && (_newAmt * tokensByAddresses.value[_newFrom].price > 150 || (!shouldUseBalancerValue && !shouldUseUniswapValue))
+                ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : null,
+              (shouldUseBalancerValue || shouldUseUniswapAndBalancerValue) && (_newAmt * tokensByAddresses.value[_newFrom].price > 150 || (!shouldUseBalancerValue && !shouldUseUniswapValue)) 
+                ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : null,
+              (shouldUseBalancerValue || shouldUseUniswapAndBalancerValue) && (_newAmt * tokensByAddresses.value[_newFrom].price > 150 || (!shouldUseBalancerValue && !shouldUseUniswapValue))
+                ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : null,
             ])
             console.log(results);
 
@@ -491,6 +523,10 @@ export default {
                 console.log('Using Balancer')
               }
             }
+            if (shouldUseUniswapValue && !shouldUseBalancerValue)
+              isUsingUniswap = true
+            if (shouldUseBalancerValue && !shouldUseUniswapValue)
+              isUsingUniswap = false
 
             // 4) Populate our reactive state
             if (isUsingUniswap)
@@ -503,7 +539,7 @@ export default {
             let best90U, best75U, best50U, best25U;
             let bestMixed, fractionMixed;
 
-            if (results[0]?.value && results[2]?.value && results[3]?.value && results[4]?.value && results[5]?.value) {
+            if (shouldUseUniswapAndBalancerValue && results[0]?.value && results[2]?.value && results[3]?.value && results[4]?.value && results[5]?.value) {
               if (results[5])
                 best90U = findBestMixedTrades(results[0].value[90], results[5], _newTo, gasLimit);
               if (results[2])
@@ -513,19 +549,28 @@ export default {
               if (results[4])
                 best25U = findBestMixedTrades(results[0].value[25], results[4], _newTo, gasLimit);
 
-              if (best25U.outputAmount.gt(bestOutputLessGas) && best25U.outputAmount.gt(best50U.outputAmount) && best25U.outputAmount.gt(best75U.outputAmount) && best25U.outputAmount.gt(best90U.outputAmount)) {
+              if (!shouldUseUniswapValue && !shouldUseBalancerValue)
+                bestOutputLessGas = BigNumber.from('-100000000000000000000000000')
+
+              console.log({
+                best90U: best90U.outputAmount.toString(),
+                best75U: best75U.outputAmount.toString(),
+                best50U: best50U.outputAmount.toString(),
+                best25U: best25U.outputAmount.toString(),
+              })
+              if (best25U.outputAmount.gte(bestOutputLessGas) && best25U.outputAmount.gte(best50U.outputAmount) && best25U.outputAmount.gte(best75U.outputAmount) && best25U.outputAmount.gte(best90U.outputAmount)) {
                 console.log('should split 25% to U and 75% to B');
                 bestMixed = best25U;
                 fractionMixed = .25;
-              } else if (best50U.outputAmount.gt(bestOutputLessGas) && best50U.outputAmount.gt(best25U.outputAmount) && best50U.outputAmount.gt(best75U.outputAmount) && best50U.outputAmount.gt(best90U.outputAmount)) {
+              } else if (best50U.outputAmount.gte(bestOutputLessGas) && best50U.outputAmount.gte(best25U.outputAmount) && best50U.outputAmount.gte(best75U.outputAmount) && best50U.outputAmount.gte(best90U.outputAmount)) {
                 console.log('should split 50% to U and 50% to B');
                 bestMixed = best50U;
                 fractionMixed = .5;
-              } else if (best75U.outputAmount.gt(bestOutputLessGas) && best75U.outputAmount.gt(best25U.outputAmount) && best75U.outputAmount.gt(best50U.outputAmount) && best75U.outputAmount.gt(best90U.outputAmount)) {
+              } else if (best75U.outputAmount.gte(bestOutputLessGas) && best75U.outputAmount.gte(best25U.outputAmount) && best75U.outputAmount.gte(best50U.outputAmount) && best75U.outputAmount.gte(best90U.outputAmount)) {
                 console.log('should split 75% to U and 25% to B');
                 bestMixed = best75U;
                 fractionMixed = .75;
-              } else if (best90U.outputAmount.gt(bestOutputLessGas) && best90U.outputAmount.gt(best25U.outputAmount) && best90U.outputAmount.gt(best50U.outputAmount) && best90U.outputAmount.gt(best75U.outputAmount)) {
+              } else if (best90U.outputAmount.gte(bestOutputLessGas) && best90U.outputAmount.gte(best25U.outputAmount) && best90U.outputAmount.gte(best50U.outputAmount) && best90U.outputAmount.gte(best75U.outputAmount)) {
                 console.log('should split 90% to U and 10% to B');
                 bestMixed = best90U;
                 fractionMixed = .9;
@@ -540,6 +585,11 @@ export default {
               ]
               uniswapGasLimit = 100000 + 50000 * bestMixed.tradesU.validTrades.length;
             }
+
+            if (!shouldUseUniswapValue && !shouldUseBalancerValue && !bestMixed) {
+              return swapMessage.value = 'No swap found'
+            }
+            console.log(bestMixed);
 
             tradeSummary.protocol  = bestMixed ? 'Uniswap & Balancer' : (isUsingUniswap ? 'Uniswap' : 'Balancer');
             tradeSummary.sender    = _newSender;
@@ -639,7 +689,7 @@ export default {
         outputAmount = BigNumber.from(rawResultsB.value.outputAmount);
         value = rawResultsB.value.value;
       }
-      console.log({callData, outputAmount, value})
+      // console.log({callData, outputAmount, value})
 
       let uniswapGasLimit = 0
       let offsetUniswap, outputUniswap;
@@ -655,7 +705,7 @@ export default {
       }
       let outputU = outputUniswap || totalBig || BigNumber.from('-10000000000000000000000000');
       let outputB = outputBalancer || outputAmount || BigNumber.from('-10000000000000000000000000');
-      console.log({outputB: outputB.toString(), outputU: outputU.toString()})
+      // console.log({outputB: outputB.toString(), outputU: outputU.toString()})
 
       return {
         outputAmount: outputB.add(outputU),
@@ -1218,6 +1268,9 @@ export default {
       isFetchingPrice,
       priceFetchingMessage,
       swapMessage,
+      shouldUseUniswap,
+      shouldUseBalancer,
+      shouldUseUniswapAndBalancer,
 
       // refs & images
       chevronDownImage,
@@ -1697,5 +1750,14 @@ button::-webkit-focus-inner {
   .amount-token input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;  /* removes the arrow styling */
   margin: 0;                 /* prevents a ghost 2 px margin in some cases */
+}
+
+.checkboxes {
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 15px;
+}
+.checkboxes input {
+  width: 30px;
 }
 </style>
