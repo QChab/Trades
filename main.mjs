@@ -281,7 +281,7 @@ async function approveSpender({from, contractAddress, spender, protocol}) {
       await tx1.wait();
     }
 
-    if (protocol === 'Uniswap') {
+    if (protocol === 'Uniswap' || protocol === 'Uniswap & Balancer') {
       const PERMIT2_ABI = [
         "function approve(address token, address spender, uint160 amount, uint48 expiration) external",
         "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",

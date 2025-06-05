@@ -431,10 +431,10 @@ export default {
             const results = await Promise.allSettled([
               getTradesUniswap(_newFrom, _newTo, _newAmt),
               getTradesBalancer(_newFrom, _newTo, _newAmt, _newSender.address, true),
-              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : {outputAmount: 0n},
-              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : {outputAmount: 0n},
-              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : {outputAmount: 0n},
-              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : {outputAmount: 0n},
+              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : null,
+              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : null,
+              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : null,
+              _newAmt * tokensByAddresses.value[_newFrom].price > 150 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : null,
             ])
             console.log(results);
 
@@ -477,10 +477,8 @@ export default {
               offsetBalancer = BigNumber.from(Math.ceil((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toPrecision(50).split('.')[0])
               outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
             }
-            console.log({outputAmount})
             let outputU = outputUniswap || totalBig || BigNumber.from('-10000000000000000000000000');;
             let outputB = outputBalancer || outputAmount || BigNumber.from('-10000000000000000000000000');;
-            console.log({outputB: outputB.toString(), outputU: outputU.toString()})
 
             let bestOutputLessGas = outputU;
             if (outputU && outputB) {
@@ -505,7 +503,7 @@ export default {
             let best90U, best75U, best50U, best25U;
             let bestMixed, fractionMixed;
 
-            if (results[0] && results[0].value) {
+            if (results[0]?.value && results[2]?.value && results[3]?.value && results[4]?.value && results[5]?.value) {
               if (results[5])
                 best90U = findBestMixedTrades(results[0].value[90], results[5], _newTo, gasLimit);
               if (results[2])
@@ -514,13 +512,6 @@ export default {
                 best50U = findBestMixedTrades(results[0].value[50], results[3], _newTo, gasLimit);
               if (results[4])
                 best25U = findBestMixedTrades(results[0].value[25], results[4], _newTo, gasLimit);
-
-              console.log({
-                best25U: best25U.outputAmount.toString(),
-                best50U: best50U.outputAmount.toString(),
-                best75U: best75U.outputAmount.toString(),
-                best90U: best90U.outputAmount.toString(),
-              })
 
               if (best25U.outputAmount.gt(bestOutputLessGas) && best25U.outputAmount.gt(best50U.outputAmount) && best25U.outputAmount.gt(best75U.outputAmount) && best25U.outputAmount.gt(best90U.outputAmount)) {
                 console.log('should split 25% to U and 75% to B');
@@ -542,7 +533,6 @@ export default {
             }
 
             if (bestMixed) {
-              console.log(bestMixed)
               totalHuman = ethers.utils.formatUnits(bestMixed.tradesU.totalBig.add(bestMixed.tradesB.outputAmount), tokensByAddresses.value[_newTo].decimals);
               trades.value = [
                 ...bestMixed.tradesU.validTrades,
@@ -572,12 +562,11 @@ export default {
             }
             // 5) Check if approval is needed
             if (_newFrom !== ethers.constants.AddressZero) {
-              const erc20 = new ethers.Contract(
-                _newFrom, ERC20_ABI, toRaw(props.provider)
-              );
-              if (tradeSummary.protocol !== 'Uniswap & Balancer') {
-                
-              }
+              if (tradeSummary.protocol === 'Uniswap & Balancer') {
+                await checkAllowances(_newFrom, true);
+                await checkAllowances(_newFrom, false);
+              } else 
+                await checkAllowances(_newFrom, isUsingUniswap);
             } else {
               needsToApprove.value = false;
             }
@@ -602,15 +591,22 @@ export default {
       }
     );
 
-    const checkAllowances = async () => {
+    const checkAllowances = async (tokenAddress, isUsingUniswap) => {
+      const erc20 = new ethers.Contract(
+        tokenAddress,
+        ERC20_ABI,
+        toRaw(props.provider)
+      );
       const rawAllowance = await erc20.allowance(
         senderDetails.value.address,
         isUsingUniswap ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS,
       );
       // If allowance < 1e27 (arbitrary “sufficient” threshold), require approval
       if (BigNumber.from(rawAllowance).lt(BigNumber.from('100000000000000000000000000'))) {
-        needsToApprove.value = true;
-      } else if (tradeSummary.protocol === 'Uniswap') {
+        return needsToApprove.value = true;
+      }
+      
+      if (isUsingUniswap) {
         // double‐check Permit2 → Router allowance
         const permit2 = new ethers.Contract(
           PERMIT2_ADDRESS,
@@ -619,7 +615,7 @@ export default {
         );
         const [remaining] = await permit2.allowance(
           senderDetails.value.address,
-          _newFrom,
+          tokenAddress,
           UNIVERSAL_ROUTER_ADDRESS
         );
         if (BigNumber.from(remaining).lt(BigNumber.from('100000000000000000000000000'))) {
@@ -1137,10 +1133,15 @@ export default {
         // Pull until allowance has shown up on‐chain
         let allowance = BigNumber.from(0);
         const erc20 = new ethers.Contract(
-          fromTokenAddress.value, ERC20_ABI, toRaw(props.provider)
+          fromTokenAddress.value,
+          ERC20_ABI,
+          toRaw(props.provider)
         );
         while (allowance.isZero() && originalAddress === senderDetails.value.address) {
-          allowance = await erc20.allowance(originalAddress, tradeSummary.protocol === 'Uniswap' ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS);
+          allowance = await erc20.allowance(
+            originalAddress,
+            tradeSummary.protocol === 'Uniswap' || tradeSummary.protocol === 'Uniswap & Balancer' ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS
+          );
           if (allowance.isZero()) {
             await new Promise(r => setTimeout(r, 2000));
           }
