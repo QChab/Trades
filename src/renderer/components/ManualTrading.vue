@@ -1066,8 +1066,11 @@ export default {
             tradeSummary: JSON.parse(JSON.stringify(tradeSummary)),
           }
           const response = await window.electronAPI.sendTransaction(args);
-          if (!response.success)
-            throw new Error('Problem in sending transaction to Balancer');
+          if (!response?.success)
+            throw new Error('Problem in sending transaction to Balancer: ' + response?.error?.toString());
+          if (response.warnings && response.warnings.length) {
+            globalWarnings = response.warnings;
+          }
 
           globalTxs.push(response.tx);
         } else if (tradeSummary.protocol === 'Uniswap & Balancer') {
@@ -1097,6 +1100,16 @@ export default {
               protocol: 'Balancer'
             })),
           })
+          if (!resultsU?.success)
+            swapMessage.value = 'Problem in sending transaction to Uniswap in U + B: ' + resultsU?.error?.toString()
+          if (resultsU.warnings && resultsU.warnings.length) {
+            globalWarnings = resultsU.warnings;
+          }
+          if (!resultsB?.success)
+            swapMessage.value += 'Problem in sending transaction to Balancer in U + B: ' + resultsB?.error?.toString()
+          if (resultsB.warnings && resultsB.warnings.length) {
+            globalWarnings = resultsB.warnings;
+          }
 
           if (resultsU && resultsU.success)
             globalTxs.push(resultsU.tx);
