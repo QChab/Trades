@@ -28,4 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteInfuraKey: (infuraKey) => ipcRenderer.invoke('delete-infura-key', infuraKey),
   saveInfuraKey: (infuraKey) => ipcRenderer.invoke('save-infura-key', infuraKey),
   getInfuraKeys: () => ipcRenderer.invoke('get-infura-keys'),
+  savePendingOrder: (order) => ipcRenderer.invoke('save-pending-order', order),
+  deletePendingOrder: (id) => ipcRenderer.invoke('delete-pending-order', id),
+  getPendingOrders: () => ipcRenderer.invoke('get-pending-orders'),
 });

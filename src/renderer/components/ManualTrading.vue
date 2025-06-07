@@ -174,7 +174,16 @@
         from {{ tradeSummary.fromAddressName }} on
         {{ (new Date(tradeSummary.sentDate)).toLocaleString() }} …
       </p>
-      <!-- Pending trades list -->
+      
+      <div v-if="pendingLimitOrders.length">
+        <h4>Pending Limit Orders</h4>
+        <ul>
+          <li v-for="order in pendingLimitOrders" :key="order.id">
+            {{ order.fromAmount }} {{ order.fromToken.symbol }} → {{ order.toToken.symbol }} at {{ order.priceLimit }}
+            <button @click="cancelLimitOrder(order.id)">Cancel</button>
+          </li>
+        </ul>
+      </div>
     </div>
   </div>
 </template>
@@ -293,6 +302,8 @@ export default {
 
     // We keep a small “offset” map so that once a trade is sent, we subtract it from balance
     const balanceOffsetByTokenByAddress = reactive({});
+    
+    const pendingLimitOrders = ref([]);
 
     // ─── Computed Helpers ────────────────────────────────────────────────────
 
@@ -457,15 +468,15 @@ export default {
             const results = await Promise.allSettled([
               (shouldUseUniswapValue || shouldUseUniswapAndBalancerValue) ? 
                 getTradesUniswap(_newFrom, _newTo, _newAmt) : null,
-              (shouldUseBalancerValue || shouldUseUniswapAndBalancerValue) ? 
+              (shouldUseBalancerValue) ? 
                 getTradesBalancer(_newFrom, _newTo, _newAmt, _newSender.address, true) : null,
-              (shouldUseBalancerValue || shouldUseUniswapAndBalancerValue) && (_newAmt * tokensByAddresses.value[_newFrom].price > 150 || (!shouldUseBalancerValue && !shouldUseUniswapValue))
+              (shouldUseUniswapAndBalancerValue)
                 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : null,
-              (shouldUseBalancerValue || shouldUseUniswapAndBalancerValue) && (_newAmt * tokensByAddresses.value[_newFrom].price > 150 || (!shouldUseBalancerValue && !shouldUseUniswapValue))
+              (shouldUseUniswapAndBalancerValue)
                 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : null,
-              (shouldUseBalancerValue || shouldUseUniswapAndBalancerValue) && (_newAmt * tokensByAddresses.value[_newFrom].price > 150 || (!shouldUseBalancerValue && !shouldUseUniswapValue)) 
+              (shouldUseUniswapAndBalancerValue) 
                 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : null,
-              (shouldUseBalancerValue || shouldUseUniswapAndBalancerValue) && (_newAmt * tokensByAddresses.value[_newFrom].price > 150 || (!shouldUseBalancerValue && !shouldUseUniswapValue))
+              (shouldUseUniswapAndBalancerValue)
                 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : null,
             ])
             console.log(results);
@@ -492,7 +503,7 @@ export default {
               outputAmount = results[1].value.outputAmount;
               value = results[1].value.value;
               gasLimit = results[1].value.gasLimit;
-            } else if (!isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
+            } else if (!shouldUseUniswapAndBalancer && !isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
               if (results[1] && results[1].reason)
                 throw results[1].reason;
             }
@@ -549,7 +560,7 @@ export default {
               if (results[4])
                 best25U = findBestMixedTrades(results[0].value[25], results[4], _newTo, gasLimit);
 
-              if (!shouldUseUniswapValue && !shouldUseBalancerValue)
+              if (!bestOutputLessGas && shouldUseUniswapAndBalancer)
                 bestOutputLessGas = BigNumber.from('-100000000000000000000000000')
 
               console.log({
@@ -946,6 +957,19 @@ export default {
           }
         }
       }
+
+      const dbOrders = await window.electronAPI.getPendingOrders();
+      if (dbOrders && Array.isArray(dbOrders)) {
+        pendingLimitOrders.value = dbOrders.map(o => ({
+          id: o.id,
+          fromAmount: o.fromAmount,
+          fromToken: { address: o.fromTokenAddress, symbol: o.fromTokenSymbol },
+          toToken: { address: o.toTokenAddress, symbol: o.toTokenSymbol },
+          priceLimit: o.priceLimit,
+          sender: { address: o.senderAddress, name: o.senderName },
+          status: o.status
+        }));
+      }
     });
     watch(() => tokens, () => emit('update:settings', { tokens: [...tokens] }), { deep: true });
 
@@ -1265,6 +1289,28 @@ export default {
 
     watch(() => tokens, () => emitSettings(), { deep: true });
 
+    function placeLimitOrder() {
+      const order ={
+        id: Date.now(),
+        fromAmount: fromAmount.value,
+        fromToken: tokensByAddresses.value[fromTokenAddress.value],
+        toToken: tokensByAddresses.value[toTokenAddress.value],
+        priceLimit: priceLimit.value,
+        sender: senderDetails.value,
+        status: 'pending'
+      };
+
+      pendingLimitOrders.value.push(order);
+
+      window.electronAPI.savePendingOrder(order);
+    }
+
+    function cancelLimitOrder(id) {
+      pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== id);
+
+      window.electronAPI.deletePendingOrder(id);
+    }
+
     return {
       // state
       isEditingTokens,
@@ -1305,6 +1351,10 @@ export default {
       findSymbol,
       deleteToken,
       shouldSwitchTokensForLimit,
+
+      pendingLimitOrders,
+      placeLimitOrder,
+      cancelLimitOrder
     };
   }
 };

@@ -70,6 +70,29 @@ function initDatabase() {
           console.log('trades table ready or already exists.');
         }
       });
+
+      db.run(`
+        CREATE TABLE IF NOT EXISTS PendingOrder (
+          id INTEGER PRIMARY KEY,
+          fromAmount TEXT,
+          fromTokenAddress TEXT,
+          fromTokenSymbol TEXT,
+          toTokenAddress TEXT,
+          toTokenSymbol TEXT,
+          priceLimit TEXT,
+          senderAddress TEXT,
+          senderName TEXT,
+          status TEXT,
+          isPriceLimitInversed BOOLEAN DEFAULT 0,
+          createdAt DATETIME DEFAULT (datetime('now', 'localtime'))
+        )
+      `, (err) => {
+        if (err) {
+          console.error('Failed to create PendingOrder table:', err);
+        } else {
+          console.log('PendingOrder table ready or already exists.');
+        }
+      });
     }
   });
 }
@@ -377,6 +400,52 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
   }
 }
 
+function savePendingOrder(order) {
+  const sql = `
+    INSERT INTO PendingOrder (id, fromAmount, fromTokenAddress, fromTokenSymbol, toTokenAddress, toTokenSymbol, priceLimit, senderAddress, senderName, status, isPriceLimitInversed)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `;
+  db.run(sql, [
+    order.id,
+    order.fromAmount,
+    order.fromToken?.address,
+    order.fromToken?.symbol,
+    order.toToken?.address,
+    order.toToken?.symbol,
+    order.priceLimit,
+    order.sender?.address,
+    order.sender?.name,
+    order.status || 'pending',
+    order.isPriceLimitInversed || false,
+  ], function (err) {
+    if (err) {
+      console.error('Failed to insert pending order:', err);
+    }
+  });
+}
+
+function deletePendingOrder(id) {
+  db.run(`DELETE FROM PendingOrder WHERE id = ?`, [id], function (err) {
+    if (err) {
+      console.error('Failed to delete pending order:', err);
+    }
+  });
+}
+
+function getAllPendingOrders() {
+  return new Promise((resolve, reject) => {
+    db.all(`SELECT * FROM PendingOrder ORDER BY createdAt DESC`, [], (err, rows) => {
+      if (err) {
+        console.error('Failed to fetch pending orders:', err);
+        reject([]);
+      } else {
+        resolve(rows);
+      }
+    });
+  });
+}
+
+
 /**
  * Encrypts or decrypts text with AES-256-ECB.
  * @param {string} text - The plaintext (for encrypt) or base64 ciphertext (for decrypt).
@@ -659,6 +728,16 @@ function createWindow() {
 
   ipcMain.handle('set-gas-price', (event, currentGasPrice) => {
     gasPrice = currentGasPrice;
+  });
+
+  ipcMain.handle('save-pending-order', (event, order) => {
+    savePendingOrder(order);
+  });
+  ipcMain.handle('delete-pending-order', (event, id) => {
+    deletePendingOrder(id);
+  });
+  ipcMain.handle('get-pending-orders', async () => {
+    return await getAllPendingOrders();
   });
 
   ipcMain.handle('delete-history', (event) => {
