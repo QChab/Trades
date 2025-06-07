@@ -403,7 +403,7 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
 function savePendingOrder(order) {
   const sql = `
     INSERT INTO PendingOrder (id, fromAmount, fromTokenAddress, fromTokenSymbol, toTokenAddress, toTokenSymbol, priceLimit, senderAddress, senderName, status, isPriceLimitInversed)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
   db.run(sql, [
     order.id,

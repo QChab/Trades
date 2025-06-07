@@ -11,7 +11,7 @@
           <div class="price-form">
             <div class="tabs-price">
               <div :class="{active: tabOrder === 'market'}" @click="tabOrder = 'market'">Market order</div>
-              <!-- <div :class="{active: tabOrder === 'limit'}" @click="tabOrder = 'limit'">Limit order</div> -->
+              <div :class="{active: tabOrder === 'limit'}" @click="tabOrder = 'limit'">Limit order</div>
             </div>
             <div v-if="tabOrder === 'limit'">
               <p>
@@ -103,26 +103,50 @@
           </div>
 
           <p class="details-message">{{ swapMessage }}</p>
-          <div v-if="!needsToApprove">
-            <p class="details-message" v-if="tradeSummary?.gasLimit">Gas cost ~ ${{ (tradeSummary.gasLimit * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
-            <button
-              v-if="!needsToApprove"
-              @click="triggerTrade()"
-              :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
-              class="swap-button"
-            >
-              {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : 'Swap' }}
-            </button>
+          <div v-if="tabOrder === 'market' && !isEditingTokens" class="swap-buttons">
+            <div v-if="!needsToApprove">
+              <p class="details-message" v-if="tradeSummary?.gasLimit">Gas cost ~ ${{ (tradeSummary.gasLimit * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
+              <button
+                v-if="!needsToApprove"
+                @click="triggerTrade()"
+                :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
+                class="swap-button"
+              >
+                {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : 'Swap' }}
+              </button>
+            </div>
+            <div v-else>
+              <p class="details-message">Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 50000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
+              <button
+                @click="approveSpending()"
+                :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
+                class="swap-button"
+              >
+                {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
+              </button>
+            </div>
           </div>
           <div v-else>
-            <p class="details-message">Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 50000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
-            <button
-              @click="approveSpending()"
-              :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
-              class="swap-button"
-            >
-              {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
-            </button>
+            <div v-if="!needsToApprove">
+              <button
+                v-if="!needsToApprove"
+                @click="placeLimitOrder()"
+                :disabled="maxGasPrice < gasPrice || !priceLimit"
+                class="swap-button"
+              >
+                {{ 'Place order' }}
+              </button>
+            </div>
+            <div v-else>
+              <p class="details-message">Gas cost ~ ${{ (150000 * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
+              <button
+                @click="approveSpending()"
+                :disabled="maxGasPrice < gasPrice"
+                class="swap-button"
+              >
+                {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -182,7 +206,7 @@
         <ul>
           <li v-for="order in pendingLimitOrders" :key="order.id">
             {{ order.fromAmount }} {{ order.fromToken.symbol }} → {{ order.toToken.symbol }} at {{ order.priceLimit }}
-            <button @click="cancelLimitOrder(order.id)">Cancel</button>
+            <span class="cancel-order" @click="cancelLimitOrder(order.id)">❌ Cancel</span>
           </li>
         </ul>
       </div>
@@ -249,7 +273,7 @@ export default {
     const shouldUseUniswap = ref(true);
     const shouldUseBalancer = ref(true);
     const shouldUseUniswapAndBalancer = ref(true);
-
+    const priceLimit = ref(null);
 
     const tokens = reactive([
       { price: 0, address: ethers.constants.AddressZero, symbol: 'ETH', decimals: 18 },
@@ -427,6 +451,11 @@ export default {
         [_newFrom, _newTo, _newAmt, _newSender, shouldUseUniswapValue, shouldUseBalancerValue, shouldUseUniswapAndBalancerValue],
         [_oldFrom, _oldTo]
       ) => {
+        if (tabOrder.value === 'limit') {
+          console.log('Skipping re-quoting for Limit Order tab');
+          return;
+        }
+
         if (!_newSender?.address) {
           swapMessage.value = 'No wallet selected';
           return;
@@ -465,6 +494,11 @@ export default {
 
         debounceTimer = setTimeout(async () => {
           try {
+            if (tabOrder.value === 'limit') {
+              console.log('Skipping re-quoting for Limit Order tab');
+              return;
+            }
+            
             // Fetching quotes
             console.log('Fetching quotes on exchanges')
             const results = await Promise.allSettled([
@@ -482,6 +516,11 @@ export default {
                 ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : null,
             ])
             console.log(results);
+
+            if (tabOrder.value === 'limit') {
+              console.log('Skipping re-quoting for Limit Order tab');
+              return;
+            }
 
             let isUsingUniswap = true;
             let validTrades, totalHuman, totalBig;
@@ -1296,10 +1335,10 @@ export default {
       const order ={
         id: Date.now(),
         fromAmount: fromAmount.value,
-        fromToken: tokensByAddresses.value[fromTokenAddress.value],
-        toToken: tokensByAddresses.value[toTokenAddress.value],
+        fromToken: JSON.parse(JSON.stringify(tokensByAddresses.value[fromTokenAddress.value])),
+        toToken: JSON.parse(JSON.stringify(tokensByAddresses.value[toTokenAddress.value])),
         priceLimit: priceLimit.value,
-        sender: senderDetails.value,
+        sender: JSON.parse(JSON.stringify(senderDetails.value)),
         status: 'pending'
       };
 
@@ -1825,5 +1864,14 @@ button::-webkit-focus-inner {
 }
 .checkboxes input {
   width: 30px;
+}
+
+.cancel-order {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 5px;
+}
+.cancel-order:hover {
+  color: #ff3333;
 }
 </style>
