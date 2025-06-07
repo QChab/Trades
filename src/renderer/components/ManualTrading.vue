@@ -87,7 +87,9 @@
 
           <p class="details-message">{{ priceFetchingMessage }}</p>
           <div class="address-form">
-            <p><span v-if="tradeSummary.protocol">On {{tradeSummary.protocol}}</span> with</p>
+            <p><span v-if="tradeSummary.protocol">
+              On {{ tradeSummary === 'Uniswap & Balancer' ?  (`Uniswap ${tradeSummary.fraction}% & Balancer ${100 - tradeSummary.fraction}%`) : tradeSummary.protocol}}
+            </span> with</p>
             <select id="sender-address" v-model="senderDetails">
               <option 
                 v-for="(address, index) in addresses" 
@@ -572,19 +574,19 @@ export default {
               if (best25U.outputAmount.gte(bestOutputLessGas) && best25U.outputAmount.gte(best50U.outputAmount) && best25U.outputAmount.gte(best75U.outputAmount) && best25U.outputAmount.gte(best90U.outputAmount)) {
                 console.log('should split 25% to U and 75% to B');
                 bestMixed = best25U;
-                fractionMixed = .25;
+                fractionMixed = 25;
               } else if (best50U.outputAmount.gte(bestOutputLessGas) && best50U.outputAmount.gte(best25U.outputAmount) && best50U.outputAmount.gte(best75U.outputAmount) && best50U.outputAmount.gte(best90U.outputAmount)) {
                 console.log('should split 50% to U and 50% to B');
                 bestMixed = best50U;
-                fractionMixed = .5;
+                fractionMixed = 50;
               } else if (best75U.outputAmount.gte(bestOutputLessGas) && best75U.outputAmount.gte(best25U.outputAmount) && best75U.outputAmount.gte(best50U.outputAmount) && best75U.outputAmount.gte(best90U.outputAmount)) {
                 console.log('should split 75% to U and 25% to B');
                 bestMixed = best75U;
-                fractionMixed = .75;
+                fractionMixed = 75;
               } else if (best90U.outputAmount.gte(bestOutputLessGas) && best90U.outputAmount.gte(best25U.outputAmount) && best90U.outputAmount.gte(best50U.outputAmount) && best90U.outputAmount.gte(best75U.outputAmount)) {
                 console.log('should split 90% to U and 10% to B');
                 bestMixed = best90U;
-                fractionMixed = .9;
+                fractionMixed = 90;
               } 
             }
 
@@ -616,10 +618,11 @@ export default {
             tradeSummary.toTokenAddress = tokensByAddresses.value[_newTo].address;
             tradeSummary.gasLimit = bestMixed ? Number(uniswapGasLimit) + Number(gasLimit) : (isUsingUniswap ? uniswapGasLimit : gasLimit);
             if (bestMixed) {
-              tradeSummary.fromAmountU = (_newAmt * fractionMixed).toFixed(7);
+              tradeSummary.fromAmountU = (_newAmt * fractionMixed / 100).toFixed(7);
               tradeSummary.fromAmountB = (_newAmt - Number(tradeSummary.fromAmountU)).toFixed(7);
               tradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestMixed.tradesU.totalBig, tokensByAddresses.value[_newTo].decimals)).toFixed(7);
               tradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestMixed.tradesB.outputAmount, tokensByAddresses.value[_newTo].decimals)).toFixed(7);
+              tradeSummary.fraction = fractionMixed;
             }
             // 5) Check if approval is needed
             if (_newFrom !== ethers.constants.AddressZero) {
