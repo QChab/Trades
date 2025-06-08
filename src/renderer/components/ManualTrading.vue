@@ -20,6 +20,10 @@
                 {{ shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }}
                 <img :src="reverseImage" class="reverse-image" @click="shouldSwitchTokensForLimit = !shouldSwitchTokensForLimit"/>
               </p>
+              <span class="set-market-price" @click="setMarketPriceAsLimit">
+                Set market price
+              </span>
+              
             </div>
             <div v-else class="checkboxes">
               <label>
@@ -330,6 +334,7 @@ export default {
     const balanceOffsetByTokenByAddress = reactive({});
     
     const pendingLimitOrders = ref([]);
+    const shouldSwitchTokensForLimit = ref(false);
 
     // ─── Computed Helpers ────────────────────────────────────────────────────
 
@@ -1083,9 +1088,6 @@ export default {
       }
     }
 
-    const shouldSwitchTokensForLimit = ref(false);
-
-
     // ─── triggerTrade(): Execute *all* legs in one Universal Router call ────
     const triggerTrade = async () => {
       let globalWarnings;
@@ -1331,10 +1333,36 @@ export default {
 
     watch(() => tokens, () => emitSettings(), { deep: true });
 
+    watch(
+      [() => priceLimit.value, () => fromAmount.value, () => fromTokenAddress.value, () => toTokenAddress.value],
+      ([priceLimitValue, fromAmountValue]) => {
+      console.log('Price limit changed:', priceLimitValue);
+      if (!fromAmountValue || isNaN(fromAmountValue)) {
+        tradeSummary.toAmount = null;
+        return;
+      }
+      if (tabOrder.value !== 'limit') return;
+      if (priceLimitValue && !isNaN(priceLimitValue)) {
+        tradeSummary.priceLimit = Number(priceLimitValue);
+        if (shouldSwitchTokensForLimit.value) {
+          tradeSummary.toAmount = (fromAmountValue / tradeSummary.priceLimit).toFixed(6);
+        } else
+          tradeSummary.toAmount = (fromAmountValue * tradeSummary.priceLimit).toFixed(6);
+      } else {
+        tradeSummary.priceLimit = null;
+        tradeSummary.toAmount = null;
+      }
+    });
+
+    watch(() => shouldSwitchTokensForLimit.value, () => {
+      priceLimit.value = 1/priceLimit.value; // Invert the price limit
+    });
+
     function placeLimitOrder() {
       const order ={
         id: Date.now(),
         fromAmount: fromAmount.value,
+        toAmount: tradeSummary.toAmount,
         fromToken: JSON.parse(JSON.stringify(tokensByAddresses.value[fromTokenAddress.value])),
         toToken: JSON.parse(JSON.stringify(tokensByAddresses.value[toTokenAddress.value])),
         priceLimit: priceLimit.value,
@@ -1351,6 +1379,22 @@ export default {
       pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== id);
 
       window.electronAPI.deletePendingOrder(id);
+    }
+
+    function setMarketPriceAsLimit() {
+      // Use the current market price (fromToken to toToken)
+      if (
+        tokensByAddresses.value[fromTokenAddress.value]?.price &&
+        tokensByAddresses.value[toTokenAddress.value]?.price
+      ) {
+        const fromPrice = tokensByAddresses.value[fromTokenAddress.value].price;
+        const toPrice = tokensByAddresses.value[toTokenAddress.value].price;
+        // Price of 1 fromToken in toToken units
+        const marketPrice = !shouldSwitchTokensForLimit.value
+          ? fromPrice / toPrice
+          : toPrice / fromPrice;
+        priceLimit.value = Number(marketPrice.toPrecision(8));
+      }
     }
 
     return {
@@ -1372,6 +1416,8 @@ export default {
       shouldUseUniswap,
       shouldUseBalancer,
       shouldUseUniswapAndBalancer,
+      priceLimit,
+      slippage,
 
       // refs & images
       chevronDownImage,
@@ -1393,6 +1439,7 @@ export default {
       findSymbol,
       deleteToken,
       shouldSwitchTokensForLimit,
+      setMarketPriceAsLimit,
 
       pendingLimitOrders,
       placeLimitOrder,
@@ -1873,5 +1920,16 @@ button::-webkit-focus-inner {
 }
 .cancel-order:hover {
   color: #ff3333;
+}
+
+.set-market-price {
+  cursor: pointer;
+  font-weight: 500;
+  padding: 5px;
+  margin-left: 10px;
+  text-decoration: underline;
+}
+.set-market-price:hover {
+  color: #007bff;
 }
 </style>
