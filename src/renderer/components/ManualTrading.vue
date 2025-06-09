@@ -1533,7 +1533,7 @@ export default {
       window.electronAPI.savePendingOrder(order);
     }
 
-    function checkPendingOrdersToTrigger() {
+    async function checkPendingOrdersToTrigger() {
       if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
 
       for (const order of pendingLimitOrders.value) {

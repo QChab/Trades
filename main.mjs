@@ -517,17 +517,16 @@ function deletePendingOrder(id) {
 
 function getAllPendingOrders() {
   return new Promise((resolve, reject) => {
-    db.all(`SELECT * FROM PendingOrder ORDER BY createdAt DESC`, [], (err, rows) => {
+    db.all(`SELECT * FROM PendingOrder WHERE status = 'pending' ORDER BY createdAt DESC`, [], (err, rows) => {
       if (err) {
         console.error('Failed to fetch pending orders:', err);
-        reject([]);
+        resolve([]); // Return empty array instead of rejecting
       } else {
-        resolve(rows);
+        resolve(rows || []);
       }
     });
   });
 }
-
 
 /**
  * Encrypts or decrypts text with AES-256-ECB.
