@@ -75,6 +75,7 @@ function initDatabase() {
         CREATE TABLE IF NOT EXISTS PendingOrder (
           id INTEGER PRIMARY KEY,
           fromAmount TEXT,
+          toAmount TEXT,
           fromTokenAddress TEXT,
           fromTokenSymbol TEXT,
           toTokenAddress TEXT,
@@ -97,6 +98,7 @@ function initDatabase() {
           console.log('PendingOrder table ready or already exists.');
           
           // Add missing columns to existing table if they don't exist
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN toAmount TEXT`, () => {});
           db.run(`ALTER TABLE PendingOrder ADD COLUMN currentMarketPrice TEXT`, () => {});
           db.run(`ALTER TABLE PendingOrder ADD COLUMN orderType TEXT DEFAULT 'take_profit'`, () => {});
           db.run(`ALTER TABLE PendingOrder ADD COLUMN shouldSwitchTokensForLimit BOOLEAN DEFAULT 0`, () => {});
@@ -415,6 +417,7 @@ function savePendingOrder(order) {
     INSERT INTO PendingOrder (
       id, 
       fromAmount, 
+      toAmount,
       fromTokenAddress, 
       fromTokenSymbol, 
       toTokenAddress, 
@@ -428,12 +431,13 @@ function savePendingOrder(order) {
       status, 
       createdAt
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
   
   db.run(sql, [
     order.id,
     order.fromAmount,
+    order.toAmount,
     order.fromToken?.address,
     order.fromToken?.symbol,
     order.toToken?.address,

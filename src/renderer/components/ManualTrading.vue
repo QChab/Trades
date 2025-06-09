@@ -211,11 +211,23 @@
           <li v-for="order in pendingLimitOrders" :key="order.id" class="pending-order">
             <div class="order-info">
               <div class="order-details">
-                <span class="order-type" :class="order.orderType">
-                {{ order.orderType === 'take_profit' ? '📈 Take Profit' : '📉 Stop Loss' }}
-              </span>
-                {{ order.fromAmount }} {{ order.fromToken.symbol }} → {{ order.toToken.symbol }} 
-                at {{ order.priceLimit }}
+                <div class="trade-info">
+                  <span class="order-type" :class="order.orderType">
+                    {{ order.orderType === 'take_profit' ? '📈 Take Profit' : '📉 Stop Loss' }}
+                  </span>
+                  {{ order.fromAmount }} {{ order.fromToken.symbol }} → 
+                  <span v-if="order.toAmount">{{ order.toAmount }} {{ order.toToken.symbol }}</span>
+                  <span v-else>{{ order.toToken.symbol }}</span>
+                </div>
+                <div class="price-info">
+                  Trigger price: {{ order.priceLimit }}
+                  <span v-if="!order.shouldSwitchTokensForLimit">
+                    {{ order.toToken.symbol }} per {{ order.fromToken.symbol }}
+                  </span>
+                  <span v-else>
+                    {{ order.fromToken.symbol }} per {{ order.toToken.symbol }}
+                  </span>
+                </div>
                 <div class="order-meta">
                   {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
                   <span v-if="order.currentMarketPrice">
@@ -453,7 +465,7 @@ export default {
       }
     );
 
-    const getBestTrades = async (fromTokenAddr, toTokenAddr, amount, senderAddr) => {
+    const getBestTrades = async (fromTokenAddr, toTokenAddr, amount, senderAddr, shouldUseUniswapValue, shouldUseBalancerValue, should) => {
       if (!fromTokenAddr || !toTokenAddr || !amount || amount <= 0) {
         throw new Error('Invalid parameters for getBestTrades');
       }
@@ -468,17 +480,17 @@ export default {
       console.log('Fetching quotes on exchanges for', fromToken.symbol, '->', toToken.symbol);
       
       const results = await Promise.allSettled([
-        (shouldUseUniswap.value || shouldUseUniswapAndBalancer.value) ? 
+        (shouldUseUniswapValue || shouldUseUniswapAndBalancerValue) ? 
           getTradesUniswap(fromTokenAddr, toTokenAddr, amount) : null,
-        (shouldUseBalancer.value) ? 
+        (shouldUseBalancerValue) ? 
           getTradesBalancer(fromTokenAddr, toTokenAddr, amount, senderAddr, true) : null,
-        (shouldUseUniswapAndBalancer.value)
+        (shouldUseUniswapAndBalancerValue)
           ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .25, senderAddr, false) : null,
-        (shouldUseUniswapAndBalancer.value)
+        (shouldUseUniswapAndBalancerValue)
           ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .50, senderAddr, false) : null,
-        (shouldUseUniswapAndBalancer.value) 
+        (shouldUseUniswapAndBalancerValue) 
           ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .75, senderAddr, false) : null,
-        (shouldUseUniswapAndBalancer.value)
+        (shouldUseUniswapAndBalancerValue)
           ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .10, senderAddr, false) : null,
       ]);
 
@@ -505,7 +517,7 @@ export default {
         outputAmount = results[1].value.outputAmount;
         value = results[1].value.value;
         gasLimit = results[1].value.gasLimit;
-      } else if (!shouldUseUniswapAndBalancer.value && !isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
+      } else if (!shouldUseUniswapAndBalancerValue && !isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
         if (results[1] && results[1].reason)
           throw results[1].reason;
       }
@@ -536,14 +548,14 @@ export default {
           console.log('Using Balancer')
         }
       }
-      if (shouldUseUniswap.value && !shouldUseBalancer.value)
+      if (shouldUseUniswapValue && !shouldUseBalancerValue)
         isUsingUniswap = true
-      if (shouldUseBalancer.value && !shouldUseUniswap.value)
+      if (shouldUseBalancerValue && !shouldUseUniswapValue)
         isUsingUniswap = false
 
       // Handle mixed trades if enabled
       let bestMixed, fractionMixed;
-      if (shouldUseUniswapAndBalancer.value && results[0]?.value && results[2]?.value && results[3]?.value && results[4]?.value && results[5]?.value) {
+      if (shouldUseUniswapAndBalancerValue && results[0]?.value && results[2]?.value && results[3]?.value && results[4]?.value && results[5]?.value) {
         const best90U = findBestMixedTrades(results[0].value[90], results[5], toTokenAddr, gasLimit);
         const best75U = findBestMixedTrades(results[0].value[75], results[2], toTokenAddr, gasLimit);
         const best50U = findBestMixedTrades(results[0].value[50], results[3], toTokenAddr, gasLimit);
@@ -593,7 +605,7 @@ export default {
         finalGasLimit = gasLimit;
       }
 
-      if (!shouldUseUniswap.value && !shouldUseBalancer.value && !bestMixed) {
+      if (!shouldUseUniswapValue && !shouldUseBalancerValue && !bestMixed) {
         throw new Error('No swap found');
       }
 
@@ -1046,12 +1058,13 @@ export default {
           }
         }
       }
-      
+
       const dbOrders = await window.electronAPI.getPendingOrders();
       if (dbOrders && Array.isArray(dbOrders)) {
         pendingLimitOrders.value = dbOrders.map(o => ({
           id: o.id,
           fromAmount: o.fromAmount,
+          toAmount: o.toAmount, // Make sure to map this field
           fromToken: { 
             address: o.fromTokenAddress, 
             symbol: o.fromTokenSymbol 
@@ -1072,7 +1085,11 @@ export default {
           createdAt: o.createdAt || null,
           completedAt: o.completedAt || null,
           executionPrice: o.executionPrice ? parseFloat(o.executionPrice) : null
-        }));
+        })).sort((a, b) => {
+          const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
+          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
+          return dateB.getTime() - dateA.getTime();
+        });
       }
     });
     watch(() => tokens, () => emit('update:settings', { tokens: [...tokens] }), { deep: true });
@@ -1146,16 +1163,20 @@ export default {
     }
 
     // ─── triggerTrade(): Execute *all* legs in one Universal Router call ────
-    const triggerTrade = async () => {
+    const triggerTrade = async (providedTrades = null, providedTradeSummary = null) => {
       let globalWarnings;
       try {
         isSwapButtonDisabled.value = true;
         swapMessage.value = '';
 
-        // Mark summary as “pending”
-        tradeSummary.txId = 'pending';
-        tradeSummary.sentDate = new Date();
-        tradeSummary.isConfirmed = false;
+        // Use provided trades/summary or fall back to reactive values
+        const currentTrades = providedTrades || trades.value;
+        const currentTradeSummary = providedTradeSummary || tradeSummary;
+
+        // Mark summary as "pending"
+        currentTradeSummary.txId = 'pending';
+        currentTradeSummary.sentDate = new Date();
+        currentTradeSummary.isConfirmed = false;
 
         // Basic balance check for ETH → gas
         if (fromTokenAddress.value === ethers.constants.AddressZero) {
@@ -1166,13 +1187,13 @@ export default {
           }
         }
 
-        console.log(trades.value);
+        console.log(currentTrades);
         let globalTxs = [];
-        if (tradeSummary.protocol === 'Uniswap') {
+        if (currentTradeSummary.protocol === 'Uniswap') {
           // Call our adapted executeSwapExactIn, passing the *array* of trades
           const { success, warnings, tx, error } = await executeMixedSwaps(
-            trades.value,
-            tradeSummary,
+            currentTrades,
+            currentTradeSummary,
             slippage.value,
             props.gasPrice
           );
@@ -1182,13 +1203,13 @@ export default {
             throw error;
           }
           globalTxs.push(tx);
-        } else if (tradeSummary.protocol === 'Balancer') {
+        } else if (currentTradeSummary.protocol === 'Balancer') {
           const args = {
-            callData: trades.value[0].callData,
-            outputAmount: trades.value[0].outputAmount.toString(),
-            value: trades.value[0].value.toString(),
+            callData: currentTrades[0].callData,
+            outputAmount: currentTrades[0].outputAmount.toString(),
+            value: currentTrades[0].value.toString(),
             from: senderDetails.value.address,
-            tradeSummary: JSON.parse(JSON.stringify(tradeSummary)),
+            tradeSummary: JSON.parse(JSON.stringify(currentTradeSummary)),
           }
           const response = await window.electronAPI.sendTransaction(args);
           if (!response?.success)
@@ -1198,14 +1219,14 @@ export default {
           }
 
           globalTxs.push(response.tx);
-        } else if (tradeSummary.protocol === 'Uniswap & Balancer') {
+        } else if (currentTradeSummary.protocol === 'Uniswap & Balancer') {
           const resultsU = await executeMixedSwaps(
-            trades.value.filter((t) => !t.callData),
+            currentTrades.filter((t) => !t.callData),
             {
-              ...tradeSummary,
-              fromAmount: tradeSummary.fromAmountU,
-              expectedToAmount: tradeSummary.toAmountU,
-              toAmount: tradeSummary.toAmountU,
+              ...currentTradeSummary,
+              fromAmount: currentTradeSummary.fromAmountU,
+              expectedToAmount: currentTradeSummary.toAmountU,
+              toAmount: currentTradeSummary.toAmountU,
               protocol: 'Uniswap'
             },
             slippage.value,
@@ -1213,15 +1234,15 @@ export default {
           )
 
           const resultsB = await window.electronAPI.sendTransaction({
-            callData: trades.value.filter(t => t.callData)[0].callData,
-            outputAmount: trades.value.filter(t => t.callData)[0].outputAmount.toString(),
-            value: trades.value.filter(t => t.callData)[0].value.toString(),
+            callData: currentTrades.filter(t => t.callData)[0].callData,
+            outputAmount: currentTrades.filter(t => t.callData)[0].outputAmount.toString(),
+            value: currentTrades.filter(t => t.callData)[0].value.toString(),
             from: senderDetails.value.address,
             tradeSummary: JSON.parse(JSON.stringify({
-              ...tradeSummary,
-              fromAmount: tradeSummary.fromAmountB,
-              expectedToAmount: tradeSummary.toAmountB,
-              toAmount: tradeSummary.toAmountB,
+              ...currentTradeSummary,
+              fromAmount: currentTradeSummary.fromAmountB,
+              expectedToAmount: currentTradeSummary.toAmountB,
+              toAmount: currentTradeSummary.toAmountB,
               protocol: 'Balancer'
             })),
           })
@@ -1242,7 +1263,7 @@ export default {
             globalTxs.push(resultsB.tx);
         }
         
-        // Subtract “from amount” from our local offset ma
+        // Subtract "from amount" from our local offset map
         const tokLower = fromTokenAddress.value.toLowerCase();
         const senderLc = senderDetails.value.address.toLowerCase();
         if (!balanceOffsetByTokenByAddress[tokLower]) {
@@ -1254,37 +1275,38 @@ export default {
         balanceOffsetByTokenByAddress[tokLower][senderLc] += Number(fromAmount.value);
 
         // Finalize summary & emit upwards
-        tradeSummary.fromTokenSymbol = tokensByAddresses.value[fromTokenAddress.value].symbol;
-        tradeSummary.toTokenSymbol   = tokensByAddresses.value[toTokenAddress.value].symbol;
+        currentTradeSummary.fromTokenSymbol = tokensByAddresses.value[fromTokenAddress.value].symbol;
+        currentTradeSummary.toTokenSymbol   = tokensByAddresses.value[toTokenAddress.value].symbol;
         if (globalWarnings && globalWarnings.length) {
           swapMessage.value = 'Warnings: ' + globalWarnings.join(' ; ');
         }
 
-        if (tradeSummary.protocol === 'Uniswap & Balancer') {
-          tradeSummary.txId = globalTxs[0].hash;
+        if (currentTradeSummary.protocol === 'Uniswap & Balancer') {
+          currentTradeSummary.txId = globalTxs[0].hash;
           emit('update:trade', {
-             ...tradeSummary,
-            fromAmount: tradeSummary.fromAmountU,
-            expectedToAmount: tradeSummary.toAmountU,
-            toAmount: tradeSummary.toAmountU,
+             ...currentTradeSummary,
+            fromAmount: currentTradeSummary.fromAmountU,
+            expectedToAmount: currentTradeSummary.toAmountU,
+            toAmount: currentTradeSummary.toAmountU,
             protocol: 'Uniswap'
           });
-          tradeSummary.txId = globalTxs[1].hash;
+          currentTradeSummary.txId = globalTxs[1].hash;
           emit('update:trade', {
-            ...tradeSummary,
-            fromAmount: tradeSummary.fromAmountB,
-            expectedToAmount: tradeSummary.toAmountB,
-            toAmount: tradeSummary.toAmountB,
+            ...currentTradeSummary,
+            fromAmount: currentTradeSummary.fromAmountB,
+            expectedToAmount: currentTradeSummary.toAmountB,
+            toAmount: currentTradeSummary.toAmountB,
             protocol: 'Balancer'
           });
         } else {
-          tradeSummary.txId = globalTxs[0].hash;
-          emit('update:trade', { ...tradeSummary });
+          currentTradeSummary.txId = globalTxs[0].hash;
+          emit('update:trade', { ...currentTradeSummary });
         }
       } catch (error) {
-        tradeSummary.txId     = null;
-        tradeSummary.sentDate = null;
-
+        // If using provided trade summary, update it; otherwise update the reactive one
+        const currentTradeSummary = providedTradeSummary || tradeSummary;
+        currentTradeSummary.txId     = null;
+        currentTradeSummary.sentDate = null;
 
         if (error.toString().includes('insufficient funds for intrinsic transaction cost')) {
           swapMessage.value = 'Error: Not enough ETH on the address';
@@ -1465,6 +1487,11 @@ export default {
         ? fromPrice / toPrice
         : toPrice / fromPrice;
 
+      // Calculate expected output amount based on limit price
+      const expectedToAmount = !shouldSwitchTokensForLimit.value
+        ? (fromAmount.value * priceLimit.value).toFixed(6)
+        : (fromAmount.value / priceLimit.value).toFixed(6);
+
       // Determine order type based on price comparison
       // When shouldSwitchTokensForLimit is true, the comparison logic is inverted
       let orderType;
@@ -1488,7 +1515,7 @@ export default {
       const order = {
         id: Date.now(),
         fromAmount: fromAmount.value,
-        toAmount: tradeSummary.toAmount,
+        toAmount: expectedToAmount, // Use calculated expected amount
         fromToken: JSON.parse(JSON.stringify(tokensByAddresses.value[fromTokenAddress.value])),
         toToken: JSON.parse(JSON.stringify(tokensByAddresses.value[toTokenAddress.value])),
         priceLimit: priceLimit.value,
@@ -1500,12 +1527,10 @@ export default {
         createdAt: new Date().toISOString()
       };
 
-      pendingLimitOrders.value.push(order);
+      pendingLimitOrders.value.unshift(order);
 
       // Save to database with order type information
       window.electronAPI.savePendingOrder(order);
-
-      swapMessage.value = `${orderType === 'take_profit' ? 'Take Profit' : 'Stop Loss'} order placed at ${priceLimit.value}`;
     }
 
     function checkPendingOrdersToTrigger() {
@@ -1519,7 +1544,10 @@ export default {
               order.fromToken.address,
               order.toToken.address,
               order.fromAmount,
-              order.sender.address
+              order.sender.address,
+              true,
+              true,
+              true
             );
 
             // Calculate current market price (output amount per input amount)
@@ -1529,17 +1557,10 @@ export default {
             let shouldTrigger = false;
             
             if (order.orderType === 'take_profit') {
-              // Take profit: trigger when current price >= limit price
-              // This logic remains the same regardless of shouldSwitchTokensForLimit
-              // because the order.priceLimit is already in the correct direction
               shouldTrigger = currentPrice >= order.priceLimit;
             } else if (order.orderType === 'stop_loss') {
-              // Stop loss: trigger when current price <= limit price
-              // This logic remains the same regardless of shouldSwitchTokensForLimit
-              // because the order.priceLimit is already in the correct direction
               shouldTrigger = currentPrice <= order.priceLimit;
             } else {
-              // Fallback for legacy orders without orderType (default to take profit behavior)
               shouldTrigger = currentPrice >= order.priceLimit;
             }
 
@@ -1551,33 +1572,34 @@ export default {
               fromTokenAddress.value = order.fromToken.address;
               toTokenAddress.value = order.toToken.address;
               senderDetails.value = order.sender;
-              
-              // Update trades and summary with current market data
-              trades.value = bestTradeResult.trades;
-              tradeSummary.protocol = bestTradeResult.protocol;
-              tradeSummary.sender = order.sender;
-              tradeSummary.fromAmount = order.fromAmount.toString();
-              tradeSummary.toAmount = bestTradeResult.totalHuman;
-              tradeSummary.expectedToAmount = tradeSummary.toAmount;
-              tradeSummary.fromTokenSymbol = bestTradeResult.fromToken.symbol;
-              tradeSummary.toTokenSymbol = bestTradeResult.toToken.symbol;
-              tradeSummary.fromAddressName = order.sender.name;
-              tradeSummary.fromToken = bestTradeResult.fromToken;
-              tradeSummary.fromTokenAddress = bestTradeResult.fromToken.address;
-              tradeSummary.toToken = bestTradeResult.toToken;
-              tradeSummary.toTokenAddress = bestTradeResult.toToken.address;
-              tradeSummary.gasLimit = bestTradeResult.gasLimit;
+
+              // Create a trade summary object for this limit order
+              const limitOrderTradeSummary = {
+                protocol: bestTradeResult.protocol,
+                sender: order.sender,
+                fromAmount: order.fromAmount.toString(),
+                toAmount: bestTradeResult.totalHuman,
+                expectedToAmount: bestTradeResult.totalHuman,
+                fromTokenSymbol: bestTradeResult.fromToken.symbol,
+                toTokenSymbol: bestTradeResult.toToken.symbol,
+                fromAddressName: order.sender.name,
+                fromToken: bestTradeResult.fromToken,
+                fromTokenAddress: bestTradeResult.fromToken.address,
+                toToken: bestTradeResult.toToken,
+                toTokenAddress: bestTradeResult.toToken.address,
+                gasLimit: bestTradeResult.gasLimit,
+              };
 
               if (bestTradeResult.bestMixed) {
-                tradeSummary.fromAmountU = (order.fromAmount * bestTradeResult.fractionMixed / 100).toFixed(7);
-                tradeSummary.fromAmountB = (order.fromAmount - Number(tradeSummary.fromAmountU)).toFixed(7);
-                tradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
-                tradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
-                tradeSummary.fraction = bestTradeResult.fractionMixed;
+                limitOrderTradeSummary.fromAmountU = (order.fromAmount * bestTradeResult.fractionMixed / 100).toFixed(7);
+                limitOrderTradeSummary.fromAmountB = (order.fromAmount - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
+                limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
+                limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
+                limitOrderTradeSummary.fraction = bestTradeResult.fractionMixed;
               }
 
-              // Execute the trade
-              await triggerTrade();
+              // Execute the trade with the specific trades and summary for this order
+              await triggerTrade(bestTradeResult.trades, limitOrderTradeSummary);
 
               // Mark order as completed and update database
               order.status = 'completed';
@@ -1597,12 +1619,11 @@ export default {
             }
           } catch (error) {
             console.error(`Error checking limit order ${order.id}:`, error);
-            // Optionally mark order as failed or retry later
-            // You might want to implement a retry mechanism or failure handling here
           }
         }
       });
     }
+
     // Check pending orders periodically (every 30 seconds)
     setInterval(checkPendingOrdersToTrigger, 30000);
 
