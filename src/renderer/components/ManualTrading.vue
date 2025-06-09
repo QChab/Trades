@@ -245,7 +245,7 @@
 </template>
 
 <script>
-import { ref, reactive, watch, onMounted, computed, toRaw } from 'vue';
+import { ref, reactive, watch, onMounted, computed, toRaw, onUnmounted } from 'vue';
 import { ethers, BigNumber } from 'ethers';
 import chevronDownImage from '@/../assets/chevron-down.svg';
 import reverseImage from '@/../assets/reverse.svg';
@@ -1536,72 +1536,75 @@ export default {
     function checkPendingOrdersToTrigger() {
       if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
 
-      pendingLimitOrders.value.forEach(async (order) => {
-        if (order.status === 'pending') {
-          try {
-            // Get current market price by fetching best trades
-            const bestTradeResult = await getBestTrades(
-              order.fromToken.address,
-              order.toToken.address,
-              order.fromAmount,
-              order.sender.address,
-              true,
-              true,
-              true
-            );
+      for (const order of pendingLimitOrders.value) {
+        // Skip if order is not pending
+        if (!order || !order.status || order.status !== 'pending') continue;
+        // Skip if order is already completed
+        try {
+          // Get current market price by fetching best trades
+          const bestTradeResult = await getBestTrades(
+            order.fromToken.address,
+            order.toToken.address,
+            order.fromAmount,
+            order.sender.address,
+            true,
+            true,
+            true
+          );
 
-            // Calculate current market price (output amount per input amount)
-            const currentPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
+          // Calculate current market price (output amount per input amount)
+          const currentPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
+          
+          // Determine if order should be triggered based on order type and price direction
+          let shouldTrigger = false;
+          
+          if (order.orderType === 'take_profit') {
+            shouldTrigger = currentPrice >= order.priceLimit;
+          } else if (order.orderType === 'stop_loss') {
+            shouldTrigger = currentPrice <= order.priceLimit;
+          } else {
+            shouldTrigger = currentPrice >= order.priceLimit;
+          }
+
+          if (shouldTrigger) {
+            console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: current price ${currentPrice} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
             
-            // Determine if order should be triggered based on order type and price direction
-            let shouldTrigger = false;
-            
-            if (order.orderType === 'take_profit') {
-              shouldTrigger = currentPrice >= order.priceLimit;
-            } else if (order.orderType === 'stop_loss') {
-              shouldTrigger = currentPrice <= order.priceLimit;
-            } else {
-              shouldTrigger = currentPrice >= order.priceLimit;
+            // Set up the trade parameters
+            fromAmount.value = order.fromAmount;
+            fromTokenAddress.value = order.fromToken.address;
+            toTokenAddress.value = order.toToken.address;
+            senderDetails.value = order.sender;
+
+            // Create a trade summary object for this limit order
+            const limitOrderTradeSummary = {
+              protocol: bestTradeResult.protocol,
+              sender: order.sender,
+              fromAmount: order.fromAmount.toString(),
+              toAmount: bestTradeResult.totalHuman,
+              expectedToAmount: bestTradeResult.totalHuman,
+              fromTokenSymbol: bestTradeResult.fromToken.symbol,
+              toTokenSymbol: bestTradeResult.toToken.symbol,
+              fromAddressName: order.sender.name,
+              fromToken: bestTradeResult.fromToken,
+              fromTokenAddress: bestTradeResult.fromToken.address,
+              toToken: bestTradeResult.toToken,
+              toTokenAddress: bestTradeResult.toToken.address,
+              gasLimit: bestTradeResult.gasLimit,
+            };
+
+            if (bestTradeResult.bestMixed) {
+              limitOrderTradeSummary.fromAmountU = (order.fromAmount * bestTradeResult.fractionMixed / 100).toFixed(7);
+              limitOrderTradeSummary.fromAmountB = (order.fromAmount - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
+              limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
+              limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
+              limitOrderTradeSummary.fraction = bestTradeResult.fractionMixed;
             }
 
-            if (shouldTrigger) {
-              console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: current price ${currentPrice} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
-              
-              // Set up the trade parameters
-              fromAmount.value = order.fromAmount;
-              fromTokenAddress.value = order.fromToken.address;
-              toTokenAddress.value = order.toToken.address;
-              senderDetails.value = order.sender;
-
-              // Create a trade summary object for this limit order
-              const limitOrderTradeSummary = {
-                protocol: bestTradeResult.protocol,
-                sender: order.sender,
-                fromAmount: order.fromAmount.toString(),
-                toAmount: bestTradeResult.totalHuman,
-                expectedToAmount: bestTradeResult.totalHuman,
-                fromTokenSymbol: bestTradeResult.fromToken.symbol,
-                toTokenSymbol: bestTradeResult.toToken.symbol,
-                fromAddressName: order.sender.name,
-                fromToken: bestTradeResult.fromToken,
-                fromTokenAddress: bestTradeResult.fromToken.address,
-                toToken: bestTradeResult.toToken,
-                toTokenAddress: bestTradeResult.toToken.address,
-                gasLimit: bestTradeResult.gasLimit,
-              };
-
-              if (bestTradeResult.bestMixed) {
-                limitOrderTradeSummary.fromAmountU = (order.fromAmount * bestTradeResult.fractionMixed / 100).toFixed(7);
-                limitOrderTradeSummary.fromAmountB = (order.fromAmount - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
-                limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
-                limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
-                limitOrderTradeSummary.fraction = bestTradeResult.fractionMixed;
-              }
-
+            try {
               // Execute the trade with the specific trades and summary for this order
               await triggerTrade(bestTradeResult.trades, limitOrderTradeSummary);
 
-              // Mark order as completed and update database
+              // Only mark as completed if trade was successful
               order.status = 'completed';
               order.completedAt = new Date().toISOString();
               order.executionPrice = currentPrice;
@@ -1613,19 +1616,29 @@ export default {
               await window.electronAPI.updatePendingOrder(order);
               
               console.log(`${order.orderType || 'Limit'} order ${order.id} completed successfully at price ${currentPrice}`);
-            } else {
-              // Optional: Log current price vs target for debugging
-              console.log(`Order ${order.id} (${order.orderType || 'limit'}): current price ${currentPrice.toFixed(6)} vs limit ${order.priceLimit} - not triggered`);
+            } catch (tradeError) {
+              console.error(`Failed to execute trade for order ${order.id}:`, tradeError);
+              order.status = 'failed';
+              await window.electronAPI.updatePendingOrder(order);
             }
-          } catch (error) {
-            console.error(`Error checking limit order ${order.id}:`, error);
+          } else {
+            // Optional: Log current price vs target for debugging
+            console.log(`Order ${order.id} (${order.orderType || 'limit'}): current price ${currentPrice.toFixed(6)} vs limit ${order.priceLimit} - not triggered`);
           }
+        } catch (error) {
+          console.error(`Error checking limit order ${order.id}:`, error);
         }
-      });
+      }
     }
 
-    // Check pending orders periodically (every 30 seconds)
-    setInterval(checkPendingOrdersToTrigger, 30000);
+    const checkOrdersInterval = setInterval(checkPendingOrdersToTrigger, 30000);
+
+    // Clear interval on component unmount
+    onUnmounted(() => {
+      if (checkOrdersInterval) {
+        clearInterval(checkOrdersInterval);
+      }
+    });
 
     return {
       // state

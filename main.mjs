@@ -98,12 +98,36 @@ function initDatabase() {
           console.log('PendingOrder table ready or already exists.');
           
           // Add missing columns to existing table if they don't exist
-          db.run(`ALTER TABLE PendingOrder ADD COLUMN toAmount TEXT`, () => {});
-          db.run(`ALTER TABLE PendingOrder ADD COLUMN currentMarketPrice TEXT`, () => {});
-          db.run(`ALTER TABLE PendingOrder ADD COLUMN orderType TEXT DEFAULT 'take_profit'`, () => {});
-          db.run(`ALTER TABLE PendingOrder ADD COLUMN shouldSwitchTokensForLimit BOOLEAN DEFAULT 0`, () => {});
-          db.run(`ALTER TABLE PendingOrder ADD COLUMN completedAt DATETIME`, () => {});
-          db.run(`ALTER TABLE PendingOrder ADD COLUMN executionPrice TEXT`, () => {});
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN toAmount TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding toAmount column:', err);
+            }
+          });
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN currentMarketPrice TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding currentMarketPrice column:', err);
+            }
+          });
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN orderType TEXT DEFAULT 'take_profit'`, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding orderType column:', err);
+            }
+          });
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN shouldSwitchTokensForLimit BOOLEAN DEFAULT 0`, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding shouldSwitchTokensForLimit column:', err);
+            }
+          });
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN completedAt DATETIME`, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding completedAt column:', err);
+            }
+          });
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN executionPrice TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding executionPrice column:', err);
+            }
+          });
         }
       });
     }
