@@ -18,6 +18,9 @@
                 when 1 {{ !shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }} = 
                 <input v-model.number="priceLimit" placeholder="0"/> 
                 {{ shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }}
+                <span v-if="priceLimit && tokensByAddresses[fromTokenAddress]?.price && tokensByAddresses[toTokenAddress]?.price" class="usd-price-quote">
+                  (${{ formatUsdPrice(priceLimit) }})
+                </span>
                 <img :src="reverseImage" class="reverse-image" @click="shouldSwitchTokensForLimit = !shouldSwitchTokensForLimit"/>
               </p>
               <span class="set-market-price" @click="setMarketPriceAsLimit">
@@ -465,7 +468,15 @@ export default {
       }
     );
 
-    const getBestTrades = async (fromTokenAddr, toTokenAddr, amount, senderAddr, shouldUseUniswapValue, shouldUseBalancerValue, should) => {
+    const getBestTrades = async (
+      fromTokenAddr,
+      toTokenAddr,
+      amount,
+      senderAddr,
+      shouldUseUniswapValue,
+      shouldUseBalancerValue,
+      shouldUseUniswapAndBalancerValue
+    ) => {
       if (!fromTokenAddr || !toTokenAddr || !amount || amount <= 0) {
         throw new Error('Invalid parameters for getBestTrades');
       }
@@ -1434,6 +1445,7 @@ export default {
     });
 
     watch(() => shouldSwitchTokensForLimit.value, () => {
+      if (!priceLimit.value || isNaN(priceLimit.value)) return priceLimit.value = 0;
       priceLimit.value = 1/priceLimit.value; // Invert the price limit
     });
 
@@ -1457,6 +1469,31 @@ export default {
           : toPrice / fromPrice;
         priceLimit.value = Number(marketPrice.toPrecision(8));
       }
+    }
+
+    function formatUsdPrice(price) {
+      if (!price || isNaN(price)) return '0.00';
+      
+      const fromToken = tokensByAddresses.value[fromTokenAddress.value];
+      const toToken = tokensByAddresses.value[toTokenAddress.value];
+      
+      if (!fromToken?.price || !toToken?.price) return '0.00';
+      
+      // Calculate USD value based on which token we're pricing
+      let usdValue;
+      if (!shouldSwitchTokensForLimit.value) {
+        // Pricing toToken in terms of fromToken
+        // 1 fromToken = price * toToken
+        // So price * toToken units = fromToken price in USD
+        usdValue = price * toToken.price;
+      } else {
+        // Pricing fromToken in terms of toToken  
+        // 1 toToken = price * fromToken
+        // So price * fromToken units = toToken price in USD
+        usdValue = price * fromToken.price;
+      }
+      
+      return usdValue >= 0.01 ? usdValue.toFixed(2) : usdValue.toFixed(6);
     }
 
     function placeLimitOrder() {
@@ -1686,7 +1723,8 @@ export default {
 
       pendingLimitOrders,
       placeLimitOrder,
-      cancelLimitOrder
+      cancelLimitOrder,
+      formatUsdPrice
     };
   }
 };
@@ -2215,5 +2253,11 @@ button::-webkit-focus-inner {
   font-size: 12px;
   color: #666;
   margin-top: 5px;
+}
+.usd-price-quote {
+  font-size: 14px !important;
+  color: #666 !important;
+  margin-left: 10px !important;
+  font-weight: 500 !important;
 }
 </style>
