@@ -1426,7 +1426,6 @@ export default {
     watch(
       [() => priceLimit.value, () => fromAmount.value, () => fromTokenAddress.value, () => toTokenAddress.value],
       ([priceLimitValue, fromAmountValue]) => {
-      console.log('Price limit changed:', priceLimitValue);
       if (!fromAmountValue || isNaN(fromAmountValue)) {
         tradeSummary.toAmount = null;
         return;
@@ -1573,12 +1572,62 @@ export default {
     async function checkPendingOrdersToTrigger() {
       if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
 
-      for (const order of pendingLimitOrders.value) {
+      await setTokenPrices(tokens);
+
+       for (const order of pendingLimitOrders.value) {
         // Skip if order is not pending
         if (!order || !order.status || order.status !== 'pending') continue;
-        // Skip if order is already completed
+        
         try {
-          // Get current market price by fetching best trades
+          // Get current token prices from our updated token list
+          const fromToken = tokensByAddresses.value[order.fromToken.address];
+          const toToken = tokensByAddresses.value[order.toToken.address];
+          
+          if (!fromToken?.price || !toToken?.price) {
+            console.log(`Missing price data for order ${order.id}: fromToken=${fromToken?.symbol} price=${fromToken?.price}, toToken=${toToken?.symbol} price=${toToken?.price}`);
+            continue;
+          }
+
+          // Calculate current market price using token prices
+          let currentMarketPrice;
+          if (!order.shouldSwitchTokensForLimit) {
+            // Normal case: fromToken price in terms of toToken
+            currentMarketPrice = fromToken.price / toToken.price;
+          } else {
+            // Inverted case: toToken price in terms of fromToken
+            currentMarketPrice = toToken.price / fromToken.price;
+          }
+
+          // Define price tolerance (e.g., within 2% of trigger price)
+          const PRICE_TOLERANCE = 0.02; // 2%
+          const priceDifference = Math.abs(currentMarketPrice - order.priceLimit) / order.priceLimit;
+          
+          // Only proceed with expensive getBestTrades call if we're close to trigger price
+          let shouldCheckExactPrice = false;
+          let shouldTrigger = false;
+
+          if (order.orderType === 'take_profit') {
+            // For take profit: trigger when current price >= limit price
+            // Check exact price if we're within tolerance or already above
+            shouldCheckExactPrice = currentMarketPrice >= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
+          } else if (order.orderType === 'stop_loss') {
+            // For stop loss: trigger when current price <= limit price
+            // Check exact price if we're within tolerance or already below
+            shouldCheckExactPrice = currentMarketPrice <= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
+          } else {
+            // Default behavior (legacy support)
+            shouldCheckExactPrice = currentMarketPrice >= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
+          }
+
+          if (!shouldCheckExactPrice) {
+            // Price is not close enough to trigger, log and continue
+            console.log(`Order ${order.id} (${order.orderType || 'limit'}): market price ${currentMarketPrice.toFixed(6)} not close to limit ${order.priceLimit} (diff: ${(priceDifference * 100).toFixed(2)}%) - skipping exact price check`);
+            continue;
+          }
+
+          console.log(`Order ${order.id} (${order.orderType || 'limit'}): market price ${currentMarketPrice.toFixed(6)} is close to limit ${order.priceLimit} - checking exact execution price`);
+
+          // Get exact trade execution price by fetching best trades
           const bestTradeResult = await getBestTrades(
             order.fromToken.address,
             order.toToken.address,
@@ -1589,22 +1638,20 @@ export default {
             true
           );
 
-          // Calculate current market price (output amount per input amount)
-          const currentPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
+          // Calculate exact execution price (output amount per input amount)
+          const exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
           
-          // Determine if order should be triggered based on order type and price direction
-          let shouldTrigger = false;
-          
+          // Determine if order should be triggered based on exact execution price
           if (order.orderType === 'take_profit') {
-            shouldTrigger = currentPrice >= order.priceLimit;
+            shouldTrigger = exactExecutionPrice >= order.priceLimit;
           } else if (order.orderType === 'stop_loss') {
-            shouldTrigger = currentPrice <= order.priceLimit;
+            shouldTrigger = exactExecutionPrice <= order.priceLimit;
           } else {
-            shouldTrigger = currentPrice >= order.priceLimit;
+            shouldTrigger = exactExecutionPrice >= order.priceLimit;
           }
 
           if (shouldTrigger) {
-            console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: current price ${currentPrice} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
+            console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(6)} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
             
             // Set up the trade parameters
             fromAmount.value = order.fromAmount;
@@ -1644,7 +1691,7 @@ export default {
               // Only mark as completed if trade was successful
               order.status = 'completed';
               order.completedAt = new Date().toISOString();
-              order.executionPrice = currentPrice;
+              order.executionPrice = exactExecutionPrice;
               
               // Remove from local array
               pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
@@ -1652,17 +1699,17 @@ export default {
               // Update in database
               await window.electronAPI.updatePendingOrder(order);
               
-              console.log(`${order.orderType || 'Limit'} order ${order.id} completed successfully at price ${currentPrice}`);
+              console.log(`${order.orderType || 'Limit'} order ${order.id} completed successfully at price ${exactExecutionPrice}`);
             } catch (tradeError) {
               console.error(`Failed to execute trade for order ${order.id}:`, tradeError);
               order.status = 'failed';
               await window.electronAPI.updatePendingOrder(order);
             }
           } else {
-            // Optional: Log current price vs target for debugging
-            console.log(`Order ${order.id} (${order.orderType || 'limit'}): current price ${currentPrice.toFixed(6)} vs limit ${order.priceLimit} - not triggered`);
+            // Log exact price vs target for debugging
+            console.log(`Order ${order.id} (${order.orderType || 'limit'}): exact execution price ${exactExecutionPrice.toFixed(6)} vs limit ${order.priceLimit} - not triggered`);
           }
-        } catch (error) {
+          } catch (error) {
           console.error(`Error checking limit order ${order.id}:`, error);
         }
       }
