@@ -95,7 +95,7 @@
           <p class="details-message">{{ priceFetchingMessage }}</p>
           <div class="address-form">
             <p><span v-if="tradeSummary.protocol">
-              On {{ tradeSummary === 'Uniswap & Balancer' ?  (`Uniswap ${tradeSummary.fraction}% & Balancer ${100 - tradeSummary.fraction}%`) : tradeSummary.protocol}}
+              On {{ tradeSummary.protocol === 'Uniswap & Balancer' ?  (`Uniswap ${tradeSummary.fraction}% & Balancer ${100 - tradeSummary.fraction}%`) : tradeSummary.protocol}}
             </span> with</p>
             <select id="sender-address" v-model="senderDetails">
               <option 
@@ -115,7 +115,7 @@
               <p class="details-message" v-if="tradeSummary?.gasLimit">Gas cost ~ ${{ (tradeSummary.gasLimit * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
               <button
                 v-if="!needsToApprove"
-                @click="triggerTrade()"
+                @click="isSwapButtonDisabled=true; triggerTrade()"
                 :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
                 class="swap-button"
               >
@@ -528,7 +528,7 @@ export default {
         outputAmount = results[1].value.outputAmount;
         value = results[1].value.value;
         gasLimit = results[1].value.gasLimit;
-      } else if (!shouldUseUniswapAndBalancerValue && !isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
+      } else if (!shouldUseUniswapAndBalancerValue && !shouldUseUniswapValue && (!results[1] || results[1].status === 'rejected')) {
         if (results[1] && results[1].reason)
           throw results[1].reason;
       }
@@ -579,18 +579,35 @@ export default {
           best25U: best25U.outputAmount.toString(),
         })
 
-        if (best25U.outputAmount.gte(bestOutputLessGas) && best25U.outputAmount.gte(best50U.outputAmount) && best25U.outputAmount.gte(best75U.outputAmount) && best25U.outputAmount.gte(best90U.outputAmount)) {
-          bestMixed = best25U;
-          fractionMixed = 25;
-        } else if (best50U.outputAmount.gte(bestOutputLessGas) && best50U.outputAmount.gte(best25U.outputAmount) && best50U.outputAmount.gte(best75U.outputAmount) && best50U.outputAmount.gte(best90U.outputAmount)) {
-          bestMixed = best50U;
-          fractionMixed = 50;
-        } else if (best75U.outputAmount.gte(bestOutputLessGas) && best75U.outputAmount.gte(best25U.outputAmount) && best75U.outputAmount.gte(best50U.outputAmount) && best75U.outputAmount.gte(best90U.outputAmount)) {
-          bestMixed = best75U;
-          fractionMixed = 75;
-        } else if (best90U.outputAmount.gte(bestOutputLessGas) && best90U.outputAmount.gte(best25U.outputAmount) && best90U.outputAmount.gte(best50U.outputAmount) && best90U.outputAmount.gte(best75U.outputAmount)) {
-          bestMixed = best90U;
-          fractionMixed = 90;
+        const onlyMixedEnabled = shouldUseUniswapAndBalancerValue && !shouldUseUniswapValue && !shouldUseBalancerValue;
+        
+        // Find the best mixed trade
+        const mixedOptions = [
+          { trade: best25U, fraction: 25 },
+          { trade: best50U, fraction: 50 },
+          { trade: best75U, fraction: 75 },
+          { trade: best90U, fraction: 90 }
+        ];
+
+        // Sort by output amount (highest first)
+        mixedOptions.sort((a, b) => {
+          if (b.trade.outputAmount.gt(a.trade.outputAmount)) return 1;
+          if (a.trade.outputAmount.gt(b.trade.outputAmount)) return -1;
+          return 0;
+        });
+
+        const bestMixedOption = mixedOptions[0];
+
+        if (onlyMixedEnabled) {
+          // When only mixed trades are enabled, always select the best one
+          bestMixed = bestMixedOption.trade;
+          fractionMixed = bestMixedOption.fraction;
+        } else {
+          // When other protocols are also enabled, compare against bestOutputLessGas
+          if (bestMixedOption.trade.outputAmount.gte(bestOutputLessGas)) {
+            bestMixed = bestMixedOption.trade;
+            fractionMixed = bestMixedOption.fraction;
+          }
         }
       }
 
@@ -708,7 +725,17 @@ export default {
               shouldUseBalancerValue,
               shouldUseUniswapAndBalancerValue
             );
-            
+
+            // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
+            if (_newFrom !== fromTokenAddress.value || _newTo !== toTokenAddress.value) {
+              console.log('Outdated token pair in first check');
+              return 'outdated';
+            }
+            if (_newAmt !== fromAmount.value) {
+              console.log('Outdated input amount in first check');
+              return 'outdated';
+            }
+
             // Update reactive state with results
             trades.value = bestTradeResult.trades;
             tradeSummary.protocol = bestTradeResult.protocol;
@@ -874,16 +901,6 @@ export default {
     const getTradesUniswap = async (_newFrom, _newTo, _newAmt) => {
       const pools = await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo]);
       
-      // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
-      if (_newFrom !== fromTokenAddress.value || _newTo !== toTokenAddress.value) {
-        console.log('Outdated token pair in first check');
-        return 'outdated';
-      }
-      if (_newAmt !== fromAmount.value) {
-        console.log('Outdated input amount in first check');
-        return 'outdated';
-      }
-
       // FINDING TRADES
       const fromAmtRaw = ethers.utils.parseUnits(
         _newAmt.toString(),
@@ -918,7 +935,7 @@ export default {
       }
 
       const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
-      const expectedInRawBN = ethers.utils.parseUnits(fromAmount.value + '', decimalsIn);
+      const expectedInRawBN = ethers.utils.parseUnits(_newAmt + '', decimalsIn);
       
       const totalInBN = tradesByPercent[100].validTrades.reduce(
         (acc, t) => {
@@ -953,15 +970,15 @@ export default {
       );
       const totalHuman = ethers.utils.formatUnits(totalBig, tokensByAddresses.value[_newTo].decimals);
 
-      // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
-      for (const t of validTrades) {
-        const inAddr  = t.inputAmount.currency.address.toLowerCase();
-        const outAddr = t.outputAmount.currency.address.toLowerCase();
-        if (inAddr !== fromTokenAddress.value.toLowerCase() || outAddr !== toTokenAddress.value.toLowerCase()) {
-          console.log('Outdated token pair');
-          return 'outdated';
-        }
-      }
+      // // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
+      // for (const t of validTrades) {
+      //   const inAddr  = t.inputAmount.currency.address.toLowerCase();
+      //   const outAddr = t.outputAmount.currency.address.toLowerCase();
+      //   if (inAddr !== fromTokenAddress.value.toLowerCase() || outAddr !== toTokenAddress.value.toLowerCase()) {
+      //     console.log('Outdated token pair');
+      //     return 'outdated';
+      //   }
+      // }
 
       return {validTrades, totalHuman, totalBig};
     }
@@ -1177,7 +1194,6 @@ export default {
     const triggerTrade = async (providedTrades = null, providedTradeSummary = null) => {
       let globalWarnings;
       try {
-        isSwapButtonDisabled.value = true;
         swapMessage.value = '';
 
         // Use provided trades/summary or fall back to reactive values
@@ -1190,10 +1206,10 @@ export default {
         currentTradeSummary.isConfirmed = false;
 
         // Basic balance check for ETH → gas
-        if (fromTokenAddress.value === ethers.constants.AddressZero) {
-          const addr = senderDetails.value.address.toLowerCase();
-          const bal = computedBalancesByAddress.value[addr]?.[fromTokenAddress.value.toLowerCase()] || 0;
-          if (bal - Number(fromAmount.value) < 0.004) {
+        if (currentTradeSummary.fromToken.address === ethers.constants.AddressZero) {
+          const addr = currentTradeSummary.sender.address.toLowerCase();
+          const bal = computedBalancesByAddress.value[addr]?.[currentTradeSummary.fromToken.address.toLowerCase()] || 0;
+          if (bal - Number(currentTradeSummary.fromAmount) < 0.003) {
             throw new Error('Insufficient ETH for gas on ' + addr);
           }
         }
@@ -1219,7 +1235,7 @@ export default {
             callData: currentTrades[0].callData,
             outputAmount: currentTrades[0].outputAmount.toString(),
             value: currentTrades[0].value.toString(),
-            from: senderDetails.value.address,
+            from: currentTradeSummary.sender.address,
             tradeSummary: JSON.parse(JSON.stringify(currentTradeSummary)),
           }
           const response = await window.electronAPI.sendTransaction(args);
@@ -1248,7 +1264,7 @@ export default {
             callData: currentTrades.filter(t => t.callData)[0].callData,
             outputAmount: currentTrades.filter(t => t.callData)[0].outputAmount.toString(),
             value: currentTrades.filter(t => t.callData)[0].value.toString(),
-            from: senderDetails.value.address,
+            from: currentTradeSummary.sender.address,
             tradeSummary: JSON.parse(JSON.stringify({
               ...currentTradeSummary,
               fromAmount: currentTradeSummary.fromAmountB,
@@ -1275,8 +1291,8 @@ export default {
         }
         
         // Subtract "from amount" from our local offset map
-        const tokLower = fromTokenAddress.value.toLowerCase();
-        const senderLc = senderDetails.value.address.toLowerCase();
+        const tokLower = currentTradeSummary.fromToken?.address.toLowerCase();
+        const senderLc = currentTradeSummary.sender.address.toLowerCase();
         if (!balanceOffsetByTokenByAddress[tokLower]) {
           balanceOffsetByTokenByAddress[tokLower] = {};
         }
@@ -1286,8 +1302,8 @@ export default {
         balanceOffsetByTokenByAddress[tokLower][senderLc] += Number(fromAmount.value);
 
         // Finalize summary & emit upwards
-        currentTradeSummary.fromTokenSymbol = tokensByAddresses.value[fromTokenAddress.value].symbol;
-        currentTradeSummary.toTokenSymbol   = tokensByAddresses.value[toTokenAddress.value].symbol;
+        currentTradeSummary.fromTokenSymbol = tokensByAddresses.value[currentTradeSummary.fromToken?.address].symbol;
+        currentTradeSummary.toTokenSymbol   = tokensByAddresses.value[currentTradeSummary.toToken?.address].symbol;
         if (globalWarnings && globalWarnings.length) {
           swapMessage.value = 'Warnings: ' + globalWarnings.join(' ; ');
         }
@@ -1499,19 +1515,24 @@ export default {
       // Calculate USD value based on which token we're pricing
       let usdValue;
       if (!shouldSwitchTokensForLimit.value) {
-        // Pricing toToken in terms of fromToken
-        // 1 fromToken = price * toToken
-        // So price * toToken units = fromToken price in USD
         usdValue = price * toToken.price;
       } else {
-        // Pricing fromToken in terms of toToken  
-        // 1 toToken = price * fromToken
-        // So price * fromToken units = toToken price in USD
         usdValue = price * fromToken.price;
       }
       
       return usdValue >= 0.01 ? usdValue.toFixed(2) : usdValue.toFixed(6);
     }
+
+    watch(
+      () => fromTokenAddress.value,
+      async (fromTokenAddressValue) => {
+        if (tabOrder.value !== 'limit') return;
+        if (fromTokenAddressValue !== ethers.constants.AddressZero) {
+          await checkAllowances(fromTokenAddressValue, true);
+          await checkAllowances(fromTokenAddressValue, false);
+        }
+      }
+    );
 
     function placeLimitOrder() {
       if (!senderDetails.value.address) {
@@ -1588,6 +1609,7 @@ export default {
     }
 
     async function checkPendingOrdersToTrigger() {
+      if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
       if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
 
       await setTokenPrices(tokens);
@@ -1616,8 +1638,8 @@ export default {
             currentMarketPrice = toToken.price / fromToken.price;
           }
 
-          // Define price tolerance (e.g., within 2% of trigger price)
-          const PRICE_TOLERANCE = 0.02; // 2%
+          // Define price tolerance (e.g., within 1% of trigger price)
+          const PRICE_TOLERANCE = 0.01; // 1%
           const priceDifference = Math.abs(currentMarketPrice - order.priceLimit) / order.priceLimit;
           
           // Only proceed with expensive getBestTrades call if we're close to trigger price
@@ -1653,7 +1675,7 @@ export default {
             order.sender.address,
             true,
             true,
-            true
+            tokensByAddresses.value[order.fromToken.address].price * Number(order.fromAmount) >= 100,
           );
 
           // Calculate exact execution price (output amount per input amount)
@@ -1671,12 +1693,6 @@ export default {
           if (shouldTrigger) {
             console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(6)} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
             
-            // Set up the trade parameters
-            fromAmount.value = order.fromAmount;
-            fromTokenAddress.value = order.fromToken.address;
-            toTokenAddress.value = order.toToken.address;
-            senderDetails.value = order.sender;
-
             // Create a trade summary object for this limit order
             const limitOrderTradeSummary = {
               protocol: bestTradeResult.protocol,
@@ -1715,13 +1731,32 @@ export default {
               pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
               
               // Update in database
-              await window.electronAPI.updatePendingOrder(order);
+              await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
               
               console.log(`${order.orderType || 'Limit'} order ${order.id} completed successfully at price ${exactExecutionPrice}`);
             } catch (tradeError) {
               console.error(`Failed to execute trade for order ${order.id}:`, tradeError);
               order.status = 'failed';
+
+              const failedTradeEntry = {
+                ...limitOrderTradeSummary,
+                sentDate: new Date(),
+                isConfirmed: true,
+                timestamp: new Date(),
+              };
+
+              // Emit the failed trade to be added to history
+              emit('update:trade', failedTradeEntry);
+
+              // Mark order as failed and update in database
+              order.status = 'failed';
+              order.failedAt = new Date().toISOString();
+              order.errorMessage = tradeError.message || String(tradeError);
               await window.electronAPI.updatePendingOrder(order);
+
+              // Remove from pending orders list
+              pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);              // Save to database
+              await window.electronAPI.saveFailedTrade(failedTradeEntry);
             }
           } else {
             // Log exact price vs target for debugging

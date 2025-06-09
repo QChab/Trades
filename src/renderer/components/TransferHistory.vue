@@ -29,7 +29,7 @@
         <span @click.stop="deleteTrade(t, index)" class="delete">Delete</span>
       </li>
     </transition-group>
-    <button @click="deleteAll">Delete all</button>
+    <button class="delete-all" @click="deleteAll">Delete all</button>
   </div>
 </template>
 
@@ -256,5 +256,11 @@ li:hover .delete, li:hover .view {
 
 .delete:hover, .view:hover {
   text-decoration: underline;
+}
+
+.delete-all {
+  margin-left: auto;
+  display: block;
+  margin-top: 10px;
 }
 </style>
