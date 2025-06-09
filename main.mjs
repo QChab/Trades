@@ -80,17 +80,28 @@ function initDatabase() {
           toTokenAddress TEXT,
           toTokenSymbol TEXT,
           priceLimit TEXT,
+          currentMarketPrice TEXT,
+          orderType TEXT DEFAULT 'take_profit',
+          shouldSwitchTokensForLimit BOOLEAN DEFAULT 0,
           senderAddress TEXT,
           senderName TEXT,
-          status TEXT,
-          isPriceLimitInversed BOOLEAN DEFAULT 0,
-          createdAt DATETIME DEFAULT (datetime('now', 'localtime'))
+          status TEXT DEFAULT 'pending',
+          createdAt DATETIME DEFAULT (datetime('now', 'localtime')),
+          completedAt DATETIME,
+          executionPrice TEXT
         )
       `, (err) => {
         if (err) {
           console.error('Failed to create PendingOrder table:', err);
         } else {
           console.log('PendingOrder table ready or already exists.');
+          
+          // Add missing columns to existing table if they don't exist
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN currentMarketPrice TEXT`, () => {});
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN orderType TEXT DEFAULT 'take_profit'`, () => {});
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN shouldSwitchTokensForLimit BOOLEAN DEFAULT 0`, () => {});
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN completedAt DATETIME`, () => {});
+          db.run(`ALTER TABLE PendingOrder ADD COLUMN executionPrice TEXT`, () => {});
         }
       });
     }
@@ -399,12 +410,27 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
     return {success: false, error: err.toString(), warnings};
   }
 }
-
 function savePendingOrder(order) {
   const sql = `
-    INSERT INTO PendingOrder (id, fromAmount, fromTokenAddress, fromTokenSymbol, toTokenAddress, toTokenSymbol, priceLimit, senderAddress, senderName, status, isPriceLimitInversed)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO PendingOrder (
+      id, 
+      fromAmount, 
+      fromTokenAddress, 
+      fromTokenSymbol, 
+      toTokenAddress, 
+      toTokenSymbol, 
+      priceLimit, 
+      currentMarketPrice,
+      orderType,
+      shouldSwitchTokensForLimit,
+      senderAddress, 
+      senderName, 
+      status, 
+      createdAt
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
+  
   db.run(sql, [
     order.id,
     order.fromAmount,
@@ -413,13 +439,42 @@ function savePendingOrder(order) {
     order.toToken?.address,
     order.toToken?.symbol,
     order.priceLimit,
+    order.currentMarketPrice,
+    order.orderType || 'take_profit',
+    order.shouldSwitchTokensForLimit ? 1 : 0,
     order.sender?.address,
     order.sender?.name,
     order.status || 'pending',
-    order.isPriceLimitInversed || false,
+    order.createdAt || new Date().toISOString(),
   ], function (err) {
     if (err) {
       console.error('Failed to insert pending order:', err);
+    } else {
+      console.log('Pending order saved with ID:', order.id);
+    }
+  });
+}
+
+function updatePendingOrder(order) {
+  const sql = `
+    UPDATE PendingOrder 
+    SET 
+      status = ?,
+      completedAt = ?,
+      executionPrice = ?
+    WHERE id = ?
+  `;
+  
+  db.run(sql, [
+    order.status,
+    order.completedAt,
+    order.executionPrice,
+    order.id
+  ], function (err) {
+    if (err) {
+      console.error('Failed to update pending order:', err);
+    } else {
+      console.log('Pending order updated with ID:', order.id);
     }
   });
 }
@@ -732,6 +787,9 @@ function createWindow() {
 
   ipcMain.handle('save-pending-order', (event, order) => {
     savePendingOrder(order);
+  });
+  ipcMain.handle('update-pending-order', (event, order) => {
+    updatePendingOrder(order);
   });
   ipcMain.handle('delete-pending-order', (event, id) => {
     deletePendingOrder(id);

@@ -208,8 +208,22 @@
       <div v-if="pendingLimitOrders.length">
         <h4>Pending Limit Orders</h4>
         <ul>
-          <li v-for="order in pendingLimitOrders" :key="order.id">
-            {{ order.fromAmount }} {{ order.fromToken.symbol }} → {{ order.toToken.symbol }} at {{ order.priceLimit }}
+          <li v-for="order in pendingLimitOrders" :key="order.id" class="pending-order">
+            <div class="order-info">
+              <div class="order-details">
+                <span class="order-type" :class="order.orderType">
+                {{ order.orderType === 'take_profit' ? '📈 Take Profit' : '📉 Stop Loss' }}
+              </span>
+                {{ order.fromAmount }} {{ order.fromToken.symbol }} → {{ order.toToken.symbol }} 
+                at {{ order.priceLimit }}
+                <div class="order-meta">
+                  {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
+                  <span v-if="order.currentMarketPrice">
+                    (Market was: {{ order.currentMarketPrice.toFixed(6) }})
+                  </span>
+                </div>
+              </div>
+            </div>
             <span class="cancel-order" @click="cancelLimitOrder(order.id)">❌ Cancel</span>
           </li>
         </ul>
@@ -439,6 +453,163 @@ export default {
       }
     );
 
+    const getBestTrades = async (fromTokenAddr, toTokenAddr, amount, senderAddr) => {
+      if (!fromTokenAddr || !toTokenAddr || !amount || amount <= 0) {
+        throw new Error('Invalid parameters for getBestTrades');
+      }
+
+      const fromToken = tokensByAddresses.value[fromTokenAddr];
+      const toToken = tokensByAddresses.value[toTokenAddr];
+      
+      if (!fromToken || !toToken) {
+        throw new Error('Token not found in tokensByAddresses');
+      }
+
+      console.log('Fetching quotes on exchanges for', fromToken.symbol, '->', toToken.symbol);
+      
+      const results = await Promise.allSettled([
+        (shouldUseUniswap.value || shouldUseUniswapAndBalancer.value) ? 
+          getTradesUniswap(fromTokenAddr, toTokenAddr, amount) : null,
+        (shouldUseBalancer.value) ? 
+          getTradesBalancer(fromTokenAddr, toTokenAddr, amount, senderAddr, true) : null,
+        (shouldUseUniswapAndBalancer.value)
+          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .25, senderAddr, false) : null,
+        (shouldUseUniswapAndBalancer.value)
+          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .50, senderAddr, false) : null,
+        (shouldUseUniswapAndBalancer.value) 
+          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .75, senderAddr, false) : null,
+        (shouldUseUniswapAndBalancer.value)
+          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .10, senderAddr, false) : null,
+      ]);
+
+      console.log(results);
+
+      let isUsingUniswap = true;
+      let validTrades, totalHuman, totalBig;
+      if (results[0] && results[0].status === 'fulfilled' && results[0].value) {
+        if (results[0].value === 'outdated') throw new Error('Quote is outdated');
+        if (!results[0].value[100] || results[0].value[100] === 'outdated') throw new Error('Quote is outdated');
+
+        validTrades = results[0].value[100].validTrades;
+        totalHuman = results[0].value[100].totalHuman;
+        totalBig = results[0].value[100].totalBig;
+      } else if (!results[0] || results[0].status === 'rejected') {
+        isUsingUniswap = false;
+        if (results[0] && results[0].reason)
+          console.error(results[0].reason);
+      }
+
+      let callData, outputAmount, value, gasLimit;
+      if (results[1] && results[1].status === 'fulfilled' && results[1].value) {
+        callData = results[1].value.callData;
+        outputAmount = results[1].value.outputAmount;
+        value = results[1].value.value;
+        gasLimit = results[1].value.gasLimit;
+      } else if (!shouldUseUniswapAndBalancer.value && !isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
+        if (results[1] && results[1].reason)
+          throw results[1].reason;
+      }
+
+      let uniswapGasLimit = 0
+      let offsetUniswap, outputUniswap;
+      if (validTrades && validTrades.length && toToken.price && props.gasPrice && props.ethPrice) {
+        uniswapGasLimit = 100000 + 50000 * validTrades.length;
+        offsetUniswap = BigNumber.from(Math.ceil((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, toToken.decimals) / toToken.price).toPrecision(50).split('.')[0])
+        outputUniswap = totalBig.sub(offsetUniswap)
+      }
+      let offsetBalancer, outputBalancer;
+      if (gasLimit && props.gasPrice && props.ethPrice && toToken.price) {
+        offsetBalancer = BigNumber.from(Math.ceil((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, toToken.decimals) / toToken.price).toPrecision(50).split('.')[0])
+        outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
+      }
+      let outputU = outputUniswap || totalBig || BigNumber.from('-10000000000000000000000000');
+      let outputB = outputBalancer || outputAmount || BigNumber.from('-10000000000000000000000000');
+
+      let bestOutputLessGas = outputU;
+      if (outputU && outputB) {
+        if (outputU.gt(outputB)) {
+          isUsingUniswap = true;
+          console.log('Using Uniswap')
+        } else {
+          bestOutputLessGas = outputB;
+          isUsingUniswap = false;
+          console.log('Using Balancer')
+        }
+      }
+      if (shouldUseUniswap.value && !shouldUseBalancer.value)
+        isUsingUniswap = true
+      if (shouldUseBalancer.value && !shouldUseUniswap.value)
+        isUsingUniswap = false
+
+      // Handle mixed trades if enabled
+      let bestMixed, fractionMixed;
+      if (shouldUseUniswapAndBalancer.value && results[0]?.value && results[2]?.value && results[3]?.value && results[4]?.value && results[5]?.value) {
+        const best90U = findBestMixedTrades(results[0].value[90], results[5], toTokenAddr, gasLimit);
+        const best75U = findBestMixedTrades(results[0].value[75], results[2], toTokenAddr, gasLimit);
+        const best50U = findBestMixedTrades(results[0].value[50], results[3], toTokenAddr, gasLimit);
+        const best25U = findBestMixedTrades(results[0].value[25], results[4], toTokenAddr, gasLimit);
+
+        console.log({
+          best90U: best90U.outputAmount.toString(),
+          best75U: best75U.outputAmount.toString(),
+          best50U: best50U.outputAmount.toString(),
+          best25U: best25U.outputAmount.toString(),
+        })
+
+        if (best25U.outputAmount.gte(bestOutputLessGas) && best25U.outputAmount.gte(best50U.outputAmount) && best25U.outputAmount.gte(best75U.outputAmount) && best25U.outputAmount.gte(best90U.outputAmount)) {
+          bestMixed = best25U;
+          fractionMixed = 25;
+        } else if (best50U.outputAmount.gte(bestOutputLessGas) && best50U.outputAmount.gte(best25U.outputAmount) && best50U.outputAmount.gte(best75U.outputAmount) && best50U.outputAmount.gte(best90U.outputAmount)) {
+          bestMixed = best50U;
+          fractionMixed = 50;
+        } else if (best75U.outputAmount.gte(bestOutputLessGas) && best75U.outputAmount.gte(best25U.outputAmount) && best75U.outputAmount.gte(best50U.outputAmount) && best75U.outputAmount.gte(best90U.outputAmount)) {
+          bestMixed = best75U;
+          fractionMixed = 75;
+        } else if (best90U.outputAmount.gte(bestOutputLessGas) && best90U.outputAmount.gte(best25U.outputAmount) && best90U.outputAmount.gte(best50U.outputAmount) && best90U.outputAmount.gte(best75U.outputAmount)) {
+          bestMixed = best90U;
+          fractionMixed = 90;
+        }
+      }
+
+      // Build final trade result
+      let finalTrades, finalTotalHuman, protocol, finalGasLimit;
+      
+      if (bestMixed) {
+        totalHuman = ethers.utils.formatUnits(bestMixed.tradesU.totalBig.add(bestMixed.tradesB.outputAmount), toToken.decimals);
+        finalTrades = [
+          ...bestMixed.tradesU.validTrades,
+          bestMixed.tradesB,
+        ];
+        protocol = 'Uniswap & Balancer';
+        finalGasLimit = Number(100000 + 50000 * bestMixed.tradesU.validTrades.length) + Number(gasLimit);
+      } else if (isUsingUniswap) {
+        finalTrades = validTrades;
+        protocol = 'Uniswap';
+        finalGasLimit = uniswapGasLimit;
+      } else {
+        finalTrades = [{callData, outputAmount, value, tradeSummary}];
+        totalHuman = ethers.utils.formatUnits(outputAmount, toToken.decimals);
+        protocol = 'Balancer';
+        finalGasLimit = gasLimit;
+      }
+
+      if (!shouldUseUniswap.value && !shouldUseBalancer.value && !bestMixed) {
+        throw new Error('No swap found');
+      }
+
+      finalTotalHuman = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(6);
+
+      return {
+        trades: finalTrades,
+        totalHuman: finalTotalHuman,
+        protocol,
+        gasLimit: finalGasLimit,
+        bestMixed,
+        fractionMixed,
+        fromToken,
+        toToken
+      };
+    };
 
     // Whenever fromToken, toToken, fromAmount, trades, or sender changes → re‐quote
     let debounceTimer = null;
@@ -504,177 +675,48 @@ export default {
               return;
             }
             
-            // Fetching quotes
-            console.log('Fetching quotes on exchanges')
-            const results = await Promise.allSettled([
-              (shouldUseUniswapValue || shouldUseUniswapAndBalancerValue) ? 
-                getTradesUniswap(_newFrom, _newTo, _newAmt) : null,
-              (shouldUseBalancerValue) ? 
-                getTradesBalancer(_newFrom, _newTo, _newAmt, _newSender.address, true) : null,
-              (shouldUseUniswapAndBalancerValue)
-                ? getTradesBalancer(_newFrom, _newTo, _newAmt * .25, _newSender.address, false) : null,
-              (shouldUseUniswapAndBalancerValue)
-                ? getTradesBalancer(_newFrom, _newTo, _newAmt * .50, _newSender.address, false) : null,
-              (shouldUseUniswapAndBalancerValue) 
-                ? getTradesBalancer(_newFrom, _newTo, _newAmt * .75, _newSender.address, false) : null,
-              (shouldUseUniswapAndBalancerValue)
-                ? getTradesBalancer(_newFrom, _newTo, _newAmt * .10, _newSender.address, false) : null,
-            ])
-            console.log(results);
-
-            if (tabOrder.value === 'limit') {
-              console.log('Skipping re-quoting for Limit Order tab');
-              return;
-            }
-
-            let isUsingUniswap = true;
-            let validTrades, totalHuman, totalBig;
-            if (results[0] && results[0].status === 'fulfilled' && results[0].value) {
-              if (results[0].value === 'outdated') return
-              if (!results[0].value[100] || results[0].value[100] === 'outdated') return
-
-              validTrades = results[0].value[100].validTrades;
-              totalHuman = results[0].value[100].totalHuman;
-              totalBig = results[0].value[100].totalBig;
-            } else if (!results[0] || results[0].status === 'rejected') {
-              isUsingUniswap = false;
-
-              if (results[0] && results[0].reason)
-                console.error(results[0].reason);
-            }
-
-            let callData, outputAmount, value, gasLimit;
-            if (results[1] && results[1].status === 'fulfilled' && results[1].value) {
-              callData = results[1].value.callData;
-              outputAmount = results[1].value.outputAmount;
-              value = results[1].value.value;
-              gasLimit = results[1].value.gasLimit;
-            } else if (!shouldUseUniswapAndBalancer && !isUsingUniswap && (!results[1] || results[1].status === 'rejected')) {
-              if (results[1] && results[1].reason)
-                throw results[1].reason;
-            }
-
-            let uniswapGasLimit = 0
-            let offsetUniswap, outputUniswap;
-            if (validTrades && validTrades.length && tokensByAddresses.value[_newTo].price && props.gasPrice && props.ethPrice) {
-              uniswapGasLimit = 100000 + 50000 * trades.value.length;
-              offsetUniswap = BigNumber.from(Math.ceil((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toPrecision(50).split('.')[0])
-              outputUniswap = totalBig.sub(offsetUniswap)
-            }
-            let offsetBalancer, outputBalancer;
-            if (gasLimit && props.gasPrice && props.ethPrice && tokensByAddresses.value[_newTo].price) {
-              offsetBalancer = BigNumber.from(Math.ceil((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toPrecision(50).split('.')[0])
-              outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
-            }
-            let outputU = outputUniswap || totalBig || BigNumber.from('-10000000000000000000000000');;
-            let outputB = outputBalancer || outputAmount || BigNumber.from('-10000000000000000000000000');;
-
-            let bestOutputLessGas = outputU;
-            if (outputU && outputB) {
-              if (outputU.gt(outputB)) {
-                isUsingUniswap = true;
-                console.log('Using Uniswap')
-              } else {
-                bestOutputLessGas = outputB;
-                isUsingUniswap = false;
-                console.log('Using Balancer')
-              }
-            }
-            if (shouldUseUniswapValue && !shouldUseBalancerValue)
-              isUsingUniswap = true
-            if (shouldUseBalancerValue && !shouldUseUniswapValue)
-              isUsingUniswap = false
-
-            // 4) Populate our reactive state
-            if (isUsingUniswap)
-              trades.value = validTrades;
-            else {
-              trades.value = [{callData, outputAmount, value, tradeSummary}];
-              totalHuman = ethers.utils.formatUnits(outputAmount, tokensByAddresses.value[_newTo].decimals);
-            }
-
-            let best90U, best75U, best50U, best25U;
-            let bestMixed, fractionMixed;
-
-            if (shouldUseUniswapAndBalancerValue && results[0]?.value && results[2]?.value && results[3]?.value && results[4]?.value && results[5]?.value) {
-              if (results[5])
-                best90U = findBestMixedTrades(results[0].value[90], results[5], _newTo, gasLimit);
-              if (results[2])
-                best75U = findBestMixedTrades(results[0].value[75], results[2], _newTo, gasLimit);
-              if (results[3])
-                best50U = findBestMixedTrades(results[0].value[50], results[3], _newTo, gasLimit);
-              if (results[4])
-                best25U = findBestMixedTrades(results[0].value[25], results[4], _newTo, gasLimit);
-
-              if (!bestOutputLessGas && shouldUseUniswapAndBalancer)
-                bestOutputLessGas = BigNumber.from('-100000000000000000000000000')
-
-              console.log({
-                best90U: best90U.outputAmount.toString(),
-                best75U: best75U.outputAmount.toString(),
-                best50U: best50U.outputAmount.toString(),
-                best25U: best25U.outputAmount.toString(),
-              })
-              if (best25U.outputAmount.gte(bestOutputLessGas) && best25U.outputAmount.gte(best50U.outputAmount) && best25U.outputAmount.gte(best75U.outputAmount) && best25U.outputAmount.gte(best90U.outputAmount)) {
-                console.log('should split 25% to U and 75% to B');
-                bestMixed = best25U;
-                fractionMixed = 25;
-              } else if (best50U.outputAmount.gte(bestOutputLessGas) && best50U.outputAmount.gte(best25U.outputAmount) && best50U.outputAmount.gte(best75U.outputAmount) && best50U.outputAmount.gte(best90U.outputAmount)) {
-                console.log('should split 50% to U and 50% to B');
-                bestMixed = best50U;
-                fractionMixed = 50;
-              } else if (best75U.outputAmount.gte(bestOutputLessGas) && best75U.outputAmount.gte(best25U.outputAmount) && best75U.outputAmount.gte(best50U.outputAmount) && best75U.outputAmount.gte(best90U.outputAmount)) {
-                console.log('should split 75% to U and 25% to B');
-                bestMixed = best75U;
-                fractionMixed = 75;
-              } else if (best90U.outputAmount.gte(bestOutputLessGas) && best90U.outputAmount.gte(best25U.outputAmount) && best90U.outputAmount.gte(best50U.outputAmount) && best90U.outputAmount.gte(best75U.outputAmount)) {
-                console.log('should split 90% to U and 10% to B');
-                bestMixed = best90U;
-                fractionMixed = 90;
-              } 
-            }
-
-            if (bestMixed) {
-              totalHuman = ethers.utils.formatUnits(bestMixed.tradesU.totalBig.add(bestMixed.tradesB.outputAmount), tokensByAddresses.value[_newTo].decimals);
-              trades.value = [
-                ...bestMixed.tradesU.validTrades,
-                bestMixed.tradesB,
-              ]
-              uniswapGasLimit = 100000 + 50000 * bestMixed.tradesU.validTrades.length;
-            }
-
-            if (!shouldUseUniswapValue && !shouldUseBalancerValue && !bestMixed) {
-              return swapMessage.value = 'No swap found'
-            }
-            console.log(bestMixed);
-
-            tradeSummary.protocol  = bestMixed ? 'Uniswap & Balancer' : (isUsingUniswap ? 'Uniswap' : 'Balancer');
-            tradeSummary.sender    = _newSender;
-            tradeSummary.fromAmount    = _newAmt.toString();
-            tradeSummary.toAmount      = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(6);
+            // Use refactored getBestTrades function
+            const bestTradeResult = await getBestTrades(
+              _newFrom,
+              _newTo,
+              _newAmt,
+              _newSender.address,
+              shouldUseUniswapValue,
+              shouldUseBalancerValue,
+              shouldUseUniswapAndBalancerValue
+            );
+            
+            // Update reactive state with results
+            trades.value = bestTradeResult.trades;
+            tradeSummary.protocol = bestTradeResult.protocol;
+            tradeSummary.sender = _newSender;
+            tradeSummary.fromAmount = _newAmt.toString();
+            tradeSummary.toAmount = bestTradeResult.totalHuman;
             tradeSummary.expectedToAmount = tradeSummary.toAmount;
-            tradeSummary.fromTokenSymbol = tokensByAddresses.value[_newFrom].symbol;
-            tradeSummary.toTokenSymbol   = tokensByAddresses.value[_newTo].symbol;
+            tradeSummary.fromTokenSymbol = bestTradeResult.fromToken.symbol;
+            tradeSummary.toTokenSymbol = bestTradeResult.toToken.symbol;
             tradeSummary.fromAddressName = `${senderDetails.value.name}`;
-            tradeSummary.fromToken = tokensByAddresses.value[_newFrom];
-            tradeSummary.fromTokenAddress = tokensByAddresses.value[_newFrom].address;
-            tradeSummary.toToken = tokensByAddresses.value[_newTo];
-            tradeSummary.toTokenAddress = tokensByAddresses.value[_newTo].address;
-            tradeSummary.gasLimit = bestMixed ? Number(uniswapGasLimit) + Number(gasLimit) : (isUsingUniswap ? uniswapGasLimit : gasLimit);
-            if (bestMixed) {
-              tradeSummary.fromAmountU = (_newAmt * fractionMixed / 100).toFixed(7);
+            tradeSummary.fromToken = bestTradeResult.fromToken;
+            tradeSummary.fromTokenAddress = bestTradeResult.fromToken.address;
+            tradeSummary.toToken = bestTradeResult.toToken;
+            tradeSummary.toTokenAddress = bestTradeResult.toToken.address;
+            tradeSummary.gasLimit = bestTradeResult.gasLimit;
+            
+            if (bestTradeResult.bestMixed) {
+              tradeSummary.fromAmountU = (_newAmt * bestTradeResult.fractionMixed / 100).toFixed(7);
               tradeSummary.fromAmountB = (_newAmt - Number(tradeSummary.fromAmountU)).toFixed(7);
-              tradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestMixed.tradesU.totalBig, tokensByAddresses.value[_newTo].decimals)).toFixed(7);
-              tradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestMixed.tradesB.outputAmount, tokensByAddresses.value[_newTo].decimals)).toFixed(7);
-              tradeSummary.fraction = fractionMixed;
+              tradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
+              tradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
+              tradeSummary.fraction = bestTradeResult.fractionMixed;
             }
-            // 5) Check if approval is needed
+
+            // Check if approval is needed
             if (_newFrom !== ethers.constants.AddressZero) {
               if (tradeSummary.protocol === 'Uniswap & Balancer') {
                 await checkAllowances(_newFrom, true);
                 await checkAllowances(_newFrom, false);
               } else 
-                await checkAllowances(_newFrom, isUsingUniswap);
+                await checkAllowances(_newFrom, tradeSummary.protocol === 'Uniswap');
             } else {
               needsToApprove.value = false;
             }
@@ -1004,17 +1046,32 @@ export default {
           }
         }
       }
-
+      
       const dbOrders = await window.electronAPI.getPendingOrders();
       if (dbOrders && Array.isArray(dbOrders)) {
         pendingLimitOrders.value = dbOrders.map(o => ({
           id: o.id,
           fromAmount: o.fromAmount,
-          fromToken: { address: o.fromTokenAddress, symbol: o.fromTokenSymbol },
-          toToken: { address: o.toTokenAddress, symbol: o.toTokenSymbol },
-          priceLimit: o.priceLimit,
-          sender: { address: o.senderAddress, name: o.senderName },
-          status: o.status
+          fromToken: { 
+            address: o.fromTokenAddress, 
+            symbol: o.fromTokenSymbol 
+          },
+          toToken: { 
+            address: o.toTokenAddress, 
+            symbol: o.toTokenSymbol 
+          },
+          priceLimit: parseFloat(o.priceLimit),
+          currentMarketPrice: o.currentMarketPrice ? parseFloat(o.currentMarketPrice) : null,
+          orderType: o.orderType || 'take_profit',
+          shouldSwitchTokensForLimit: Boolean(o.shouldSwitchTokensForLimit),
+          sender: { 
+            address: o.senderAddress, 
+            name: o.senderName 
+          },
+          status: o.status || 'pending',
+          createdAt: o.createdAt || null,
+          completedAt: o.completedAt || null,
+          executionPrice: o.executionPrice ? parseFloat(o.executionPrice) : null
         }));
       }
     });
@@ -1358,23 +1415,6 @@ export default {
       priceLimit.value = 1/priceLimit.value; // Invert the price limit
     });
 
-    function placeLimitOrder() {
-      const order ={
-        id: Date.now(),
-        fromAmount: fromAmount.value,
-        toAmount: tradeSummary.toAmount,
-        fromToken: JSON.parse(JSON.stringify(tokensByAddresses.value[fromTokenAddress.value])),
-        toToken: JSON.parse(JSON.stringify(tokensByAddresses.value[toTokenAddress.value])),
-        priceLimit: priceLimit.value,
-        sender: JSON.parse(JSON.stringify(senderDetails.value)),
-        status: 'pending'
-      };
-
-      pendingLimitOrders.value.push(order);
-
-      window.electronAPI.savePendingOrder(order);
-    }
-
     function cancelLimitOrder(id) {
       pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== id);
 
@@ -1396,6 +1436,175 @@ export default {
         priceLimit.value = Number(marketPrice.toPrecision(8));
       }
     }
+
+    function placeLimitOrder() {
+      if (!senderDetails.value.address) {
+        swapMessage.value = 'Please select a sender address first';
+        return;
+      }
+      if (!fromAmount.value || isNaN(fromAmount.value) || fromAmount.value <= 0) {
+        swapMessage.value = 'Please enter a valid amount to trade';
+        return;
+      }
+      if (!priceLimit.value || isNaN(priceLimit.value) || priceLimit.value <= 0) {
+        swapMessage.value = 'Please enter a valid price limit';
+        return;
+      }
+
+      // Calculate current market price to determine order type
+      const fromPrice = tokensByAddresses.value[fromTokenAddress.value]?.price;
+      const toPrice = tokensByAddresses.value[toTokenAddress.value]?.price;
+      
+      if (!fromPrice || !toPrice) {
+        swapMessage.value = 'Unable to get current market prices';
+        return;
+      }
+
+      // Current market price (fromToken to toToken)
+      const currentMarketPrice = !shouldSwitchTokensForLimit.value
+        ? fromPrice / toPrice
+        : toPrice / fromPrice;
+
+      // Determine order type based on price comparison
+      // When shouldSwitchTokensForLimit is true, the comparison logic is inverted
+      let orderType;
+      if (!shouldSwitchTokensForLimit.value) {
+        // Normal case: fromToken price in terms of toToken
+        if (priceLimit.value > currentMarketPrice) {
+          orderType = 'take_profit'; // Trigger when price goes above limit
+        } else {
+          orderType = 'stop_loss'; // Trigger when price goes below limit
+        }
+      } else {
+        // Inverted case: toToken price in terms of fromToken
+        // When the price is inverted, "higher limit" means "lower original price"
+        if (priceLimit.value > currentMarketPrice) {
+          orderType = 'stop_loss'; // This actually means the original price went DOWN
+        } else {
+          orderType = 'take_profit'; // This actually means the original price went UP
+        }
+      }
+
+      const order = {
+        id: Date.now(),
+        fromAmount: fromAmount.value,
+        toAmount: tradeSummary.toAmount,
+        fromToken: JSON.parse(JSON.stringify(tokensByAddresses.value[fromTokenAddress.value])),
+        toToken: JSON.parse(JSON.stringify(tokensByAddresses.value[toTokenAddress.value])),
+        priceLimit: priceLimit.value,
+        currentMarketPrice: currentMarketPrice,
+        orderType: orderType, // 'take_profit' or 'stop_loss'
+        shouldSwitchTokensForLimit: shouldSwitchTokensForLimit.value,
+        sender: JSON.parse(JSON.stringify(senderDetails.value)),
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+
+      pendingLimitOrders.value.push(order);
+
+      // Save to database with order type information
+      window.electronAPI.savePendingOrder(order);
+
+      swapMessage.value = `${orderType === 'take_profit' ? 'Take Profit' : 'Stop Loss'} order placed at ${priceLimit.value}`;
+    }
+
+    function checkPendingOrdersToTrigger() {
+      if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
+
+      pendingLimitOrders.value.forEach(async (order) => {
+        if (order.status === 'pending') {
+          try {
+            // Get current market price by fetching best trades
+            const bestTradeResult = await getBestTrades(
+              order.fromToken.address,
+              order.toToken.address,
+              order.fromAmount,
+              order.sender.address
+            );
+
+            // Calculate current market price (output amount per input amount)
+            const currentPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
+            
+            // Determine if order should be triggered based on order type and price direction
+            let shouldTrigger = false;
+            
+            if (order.orderType === 'take_profit') {
+              // Take profit: trigger when current price >= limit price
+              // This logic remains the same regardless of shouldSwitchTokensForLimit
+              // because the order.priceLimit is already in the correct direction
+              shouldTrigger = currentPrice >= order.priceLimit;
+            } else if (order.orderType === 'stop_loss') {
+              // Stop loss: trigger when current price <= limit price
+              // This logic remains the same regardless of shouldSwitchTokensForLimit
+              // because the order.priceLimit is already in the correct direction
+              shouldTrigger = currentPrice <= order.priceLimit;
+            } else {
+              // Fallback for legacy orders without orderType (default to take profit behavior)
+              shouldTrigger = currentPrice >= order.priceLimit;
+            }
+
+            if (shouldTrigger) {
+              console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: current price ${currentPrice} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
+              
+              // Set up the trade parameters
+              fromAmount.value = order.fromAmount;
+              fromTokenAddress.value = order.fromToken.address;
+              toTokenAddress.value = order.toToken.address;
+              senderDetails.value = order.sender;
+              
+              // Update trades and summary with current market data
+              trades.value = bestTradeResult.trades;
+              tradeSummary.protocol = bestTradeResult.protocol;
+              tradeSummary.sender = order.sender;
+              tradeSummary.fromAmount = order.fromAmount.toString();
+              tradeSummary.toAmount = bestTradeResult.totalHuman;
+              tradeSummary.expectedToAmount = tradeSummary.toAmount;
+              tradeSummary.fromTokenSymbol = bestTradeResult.fromToken.symbol;
+              tradeSummary.toTokenSymbol = bestTradeResult.toToken.symbol;
+              tradeSummary.fromAddressName = order.sender.name;
+              tradeSummary.fromToken = bestTradeResult.fromToken;
+              tradeSummary.fromTokenAddress = bestTradeResult.fromToken.address;
+              tradeSummary.toToken = bestTradeResult.toToken;
+              tradeSummary.toTokenAddress = bestTradeResult.toToken.address;
+              tradeSummary.gasLimit = bestTradeResult.gasLimit;
+
+              if (bestTradeResult.bestMixed) {
+                tradeSummary.fromAmountU = (order.fromAmount * bestTradeResult.fractionMixed / 100).toFixed(7);
+                tradeSummary.fromAmountB = (order.fromAmount - Number(tradeSummary.fromAmountU)).toFixed(7);
+                tradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
+                tradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
+                tradeSummary.fraction = bestTradeResult.fractionMixed;
+              }
+
+              // Execute the trade
+              await triggerTrade();
+
+              // Mark order as completed and update database
+              order.status = 'completed';
+              order.completedAt = new Date().toISOString();
+              order.executionPrice = currentPrice;
+              
+              // Remove from local array
+              pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
+              
+              // Update in database
+              await window.electronAPI.updatePendingOrder(order);
+              
+              console.log(`${order.orderType || 'Limit'} order ${order.id} completed successfully at price ${currentPrice}`);
+            } else {
+              // Optional: Log current price vs target for debugging
+              console.log(`Order ${order.id} (${order.orderType || 'limit'}): current price ${currentPrice.toFixed(6)} vs limit ${order.priceLimit} - not triggered`);
+            }
+          } catch (error) {
+            console.error(`Error checking limit order ${order.id}:`, error);
+            // Optionally mark order as failed or retry later
+            // You might want to implement a retry mechanism or failure handling here
+          }
+        }
+      });
+    }
+    // Check pending orders periodically (every 30 seconds)
+    setInterval(checkPendingOrdersToTrigger, 30000);
 
     return {
       // state
@@ -1931,5 +2140,46 @@ button::-webkit-focus-inner {
 }
 .set-market-price:hover {
   color: #007bff;
+}
+.pending-order {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  margin-bottom: 10px;
+  background-color: #f9f9f9;
+}
+
+.order-info {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.order-type {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 5px;
+}
+
+.order-type.take_profit {
+  color: #28a745; /* Green for take profit */
+}
+
+.order-type.stop_loss {
+  color: #dc3545; /* Red for stop loss */
+}
+
+.order-details {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.order-meta {
+  font-size: 12px;
+  color: #666;
+  margin-top: 5px;
 }
 </style>

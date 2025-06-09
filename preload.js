@@ -31,4 +31,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   savePendingOrder: (order) => ipcRenderer.invoke('save-pending-order', order),
   deletePendingOrder: (id) => ipcRenderer.invoke('delete-pending-order', id),
   getPendingOrders: () => ipcRenderer.invoke('get-pending-orders'),
+  updatePendingOrder: (order) => ipcRenderer.invoke('update-pending-order', order),
 });
