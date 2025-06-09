@@ -138,7 +138,7 @@
               <button
                 v-if="!needsToApprove"
                 @click="placeLimitOrder()"
-                :disabled="maxGasPrice < gasPrice || !priceLimit"
+                :disabled="maxGasPrice < gasPrice || !priceLimit || !fromAmount || senderDetails?.address === ''"
                 class="swap-button"
               >
                 {{ 'Place order' }}
@@ -1342,14 +1342,32 @@ export default {
         isSwapButtonDisabled.value = true;
         const originalAddress = senderDetails.value.address;
 
-        const { success, error } = await window.electronAPI.approveSpender(
-          originalAddress,
-          fromTokenAddress.value,
-          tradeSummary.protocol === 'Uniswap' ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS,
-          props.gasPrice,
-          tradeSummary.protocol
-        );
-        if (!success) throw error;
+        if (tabOrder.value === 'limit') {
+          const { success, error } = await window.electronAPI.approveSpender(
+            originalAddress,
+            fromTokenAddress.value,
+            PERMIT2_ADDRESS,
+            props.gasPrice,
+            'Uniswap & Balancer'
+          );
+          if (!success) throw error;
+          const resBalancer = await window.electronAPI.approveSpender(
+            originalAddress,
+            fromTokenAddress.value,
+            BALANCER_VAULT_ADDRESS,
+            props.gasPrice,
+            'Uniswap & Balancer'
+          );
+        } else {
+          const { success, error } = await window.electronAPI.approveSpender(
+            originalAddress,
+            fromTokenAddress.value,
+            tradeSummary.protocol === 'Uniswap' ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS,
+            props.gasPrice,
+            tradeSummary.protocol
+          );
+          if (!success) throw error;
+        }
 
         // Pull until allowance has shown up on‐chain
         let allowance = BigNumber.from(0);
@@ -1367,7 +1385,7 @@ export default {
             await new Promise(r => setTimeout(r, 2000));
           }
         }
-        if (tradeSummary.protocol === 'Uniswap & Balancer') {
+        if (tradeSummary.protocol === 'Uniswap & Balancer' || tabOrder.value === 'limit') {
           allowance = BigNumber.from(0)
           while (allowance.isZero() && originalAddress === senderDetails.value.address) {
             allowance = await erc20.allowance(originalAddress, BALANCER_VAULT_ADDRESS);
