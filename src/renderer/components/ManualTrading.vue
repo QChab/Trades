@@ -1299,7 +1299,7 @@ export default {
         if (!balanceOffsetByTokenByAddress[tokLower][senderLc]) {
           balanceOffsetByTokenByAddress[tokLower][senderLc] = 0;
         }
-        balanceOffsetByTokenByAddress[tokLower][senderLc] += Number(fromAmount.value);
+        balanceOffsetByTokenByAddress[tokLower][senderLc] += Number(currentTradeSummary.fromAmount);
 
         // Finalize summary & emit upwards
         currentTradeSummary.fromTokenSymbol = tokensByAddresses.value[currentTradeSummary.fromToken?.address].symbol;
@@ -1531,6 +1531,15 @@ export default {
           await checkAllowances(fromTokenAddressValue, true);
           await checkAllowances(fromTokenAddressValue, false);
         }
+      }
+    );
+
+    watch(
+      () => senderDetails.value,
+      async () => {
+        if (tabOrder.value !== 'limit') return;
+        await checkAllowances(fromTokenAddress.value, true);
+        await checkAllowances(fromTokenAddress.value, false);
       }
     );
 
