@@ -1594,7 +1594,7 @@ export default {
         return;
       }
 
-      if (!computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()] || !computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()][fromTokenAddress.value.toLowerCase()]) {
+      if (!computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()]?.[fromTokenAddress.value.toLowerCase()]) {
         swapMessage.value = 'No balances found for the selected address and from token';
         return;
       } else if (computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()][fromTokenAddress.value.toLowerCase()] < fromAmount.value) {
