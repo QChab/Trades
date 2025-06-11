@@ -59,6 +59,9 @@
                   {{ token.symbol }} ({{ balanceString(senderDetails?.address, token.address) }})
                 </option>
               </select>
+              <span class="right-price">
+                @ ${{ spaceThousands(tokensByAddresses[fromTokenAddress].price.toFixed(5)) }}
+              </span>
             </div>
             <span v-if="fromAmount" class="usd-amount">
               ${{ spaceThousands((fromAmount * tokensByAddresses[fromTokenAddress].price).toFixed(1)) }}
@@ -78,7 +81,7 @@
                   :key="'toToken-' + index" 
                   :value="token.address"
                 >
-                  {{ token.symbol }} ${{ token.price.toFixed(5) }}
+                  {{ token.symbol }} ({{ balanceString(senderDetails?.address, token.address) }})
                 </option>
               </select>
             </div>
@@ -90,6 +93,9 @@
                 ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price - Number(tradeSummary.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(2) }}%)
               </span>
             </span>
+            <p class="right-price">
+              @ ${{ spaceThousands(tokensByAddresses[toTokenAddress].price.toFixed(5)) }}
+            </p>
           </div>
 
           <p class="details-message">{{ priceFetchingMessage }}</p>
@@ -211,30 +217,42 @@
       <div v-if="pendingLimitOrders.length">
         <h4>Pending Limit Orders</h4>
         <ul>
-          <li v-for="order in pendingLimitOrders" :key="order.id" class="pending-order">
+          <li 
+            v-for="order in pendingLimitOrders"
+            :key="order.id"
+            class="pending-order"
+            :class="{'is-waiting-balance': order.isWaitingBalance}"
+          >
             <div class="order-info">
               <div class="order-details">
                 <div class="trade-info">
-                  <span class="order-type" :class="order.orderType">
-                    {{ order.orderType === 'take_profit' ? '📈 Take Profit' : '📉 Stop Loss' }}
+                  <span class="left">
+                    <span class="order-type" :class="order.orderType">
+                      {{ order.orderType === 'take_profit' ? '📈 Take Profit' : '📉 Stop Loss' }}
+                    </span>
+                    {{ order.fromAmount }} {{ order.fromToken.symbol }} → 
+                    <span v-if="order.toAmount">{{ order.toAmount }} {{ order.toToken.symbol }}</span>
+                    <span v-else>{{ order.toToken.symbol }}</span>
                   </span>
-                  {{ order.fromAmount }} {{ order.fromToken.symbol }} → 
-                  <span v-if="order.toAmount">{{ order.toAmount }} {{ order.toToken.symbol }}</span>
-                  <span v-else>{{ order.toToken.symbol }}</span>
-                </div>
-                <div class="price-info">
-                  Trigger price: {{ order.priceLimit }}
-                  <span v-if="!order.shouldSwitchTokensForLimit">
-                    {{ order.toToken.symbol }} per {{ order.fromToken.symbol }}
-                  </span>
-                  <span v-else>
-                    {{ order.fromToken.symbol }} per {{ order.toToken.symbol }}
+                  <span class="right">
+                    Trigger {{ order.priceLimit }}
+                    <span v-if="!order.shouldSwitchTokensForLimit">
+                      {{ order.toToken.symbol }} / {{ order.fromToken.symbol }}
+                    </span>
+                    <span v-else>
+                      {{ order.fromToken.symbol }} / {{ order.toToken.symbol }}
+                    </span>
                   </span>
                 </div>
                 <div class="order-meta">
-                  {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
-                  <span v-if="order.currentMarketPrice">
-                    (Market was: {{ order.currentMarketPrice.toFixed(6) }})
+                  <span>
+                    {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
+                    <span v-if="order.currentMarketPrice">
+                      at ${{ order.currentMarketPrice.toFixed(5) }}
+                    </span>
+                  </span>
+                  <span class="right">
+                    From {{ order.sender?.name }}
                   </span>
                 </div>
               </div>
@@ -1295,15 +1313,11 @@ export default {
         }
         
         // Subtract "from amount" from our local offset map
-        const tokLower = currentTradeSummary.fromToken?.address.toLowerCase();
-        const senderLc = currentTradeSummary.sender.address.toLowerCase();
-        if (!balanceOffsetByTokenByAddress[tokLower]) {
-          balanceOffsetByTokenByAddress[tokLower] = {};
-        }
-        if (!balanceOffsetByTokenByAddress[tokLower][senderLc]) {
-          balanceOffsetByTokenByAddress[tokLower][senderLc] = 0;
-        }
-        balanceOffsetByTokenByAddress[tokLower][senderLc] += Number(currentTradeSummary.fromAmount);
+        if (!providedTradeSummary)
+          increaseOffsetBalance(
+            currentTradeSummary.fromToken?.address.toLowerCase(),
+            currentTradeSummary.sender.address.toLowerCase()
+          )
 
         // Finalize summary & emit upwards
         currentTradeSummary.fromTokenSymbol = tokensByAddresses.value[currentTradeSummary.fromToken?.address].symbol;
@@ -1355,6 +1369,16 @@ export default {
         isSwapButtonDisabled.value = false;
       }
     };
+
+    const increaseOffsetBalance = (tokLower, senderLc) => {
+      if (!balanceOffsetByTokenByAddress[tokLower]) {
+        balanceOffsetByTokenByAddress[tokLower] = {};
+      }
+      if (!balanceOffsetByTokenByAddress[tokLower][senderLc]) {
+        balanceOffsetByTokenByAddress[tokLower][senderLc] = 0;
+      }
+      balanceOffsetByTokenByAddress[tokLower][senderLc] += Number(currentTradeSummary.fromAmount);
+    }
 
     // ─── approveSpending(): Approve ERC20 → Permit2 → Router ───────────────
     const approveSpending = async () => {
@@ -1570,6 +1594,14 @@ export default {
         return;
       }
 
+      if (!computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()] || !computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()][fromTokenAddress.value.toLowerCase()]) {
+        swapMessage.value = 'No balances found for the selected address and from token';
+        return;
+      } else if (computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()][fromTokenAddress.value.toLowerCase()] < fromAmount.value) {
+        swapMessage.value = 'Insufficient balance for the selected from token';
+        return;
+      }
+
       // Current market price (fromToken to toToken)
       const currentMarketPrice = !shouldSwitchTokensForLimit.value
         ? fromPrice / toPrice
@@ -1619,21 +1651,49 @@ export default {
 
       // Save to database with order type information
       window.electronAPI.savePendingOrder(order);
+      
+      increaseOffsetBalance(
+        order.fromToken.address.toLowerCase(),
+        order.sender.address.toLowerCase()
+      );
     }
 
+    let isCheckingPendingOrders = false;
     async function checkPendingOrdersToTrigger() {
+      if (isCheckingPendingOrders) return;
+      isCheckingPendingOrders = true;
+
       if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
       if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
 
-      await setTokenPrices(tokens);
+      try {
+        await setTokenPrices(tokens);
+      } catch (error) {
+        console.error('Error updating token prices:', error);
+      }
 
-       for (const order of pendingLimitOrders.value) {
+      for (const order of pendingLimitOrders.value) {
         // Skip if order is not pending
         if (!order || !order.status || order.status !== 'pending') continue;
         
         try {
           // Get current token prices from our updated token list
           const fromToken = tokensByAddresses.value[order.fromToken.address];
+          const senderD = props.addresses.find((a) => a.address.toLowerCase() === order.sender.address.toLowerCase());
+          console.log(order.fromAmount)
+          console.log(senderD.balances)
+          if (senderD?.balances == null || !fromToken) {
+            console.log(`Skipping order ${order.id} due to missing token or sender data`);
+            continue;
+          }
+          console.log(senderD.balances[fromToken.address.toLowerCase()])
+          if (Number(order.fromAmount) > senderD.balances[fromToken.address.toLowerCase()]) {
+            order.isWaitingBalance = true;
+            continue;
+          } else if (order.isWaitingBalance) {
+            order.isWaitingBalance = false;
+          }
+
           const toToken = tokensByAddresses.value[order.toToken.address];
           
           if (!fromToken?.price || !toToken?.price) {
@@ -1651,8 +1711,8 @@ export default {
             currentMarketPrice = toToken.price / fromToken.price;
           }
 
-          // Define price tolerance (e.g., within 1% of trigger price)
-          const PRICE_TOLERANCE = 0.01; // 1%
+          // Define price tolerance (e.g., within 2% of trigger price)
+          const PRICE_TOLERANCE = 0.02; // 2%
           const priceDifference = Math.abs(currentMarketPrice - order.priceLimit) / order.priceLimit;
           
           // Only proceed with expensive getBestTrades call if we're close to trigger price
@@ -1780,6 +1840,11 @@ export default {
         }
       }
     }
+
+    watch (() => props.addresses, async () => {
+      await new Promise(r => setTimeout(r, 2000));
+      checkPendingOrdersToTrigger();
+    })
 
     const checkOrdersInterval = setInterval(checkPendingOrdersToTrigger, 30000);
 
@@ -2099,6 +2164,7 @@ input.token-name {
   padding-bottom: 15px;
   padding-left: 10px;
   height: 90px;
+  position: relative;
 }
 .to-swap {
   position: relative;
@@ -2161,6 +2227,13 @@ input.token-name {
   margin-left: auto;
   margin-right: auto;
   width: 400px;
+}
+.right-price {
+  position: absolute;
+  right: 40px;
+  bottom: 15px;
+  color: #666;
+  font-size: .9em;
 }
 input:focus,
 textarea:focus {
@@ -2266,7 +2339,7 @@ button::-webkit-focus-inner {
 }
 
 .amount-out {
-  height: 30px;
+  height: 20px;
   display: inline-block;
   border-radius: 6px;
 }
@@ -2369,6 +2442,8 @@ button::-webkit-focus-inner {
   font-size: 12px;
   color: #666;
   margin-top: 5px;
+  display: flex;
+  justify-content: space-between;
 }
 .usd-price-quote {
   font-size: 14px !important;
@@ -2376,4 +2451,19 @@ button::-webkit-focus-inner {
   margin-left: 10px !important;
   font-weight: 500 !important;
 }
+
+.trade-info {
+  display: flex;
+  justify-content: space-between;
+}
+
+.right {
+  padding-right: 20px;
+}
+
+.is-waiting-balance {
+  background-color: #ff990090; /* Orange for waiting balance */
+  font-weight: 600;
+}
+
 </style>
