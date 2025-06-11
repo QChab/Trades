@@ -272,8 +272,8 @@ async function sendTransaction(transaction) {
       to: BALANCER_VAULT_ADDRESS,
       data: transaction.callData,
       value: transaction.value,
-      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.65 / 1000000000).toFixed(3), 9),
-      maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9)
+      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
+      maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (40 * 1000000000))).toFixed(3), 9)
     }
 
     console.log(txData);
@@ -324,8 +324,8 @@ async function approveSpender({from, contractAddress, spender, protocol}) {
       warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
     
     const overrides = {
-      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.65 / 1000000000).toFixed(3), 9),
-      maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (50 * 1000000000))).toFixed(3), 9),
+      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
+      maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (40 * 1000000000))).toFixed(3), 9),
     };
 
     const erc20 = new ethers.Contract(

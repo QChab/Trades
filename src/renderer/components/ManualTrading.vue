@@ -792,6 +792,10 @@ export default {
     );
 
     const checkAllowances = async (tokenAddress, isUsingUniswap) => {
+      if (!senderDetails.value?.address) {
+        needsToApprove.value = false;
+        return;
+      }
       const erc20 = new ethers.Contract(
         tokenAddress,
         ERC20_ABI,
@@ -881,8 +885,8 @@ export default {
         to: BALANCER_VAULT_ADDRESS,
         data: result.callData,
         value: result.value,
-        maxFeePerGas: ethers.utils.parseUnits((Number(props.gasPrice) * 1.65 / 1000000000).toFixed(3), 9),
-        maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(props.gasPrice) / (50 * 1000000000))).toFixed(3), 9)
+        maxFeePerGas: ethers.utils.parseUnits((Number(props.gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
+        maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(props.gasPrice) / (40 * 1000000000))).toFixed(3), 9)
       }
       console.log('before estimateGas');
       let gasLimit = 400000;
@@ -958,7 +962,7 @@ export default {
       // Filter out any null/undefined
       const validTrades = bestTrades.filter(t => t && t.outputAmount);
       if (validTrades.length === 0) {
-        return [];
+       return {validTrades: [], totalHuman: '0', totalBig: BigNumber.from(0)}
       }
 
       const totalBig = validTrades.reduce(
@@ -1051,7 +1055,7 @@ export default {
       }
     };
     watch(() => props.ethPrice, () => setTokenPrices(tokens), { immediate: true });
-    setInterval(() => setTokenPrices(tokens), 180_000);
+    const priceUpdateInterval = setInterval(() => setTokenPrices(tokens), 180_000);
 
     // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
     watch(
@@ -1783,6 +1787,9 @@ export default {
     onUnmounted(() => {
       if (checkOrdersInterval) {
         clearInterval(checkOrdersInterval);
+      }
+      if (priceUpdateInterval) {
+        clearInterval(priceUpdateInterval);
       }
     });
 

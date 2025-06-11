@@ -570,10 +570,10 @@ export function useUniswapV4() {
             .filter(t => t.inputAmount.currency.isNative)
             .reduce((sum,t) => sum.add(t.inputAmount.quotient.toString()), BigNumber.from(0)),
           maxFeePerGas: ethers.utils.parseUnits(
-            (Number(gasPrice) * 1.65 / 1e9).toFixed(3), 9
+            (Number(gasPrice) * 1.85 / 1e9).toFixed(3), 9
           ),
           maxPriorityFeePerGas: ethers.utils.parseUnits(
-            (0.02 + Math.random()*0.05 + Number(gasPrice)/(50e9)).toFixed(3), 9
+            (0.02 + Math.random()*0.05 + Number(gasPrice)/(40e9)).toFixed(3), 9
           ),
         }
       ]
