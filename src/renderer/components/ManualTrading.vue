@@ -60,11 +60,11 @@
                 </option>
               </select>
               <span class="right-price">
-                @ ${{ spaceThousands(tokensByAddresses[fromTokenAddress].price.toFixed(5)) }}
+                @ ${{ spaceThousands(tokensByAddresses[fromTokenAddress]?.price.toFixed(5)) }}
               </span>
             </div>
             <span v-if="fromAmount" class="usd-amount">
-              ${{ spaceThousands((fromAmount * tokensByAddresses[fromTokenAddress].price).toFixed(1)) }}
+              ${{ spaceThousands((fromAmount * tokensByAddresses[fromTokenAddress]?.price).toFixed(1)) }}
             </span>
           </div>
 
@@ -86,15 +86,15 @@
               </select>
             </div>
             <span v-if="tradeSummary.toAmount && !isFetchingPrice" class="usd-amount">
-              <span v-if="tokensByAddresses[toTokenAddress].price">
+              <span v-if="tokensByAddresses[toTokenAddress]?.price">
                 ${{ spaceThousands((Number(tradeSummary.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1)) }}
               </span>
-              <span v-if="tokensByAddresses[fromTokenAddress].price && tokensByAddresses[toTokenAddress].price">
+              <span v-if="tokensByAddresses[fromTokenAddress]?.price && tokensByAddresses[toTokenAddress]?.price">
                 ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price - Number(tradeSummary.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(2) }}%)
               </span>
             </span>
             <p class="right-price">
-              @ ${{ spaceThousands(tokensByAddresses[toTokenAddress].price.toFixed(5)) }}
+              @ ${{ spaceThousands(tokensByAddresses[toTokenAddress]?.price.toFixed(5)) }}
             </p>
           </div>
 
@@ -110,7 +110,7 @@
                 :key="'sender-' + address.address"
               >
                 {{ address.name }} - 0x{{ address.address.substring(2, 6) }}:
-                {{ balanceString(address.address, fromTokenAddress) }} {{ tokensByAddresses[fromTokenAddress].symbol }}
+                {{ balanceString(address.address, fromTokenAddress) }} {{ tokensByAddresses[fromTokenAddress]?.symbol }}
               </option>
             </select>
           </div>
