@@ -12,6 +12,8 @@ import {
     Swap,
 } from "@balancer/sdk";
 
+import { SOR, SwapTypes } from '@balancer-labs/sor';
+
 // User defined
 const chainId = ChainId.MAINNET;
 const swapKind = SwapKind.GivenIn;
@@ -104,7 +106,72 @@ export function useBalancerV3() {
       expectedAmountOut: updated.expectedAmountOut.amount,
     }
   }
+  
+  async function findTradeBalancerSOR(tokenInObject, tokenOutObject, amountIn, senderAddress) {
+    try {
+      const rpcUrls = await window.electronAPI.getInfuraKeys();
+      
+      // Initialize SOR with correct configuration structure
+      const sor = new SOR(
+        {
+          chainId: chainId,
+          provider: rpcUrls[0], // Use 'provider' instead of 'rpcUrl'
+          subgraphUrl: BALANCER_SUBGRAPH_URL,
+          poolsUrl: '', // Optional: URL for pools data
+          weth: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH address on mainnet
+        }
+      );
+
+      // Fetch pools data
+      await sor.fetchPools();
+
+      // Convert token addresses for Balancer (handle native ETH)
+      const tokenInAddress = tokenInObject.address === nativeAddress ? nativeAddressE : tokenInObject.address;
+      const tokenOutAddress = tokenOutObject.address === nativeAddress ? nativeAddressE : tokenOutObject.address;
+
+      // Convert amount to wei/smallest unit
+      const amountInWei = (BigInt(Math.floor(amountIn * Math.pow(10, tokenInObject.decimals)))).toString();
+
+      // Get swap information
+      const swapInfo = await sor.getSwaps(
+        tokenInAddress,
+        tokenOutAddress,
+        SwapTypes.SwapExactIn,
+        amountInWei
+      );
+
+      if (!swapInfo || !swapInfo.swaps || swapInfo.swaps.length === 0) {
+        throw new Error('No swap routes found');
+      }
+
+      console.log(`SOR Amount Out: ${swapInfo.returnAmount}`);
+      console.log(`SOR Routes: ${swapInfo.swaps.length}`);
+
+      // Build transaction data
+      const slippage = Slippage.fromPercentage("0.5"); // 0.5% slippage
+      const deadline = Math.floor(Date.now() / 1000) + 60 * 20; // 20 minutes from now
+
+      // Calculate minimum amount out with slippage
+      const minAmountOut = BigInt(swapInfo.returnAmount) * BigInt(995) / BigInt(1000); // 0.5% slippage
+
+      return {
+        to: BALANCER_VAULT_ADDRESS,
+        callData: swapInfo.swaps, // This contains the swap routes
+        value: tokenInObject.address === nativeAddress ? amountInWei : '0',
+        expectedAmountOut: swapInfo.returnAmount,
+        minAmountOut: minAmountOut.toString(),
+        swapInfo: swapInfo,
+        gasEstimate: swapInfo.gasEstimate || '300000' // Default gas estimate
+      };
+
+    } catch (error) {
+      console.error('SOR swap error:', error);
+      throw error;
+    }
+  }
+
   return {
     findTradeBalancer,
+    findTradeBalancerSOR,
   };
 }
