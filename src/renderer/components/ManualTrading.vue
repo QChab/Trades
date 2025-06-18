@@ -559,15 +559,15 @@ export default {
         outputUniswap = totalBig.sub(offsetUniswap)
       }
       let offsetBalancer, outputBalancer;
-      if (gasLimit && props.gasPrice && props.ethPrice && toToken.price) {
+      if (gasLimit && props.gasPrice && props.ethPrice && toToken.price && outputAmount) { // Add outputAmount check
         offsetBalancer = BigNumber.from(Math.ceil((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, toToken.decimals) / toToken.price).toPrecision(50).split('.')[0])
         outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
       }
-      let outputU = outputUniswap || totalBig || BigNumber.from('-10000000000000000000000000');
-      let outputB = outputBalancer || outputAmount || BigNumber.from('-10000000000000000000000000');
+      let outputU = outputUniswap || totalBig || BigNumber.from('0'); // Changed default
+      let outputB = outputBalancer || BigNumber.from('0'); // Changed default and removed undefined check
 
       let bestOutputLessGas = outputU;
-      if (outputU && outputB) {
+      if (outputU && outputB && outputB.gt(0)) { // Add check for outputB > 0
         if (outputU.gt(outputB)) {
           isUsingUniswap = true;
           console.log('Using Uniswap')
@@ -584,28 +584,37 @@ export default {
 
       // Handle mixed trades if enabled
       let bestMixed, fractionMixed;
-      if (shouldUseUniswapAndBalancerValue && results[0]?.value && results[2]?.value && results[3]?.value && results[4]?.value && results[5]?.value) {
-        const best90U = findBestMixedTrades(results[0].value[90], results[5], toTokenAddr, gasLimit);
-        const best75U = findBestMixedTrades(results[0].value[75], results[2], toTokenAddr, gasLimit);
-        const best50U = findBestMixedTrades(results[0].value[50], results[3], toTokenAddr, gasLimit);
-        const best25U = findBestMixedTrades(results[0].value[25], results[4], toTokenAddr, gasLimit);
+      if (shouldUseUniswapAndBalancerValue && results[0]?.value) {
+        // Only proceed with mixed if we have valid Balancer results
+        let best25U, best50U, best75U, best90U;
+        if (results[4].status === 'fulfilled') 
+          best25U = findBestMixedTrades(results[0].value[25], results[4], toTokenAddr, results[4].value.gasLimit);
+        if (results[3].status === 'fulfilled')
+          best50U = findBestMixedTrades(results[0].value[50], results[3], toTokenAddr, results[3].value.gasLimit);
+        if (results[2].status === 'fulfilled')
+          best75U = findBestMixedTrades(results[0].value[75], results[2], toTokenAddr, results[2].value.gasLimit);
+        if (results[5].status === 'fulfilled')
+          best90U = findBestMixedTrades(results[0].value[90], results[5], toTokenAddr, results[5].value.gasLimit);
 
         console.log({
-          best90U: best90U.outputAmount.toString(),
-          best75U: best75U.outputAmount.toString(),
-          best50U: best50U.outputAmount.toString(),
-          best25U: best25U.outputAmount.toString(),
+          best90U: best90U?.outputAmount?.toString(),
+          best75U: best75U?.outputAmount?.toString(),
+          best50U: best50U?.outputAmount?.toString(),
+          best25U: best25U?.outputAmount?.toString(),
         })
 
         const onlyMixedEnabled = shouldUseUniswapAndBalancerValue && !shouldUseUniswapValue && !shouldUseBalancerValue;
         
         // Find the best mixed trade
-        const mixedOptions = [
-          { trade: best25U, fraction: 25 },
-          { trade: best50U, fraction: 50 },
-          { trade: best75U, fraction: 75 },
-          { trade: best90U, fraction: 90 }
-        ];
+        const mixedOptions = [];
+        if (best25U)
+          mixedOptions.push({ trade: best25U, fraction: 25 })
+        if (best50U)
+          mixedOptions.push({ trade: best50U, fraction: 50 })
+        if (best75U)
+          mixedOptions.push({ trade: best75U, fraction: 75 })
+        if (best90U)
+          mixedOptions.push({ trade: best90U, fraction: 90 })
 
         // Sort by output amount (highest first)
         mixedOptions.sort((a, b) => {
@@ -622,7 +631,7 @@ export default {
           fractionMixed = bestMixedOption.fraction;
         } else {
           // When other protocols are also enabled, compare against bestOutputLessGas
-          if (bestMixedOption.trade.outputAmount.gte(bestOutputLessGas)) {
+          if (bestMixedOption?.trade && (!bestOutputLessGas || bestMixedOption?.trade?.outputAmount?.gte(bestOutputLessGas))) {
             bestMixed = bestMixedOption.trade;
             fractionMixed = bestMixedOption.fraction;
           }
@@ -632,6 +641,7 @@ export default {
       // Build final trade result
       let finalTrades, finalTotalHuman, protocol, finalGasLimit;
       
+      console.log(bestMixed)
       if (bestMixed) {
         totalHuman = ethers.utils.formatUnits(bestMixed.tradesU.totalBig.add(bestMixed.tradesB.outputAmount), toToken.decimals);
         finalTrades = [
@@ -848,7 +858,7 @@ export default {
       }
     }
 
-    const findBestMixedTrades = (resultsU, rawResultsB, _newTo, gasLimitBalancer) => {
+    const findBestMixedTrades = (resultsU, rawResultsB, toTokenAddress, gasLimitBalancer) => {
       let validTrades, totalHuman, totalBig;
       if (resultsU) {
         validTrades = resultsU.validTrades;
@@ -858,42 +868,46 @@ export default {
       let callData, outputAmount, value;
       if (rawResultsB && rawResultsB.status === 'fulfilled' && rawResultsB.value) {
         callData = rawResultsB.value.callData;
-        outputAmount = BigNumber.from(rawResultsB.value.outputAmount);
-        value = rawResultsB.value.value;
+        outputAmount = BigNumber.from(rawResultsB.value.outputAmount || '0'); // Add fallback
+        value = rawResultsB.value.value || '0'; // Add fallback
       }
-      // console.log({callData, outputAmount, value})
 
       let uniswapGasLimit = 0
       let offsetUniswap, outputUniswap;
-      if (validTrades && validTrades.length && tokensByAddresses.value[_newTo].price && props.gasPrice && props.ethPrice) {
-        uniswapGasLimit = 100000 + 50000 * trades.value.length;
-        offsetUniswap = BigNumber.from(((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toPrecision(50).split('.')[0])
+      if (validTrades && validTrades.length && tokensByAddresses.value[toTokenAddress].price && props.gasPrice && props.ethPrice) {
+        uniswapGasLimit = 100000 + 50000 * validTrades.length; // Fixed reference
+        offsetUniswap = BigNumber.from(Math.ceil((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[toTokenAddress].decimals) / tokensByAddresses.value[toTokenAddress].price).toPrecision(50).split('.')[0])
         outputUniswap = totalBig.sub(offsetUniswap)
       }
       let offsetBalancer, outputBalancer;
-      if (gasLimitBalancer && props.gasPrice && props.ethPrice && tokensByAddresses.value[_newTo].price) {
-        offsetBalancer = BigNumber.from(((gasLimitBalancer * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[_newTo].decimals) / tokensByAddresses.value[_newTo].price).toPrecision(50).split('.')[0])
-        outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
+      console.log(gasLimitBalancer)
+      console.log(props.gasPrice)
+      console.log(props.ethPrice)
+      console.log(tokensByAddresses.value[toTokenAddress].price)
+      console.log(outputAmount)
+      if (gasLimitBalancer && props.gasPrice && props.ethPrice && tokensByAddresses.value[toTokenAddress].price && outputAmount) { // Add outputAmount check
+        offsetBalancer = BigNumber.from(Math.ceil((gasLimitBalancer * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[toTokenAddress].decimals) / tokensByAddresses.value[toTokenAddress].price).toPrecision(50).split('.')[0])
+        outputBalancer = outputAmount.sub(offsetBalancer)
       }
-      let outputU = outputUniswap || totalBig || BigNumber.from('-10000000000000000000000000');
-      let outputB = outputBalancer || outputAmount || BigNumber.from('-10000000000000000000000000');
-      // console.log({outputB: outputB.toString(), outputU: outputU.toString()})
+      let outputU = outputUniswap || totalBig || BigNumber.from('0'); // Changed default to '0'
+      let outputB = outputBalancer || outputAmount || BigNumber.from('0'); // Changed default to '0' and removed undefined outputAmount
 
+      console.log(outputU.toString())
+      console.log(outputB.toString())
       return {
         outputAmount: outputB.add(outputU),
         tradesU: {
-          validTrades,
-          totalHuman,
-          totalBig,
+          validTrades: validTrades || [],
+          totalHuman: totalHuman || '0',
+          totalBig: totalBig || BigNumber.from('0'),
         },
         tradesB: {
-          callData,
-          outputAmount,
-          value,
+          callData: callData || null,
+          outputAmount: outputAmount || BigNumber.from('0'),
+          value: value || '0',
         }
       }
     }
-
     const getTradesBalancer = async (_newFrom, _newTo, _newAmt, _newSenderAddress, shouldFetchGasLimit) => {
       const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, _newSenderAddress);
       console.log(result);
@@ -909,8 +923,16 @@ export default {
       console.log('before estimateGas');
       let gasLimit = 400000;
       try {
-        if (shouldFetchGasLimit)
-          gasLimit = await toRaw(props.provider).estimateGas(txData);
+        if (shouldFetchGasLimit) {
+          console.log('before promise.race')
+          gasLimit = await Promise.race([
+            toRaw(props.provider).estimateGas(txData),
+            new Promise(r => setTimeout(r, 5000)),
+          ])
+          console.log({gasLimit})
+          if (!gasLimit)
+            gasLimit = 400000;
+        }
       } catch (err) {
         console.log('Error in estimateGas');
         console.error(err);
@@ -1073,7 +1095,7 @@ export default {
       }
     };
     watch(() => props.ethPrice, () => setTokenPrices(tokens), { immediate: true });
-    const priceUpdateInterval = setInterval(() => setTokenPrices(tokens), 180_000);
+    const priceUpdateInterval = setInterval(() => setTokenPrices(tokens), 12_000);
 
     // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
     watch(
@@ -1316,7 +1338,8 @@ export default {
         if (!providedTradeSummary)
           increaseOffsetBalance(
             currentTradeSummary.fromToken?.address.toLowerCase(),
-            currentTradeSummary.sender.address.toLowerCase()
+            currentTradeSummary.sender.address.toLowerCase(),
+            tradeSummary.value
           )
 
         // Finalize summary & emit upwards
@@ -1370,7 +1393,7 @@ export default {
       }
     };
 
-    const increaseOffsetBalance = (tokLower, senderLc) => {
+    const increaseOffsetBalance = (tokLower, senderLc, currentTradeSummary) => {
       if (!balanceOffsetByTokenByAddress[tokLower]) {
         balanceOffsetByTokenByAddress[tokLower] = {};
       }
@@ -1654,7 +1677,8 @@ export default {
       
       increaseOffsetBalance(
         order.fromToken.address.toLowerCase(),
-        order.sender.address.toLowerCase()
+        order.sender.address.toLowerCase(),
+        order,
       );
     }
 
@@ -1846,7 +1870,7 @@ export default {
       checkPendingOrdersToTrigger();
     })
 
-    const checkOrdersInterval = setInterval(checkPendingOrdersToTrigger, 30000);
+    const checkOrdersInterval = setInterval(checkPendingOrdersToTrigger, 12000);
 
     // Clear interval on component unmount
     onUnmounted(() => {
