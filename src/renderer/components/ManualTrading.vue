@@ -646,7 +646,7 @@ export default {
           }
         }
 
-        if (bestMixedOption.fraction === 50) {
+        if (bestMixedOption?.fraction === 50) {
           console.log('Best fraction is 50%, trying other fractions');
           const resultsOther = await Promise.allSettled([
             getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .4, senderAddr, false),

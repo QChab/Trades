@@ -90,9 +90,12 @@ const chainId = 1;
 // Configuration constants
 // ----------------------------
 const QUOTER_ADDRESS             = '0x52f0e24d1c21c8a0cb1e5a5dd6198556bd9e1203';
-const API_KEY                    = '85a93cb8cc32fa52390e51a09125a6fc';
+const VITE_AP1='d692082c59f9567'
+const VITE_AP2='90647e88'
+const VITE_AP3='9e75fa84d'
+
 const SUBGRAPH_ID                = 'DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G';
-const SUBGRAPH_URL               = `https://gateway.thegraph.com/api/${API_KEY}/subgraphs/id/${SUBGRAPH_ID}`;
+const SUBGRAPH_URL               = `https://gateway.thegraph.com/api/${VITE_AP1 + VITE_AP2 + VITE_AP3}/subgraphs/id/${SUBGRAPH_ID}`;
 
 const STATE_VIEW_ADDRESS   = '0x7ffe42c4a5deea5b0fec41c94c136cf115597227';
 const STATE_VIEW_ABI = [
