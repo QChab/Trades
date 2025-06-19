@@ -303,7 +303,6 @@ export function useUniswapV4() {
         tokenA,
         tokenB
       );
-      console.log({f: bestSplit.fraction, o: bestSplit.output.toString()});
 
       if (!bestSplit.fraction || bestSplit.fraction > .951) 
         return [trades[0]];

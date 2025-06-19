@@ -651,10 +651,55 @@ export default {
           const resultsOther = await Promise.allSettled([
             getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .4, senderAddr, false),
             getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .6, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .45, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .55, senderAddr, false),
           ]);
           for (let i = 0 ; i < resultsOther.length ; i++) {
             const res = resultsOther[i];
-            const fraction = [40, 60][i]
+            const fraction = [60, 40, 55, 45][i]
+            if (res && res.status === 'fulfilled' && res.value) {
+              const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
+              console.log(trade)
+              if (trade.outputAmount.gt(0)) {
+                mixedOptions.push({ trade, fraction: fraction });
+              }
+            }
+          }
+        }
+       
+        if (bestMixedOption?.fraction === 75) {
+          console.log('Best fraction is 75%, trying other fractions');
+          const resultsOther = await Promise.allSettled([
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .3, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .2, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .35, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .15, senderAddr, false),
+          ]);
+          for (let i = 0 ; i < resultsOther.length ; i++) {
+            const res = resultsOther[i];
+            const fraction = [70, 80, 65, 85][i]
+            if (res && res.status === 'fulfilled' && res.value) {
+              const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
+              console.log(trade)
+              if (trade.outputAmount.gt(0)) {
+                mixedOptions.push({ trade, fraction: fraction });
+              }
+            }
+          }
+        }
+       
+        if (bestMixedOption?.fraction === 25) {
+          console.log('Best fraction is 25%, trying other fractions');
+          const resultsOther = await Promise.allSettled([
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .8, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .7, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .85, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .9, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .65, senderAddr, false),
+          ]);
+          for (let i = 0 ; i < resultsOther.length ; i++) {
+            const res = resultsOther[i];
+            const fraction = [20, 30, 15, 10, 35][i]
             if (res && res.status === 'fulfilled' && res.value) {
               const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
               console.log(trade)
@@ -716,7 +761,7 @@ export default {
         throw new Error('No swap found');
       }
 
-      finalTotalHuman = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(6);
+      finalTotalHuman = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(4) : Number(totalHuman).toFixed(6);
       if (finalTotalHuman === '0.000000' || finalTotalHuman === '0.00') {
         finalTotalHuman = tokensByAddresses.value[toTokenAddr].decimals >= 9 ? Number(totalHuman).toFixed(9) : Number(totalHuman).toFixed(6);
       }
@@ -967,7 +1012,7 @@ export default {
         maxFeePerGas: ethers.utils.parseUnits((Number(props.gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
         maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(props.gasPrice) / (40 * 1000000000))).toFixed(3), 9)
       }
-      
+
       let gasLimit = 400000;
       try {
         if (shouldFetchGasLimit) {
@@ -998,25 +1043,55 @@ export default {
         tokensByAddresses.value[_newFrom].decimals
       );
       const [bestTrades,
+        bestTrades10,
+        bestTrades15,
+        bestTrades20,
         bestTrades25,
-        bestTrades40,
-        bestTrades50,
-        bestTrades60,
-        bestTrades75,
-        bestTrades90,
-        bestTrades93,
-        bestTrades95,
-        bestTrades97,
-        bestTrades98,
-        bestTrades99,
-      ] = await Promise.all([
+        bestTrades30,
+        bestTrades35,
+        bestTrades40] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .10).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .15).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .20).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
           (_newAmt * .25).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .30).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .35).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
           (_newAmt * .40).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+      ]);
+
+      const [
+        bestTrades45,
+        bestTrades50,
+        bestTrades55,
+        bestTrades60,
+        bestTrades65,
+        bestTrades70,
+        bestTrades75,
+      ] = await Promise.all([
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .45).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
@@ -1024,11 +1099,42 @@ export default {
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .55).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
           (_newAmt * .60).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .65).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .70).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
           (_newAmt * .75).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+      ]);
+
+      const [ 
+        bestTrades80,
+        bestTrades85,
+        bestTrades90,
+        bestTrades93,
+        bestTrades95,
+        bestTrades97,
+        bestTrades98,
+        bestTrades99] = await Promise.all([
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .80).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          tokensByAddresses.value[_newFrom].decimals
+        )),
+        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
+          (_newAmt * .85).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
@@ -1058,11 +1164,22 @@ export default {
       ])
 
       const tradesByPercent = {
+        10: processBestTrades(bestTrades10, _newFrom, _newTo),
+        15: processBestTrades(bestTrades15, _newFrom, _newTo),
+        20: processBestTrades(bestTrades20, _newFrom, _newTo),
         25: processBestTrades(bestTrades25, _newFrom, _newTo),
+        30: processBestTrades(bestTrades30, _newFrom, _newTo),
+        35: processBestTrades(bestTrades35, _newFrom, _newTo),
         40: processBestTrades(bestTrades40, _newFrom, _newTo),
+        45: processBestTrades(bestTrades45, _newFrom, _newTo),
         50: processBestTrades(bestTrades50, _newFrom, _newTo),
+        55: processBestTrades(bestTrades55, _newFrom, _newTo),
         60: processBestTrades(bestTrades60, _newFrom, _newTo),
+        65: processBestTrades(bestTrades65, _newFrom, _newTo),
+        70: processBestTrades(bestTrades70, _newFrom, _newTo),
         75: processBestTrades(bestTrades75, _newFrom, _newTo),
+        80: processBestTrades(bestTrades80, _newFrom, _newTo),
+        85: processBestTrades(bestTrades85, _newFrom, _newTo),
         90: processBestTrades(bestTrades90, _newFrom, _newTo),
         93: processBestTrades(bestTrades93, _newFrom, _newTo),
         95: processBestTrades(bestTrades95, _newFrom, _newTo),
