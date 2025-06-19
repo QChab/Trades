@@ -1909,13 +1909,12 @@ export default {
       if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
       if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
 
-      console.log('Checking pending limit orders...');
       try {
         await setTokenPrices(tokens);
       } catch (error) {
         console.error('Error updating token prices:', error);
       }
-      console.log('after setTokenPrices');
+
       for (const order of pendingLimitOrders.value) {
         // Skip if order is not pending
         if (!order || !order.status || order.status !== 'pending') continue;
@@ -1924,13 +1923,12 @@ export default {
           // Get current token prices from our updated token list
           const fromToken = tokensByAddresses.value[order.fromToken.address];
           const senderD = props.addresses.find((a) => a.address.toLowerCase() === order.sender.address.toLowerCase());
-          console.log(order.fromAmount)
-          console.log(senderD.balances)
+
           if (senderD?.balances == null || !fromToken) {
             console.log(`Skipping order ${order.id} due to missing token or sender data`);
             continue;
           }
-          console.log(senderD.balances[fromToken.address.toLowerCase()])
+
           if (Number(order.fromAmount) > senderD.balances[fromToken.address.toLowerCase()]) {
             order.isWaitingBalance = true;
             continue;
@@ -1963,7 +1961,6 @@ export default {
           let shouldCheckExactPrice = false;
           let shouldTrigger = false;
 
-          console.log(order)
           if (order.orderType === 'take_profit') {
             // For take profit: trigger when current price >= limit price
             // Check exact price if we're within tolerance or already above
@@ -1999,12 +1996,15 @@ export default {
           // Calculate exact execution price (output amount per input amount)
           let exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
           
-          console.log({exactExecutionPrice})
           console.log(props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice))
           if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
             console.warn(`Gas price ${props.gasPrice} is higher than max gas price ${props.maxGasPrice * 1e9}, deducing from execution price`);
-            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/tokensByAddresses.value[order.toToken.address].price) 
-              / Number(order.fromAmount);
+            if (order.orderType === 'take_profit')
+              exactExecutionPrice = (Number(bestTradeResult.totalHuman) - bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/tokensByAddresses.value[order.toToken.address].price) 
+                / Number(order.fromAmount);
+            else if (order.orderType === 'stop_loss')
+              exactExecutionPrice = (Number(bestTradeResult.totalHuman) + bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/tokensByAddresses.value[order.toToken.address].price) 
+                / Number(order.fromAmount);
             console.log(`Adjusted execution price after gas deduction: ${exactExecutionPrice.toFixed(9)}`);
           }
           console.log({exactExecutionPrice})
