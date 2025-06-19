@@ -222,6 +222,9 @@ export function useUniswapV4() {
 
       pools.push(poolInstance);
     }
+
+    console.log('Sane pools: ' + pools.length);
+
     return pools;
   }
 
@@ -267,7 +270,6 @@ export function useUniswapV4() {
     const amountIn = CurrencyAmount.fromRawAmount(tokenA, rawIn.toString());
 
     try {
-      console.log('Sane pools: ' + pools.length);
       if (!pools.length) return []
 
       trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 8 });

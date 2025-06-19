@@ -144,7 +144,7 @@
               <button
                 v-if="!needsToApprove"
                 @click="placeLimitOrder()"
-                :disabled="maxGasPrice < gasPrice || !priceLimit || !fromAmount || senderDetails?.address === ''"
+                :disabled="!priceLimit || !fromAmount || senderDetails?.address === ''"
                 class="swap-button"
               >
                 {{ 'Place order' }}
@@ -717,6 +717,9 @@ export default {
       }
 
       finalTotalHuman = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(2) : Number(totalHuman).toFixed(6);
+      if (finalTotalHuman === '0.000000' || finalTotalHuman === '0.00') {
+        finalTotalHuman = tokensByAddresses.value[toTokenAddr].decimals >= 9 ? Number(totalHuman).toFixed(9) : Number(totalHuman).toFixed(6);
+      }
 
       return {
         trades: finalTrades,
@@ -748,6 +751,7 @@ export default {
       ) => {
         if (tabOrder.value === 'limit') {
           console.log('Skipping re-quoting for Limit Order tab');
+          if (debounceTimer) clearTimeout(debounceTimer);
           return;
         }
 
@@ -954,7 +958,6 @@ export default {
     }
     const getTradesBalancer = async (_newFrom, _newTo, _newAmt, _newSenderAddress, shouldFetchGasLimit) => {
       const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, _newSenderAddress);
-      console.log(result);
 
       const txData = {
         from: _newSenderAddress,
@@ -964,7 +967,7 @@ export default {
         maxFeePerGas: ethers.utils.parseUnits((Number(props.gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
         maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(props.gasPrice) / (40 * 1000000000))).toFixed(3), 9)
       }
-      console.log('before estimateGas');
+      
       let gasLimit = 400000;
       try {
         if (shouldFetchGasLimit) {
@@ -1186,7 +1189,9 @@ export default {
       }
     };
     watch(() => props.ethPrice, () => setTokenPrices(tokens), { immediate: true });
-    const priceUpdateInterval = setInterval(() => setTokenPrices(tokens), 12_000);
+    const priceUpdateInterval = setInterval(() => {
+      if (!pendingLimitOrders.value.length) setTokenPrices(tokens);
+    }, 12_000);
 
     // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
     watch(
@@ -1610,9 +1615,9 @@ export default {
       if (priceLimitValue && !isNaN(priceLimitValue)) {
         tradeSummary.priceLimit = Number(priceLimitValue);
         if (shouldSwitchTokensForLimit.value) {
-          tradeSummary.toAmount = (fromAmountValue / tradeSummary.priceLimit).toFixed(6);
+          tradeSummary.toAmount = (fromAmountValue / tradeSummary.priceLimit).toFixed(tokensByAddresses.value[toTokenAddress.value].decimals >= 9 ? 9 : 6);
         } else
-          tradeSummary.toAmount = (fromAmountValue * tradeSummary.priceLimit).toFixed(6);
+          tradeSummary.toAmount = (fromAmountValue * tradeSummary.priceLimit).toFixed(tokensByAddresses.value[toTokenAddress.value].decimals >= 9 ? 9 : 6);
       } else {
         tradeSummary.priceLimit = null;
         tradeSummary.toAmount = null;
@@ -1662,7 +1667,11 @@ export default {
         usdValue = price * fromToken.price;
       }
       
-      return usdValue >= 0.01 ? usdValue.toFixed(2) : usdValue.toFixed(6);
+      let displayedUsdValue = usdValue >= 0.01 ? usdValue.toFixed(2) : usdValue.toFixed(6);
+      if (displayedUsdValue === '0.000000') {
+        displayedUsdValue = usdValue.toFixed(9);
+      }
+      return displayedUsdValue
     }
 
     watch(
@@ -1771,6 +1780,8 @@ export default {
         order.sender.address.toLowerCase(),
         order,
       );
+
+      swapMessage.value = `Limit order placed`;
     }
 
     let isCheckingPendingOrders = false;
@@ -1781,12 +1792,13 @@ export default {
       if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
       if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
 
+      console.log('Checking pending limit orders...');
       try {
         await setTokenPrices(tokens);
       } catch (error) {
         console.error('Error updating token prices:', error);
       }
-
+      console.log('after setTokenPrices');
       for (const order of pendingLimitOrders.value) {
         // Skip if order is not pending
         if (!order || !order.status || order.status !== 'pending') continue;
@@ -1826,14 +1838,15 @@ export default {
             currentMarketPrice = toToken.price / fromToken.price;
           }
 
-          // Define price tolerance (e.g., within 2% of trigger price)
-          const PRICE_TOLERANCE = 0.02; // 2%
+          // Define price tolerance (e.g., within 1% of trigger price)
+          const PRICE_TOLERANCE = 0.01; // 1%
           const priceDifference = Math.abs(currentMarketPrice - order.priceLimit) / order.priceLimit;
           
           // Only proceed with expensive getBestTrades call if we're close to trigger price
           let shouldCheckExactPrice = false;
           let shouldTrigger = false;
 
+          console.log(order)
           if (order.orderType === 'take_profit') {
             // For take profit: trigger when current price >= limit price
             // Check exact price if we're within tolerance or already above
@@ -1867,8 +1880,18 @@ export default {
           );
 
           // Calculate exact execution price (output amount per input amount)
-          const exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
+          let exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
           
+          console.log({exactExecutionPrice})
+          console.log(props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice))
+          if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
+            console.warn(`Gas price ${props.gasPrice} is higher than max gas price ${props.maxGasPrice * 1e9}, deducing from execution price`);
+            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/tokensByAddresses.value[order.toToken.address].price) 
+              / Number(order.fromAmount);
+            console.log(`Adjusted execution price after gas deduction: ${exactExecutionPrice.toFixed(9)}`);
+          }
+          console.log({exactExecutionPrice})
+
           // Determine if order should be triggered based on exact execution price
           if (order.orderType === 'take_profit') {
             shouldTrigger = exactExecutionPrice >= order.priceLimit;
@@ -1879,7 +1902,7 @@ export default {
           }
 
           if (shouldTrigger) {
-            console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(6)} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
+            console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(10)} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
             
             // Create a trade summary object for this limit order
             const limitOrderTradeSummary = {
@@ -1948,11 +1971,12 @@ export default {
             }
           } else {
             // Log exact price vs target for debugging
-            console.log(`Order ${order.id} (${order.orderType || 'limit'}): exact execution price ${exactExecutionPrice.toFixed(6)} vs limit ${order.priceLimit} - not triggered`);
+            console.log(`Order ${order.id} (${order.orderType || 'limit'}): exact execution price ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit} - not triggered`);
           }
-          } catch (error) {
+        } catch (error) {
           console.error(`Error checking limit order ${order.id}:`, error);
         }
+        isCheckingPendingOrders = false;
       }
     }
 
