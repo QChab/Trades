@@ -205,7 +205,58 @@
                     @delete="deleteColumn(i, j)"
                   />
                 </div>
+                <div 
+                  v-if="tokenInRow?.token?.address && !shouldSelectTokenInCell"
+                  class="token-details new-cell-details"
+                  @click="shouldSelectTokenInCell = true"
+                >
+                  +
+                </div>
+                <div
+                  v-if="tokenInRow?.token?.address && shouldSelectTokenInCell"
+                  class="token-details new-cell-details"
+                >
+                  <select
+                    id="new-token-cell"
+                    v-model="newCellTokenAddress"
+                    @change="addCellToRow(i)"
+                  >
+                    <option 
+                      v-for="(token, index) in filteredTokens.filter(t => t.address !== tokenInRow.token.address)" 
+                      :key="'new-token-cell-' + index + token?.address" 
+                      :value="token.address"
+                    >
+                      {{ token.symbol }}
+                    </option>
+                  </select>
+                </div>
               </div>
+            </div>
+            <div 
+              v-if="tokensInRow.filter(t => t?.symbol?.address).length < 12"
+              class="token-details new-token-details"
+            >
+              <div
+                v-if="!shouldSelectTokenInRow"
+                class="token-symbol"
+                @click="shouldSelectTokenInRow = true"
+              >
+                +
+              </div>
+              <select
+                id="new-token"
+                v-model="newTokenAddress"
+                v-if="shouldSelectTokenInRow"
+                @change="addRowToMatrix"
+              >
+                <option 
+                  v-for="(token, index) in filteredTokens" 
+                  :key="'fromToken-' + index" 
+                  :value="token.address"
+                >
+                  {{ token.symbol }}
+                </option>
+              </select>
             </div>
           </div>
         </div>
@@ -405,65 +456,6 @@ export default {
         token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
         columns: [
           {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-        ]
-      },
-      {
-        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
-        columns: [
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-        ]
-      },
-      {
-        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
-        columns: [
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-        ]
-      },
-      {
-        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
-        columns: [
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-        ]
-      },
-      {
-        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
-        columns: [
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
         ]
       },
       {
@@ -511,6 +503,11 @@ export default {
         columns: []
       },
     ])
+
+    const shouldSelectTokenInRow = ref(false);
+    const newTokenAddress = ref(null);
+    const shouldSelectTokenInCell = ref(false);
+    const newCellTokenAddress = ref(null);
 
     // Map of tokenAddress → { price, symbol, decimals }
     const tokensByAddresses = ref({});
@@ -2306,6 +2303,27 @@ export default {
       }
     }
 
+    const addRowToMatrix = () => {
+      let firstEmptyIndex = tokensInRow.findIndex(t => !t?.token?.address && !t?.token?.columns?.length)
+      if (firstEmptyIndex === -1)
+        return;
+
+      tokensInRow[firstEmptyIndex] = {
+        token: {...tokensByAddresses.value[newTokenAddress.value]},
+        columns: []
+      }
+
+      newTokenAddress.value = null;
+      shouldSelectTokenInRow.value = false;
+    }
+
+    const addCellToRow = (i) => {
+      tokensInRow[i].columns.push({...tokensByAddresses.value[newCellTokenAddress.value]})
+
+      shouldSelectTokenInCell.value = false;
+      newCellTokenAddress.value = null;
+    }
+
     return {
       // state
       isEditingTokens,
@@ -2360,6 +2378,12 @@ export default {
 
       deleteColumn,
       deleteRow,
+      shouldSelectTokenInRow,
+      shouldSelectTokenInCell,
+      newTokenAddress,
+      newCellTokenAddress,
+      addRowToMatrix,
+      addCellToRow,
     };
   }
 };
@@ -3009,5 +3033,23 @@ h3 {
 .token-symbol {
   font-size: 16px;
 }
-
+.new-token-details {
+  cursor: pointer;
+  border-radius: 5px !important;
+  border: 2px solid #ddd !important;
+}
+.new-cell-details {
+  cursor: pointer;
+  border-radius: 0 !important;
+  border-top-right-radius: 5px !important;
+  border-bottom-right-radius: 5px !important;
+  border-left: 1px solid #eee;
+  border-right: 2px solid #ddd !important;
+  display: flex;
+  justify-content: center;
+  align-content: center;
+  flex-wrap: wrap;
+  width: 50px;
+  padding: 20px;
+}
 </style>

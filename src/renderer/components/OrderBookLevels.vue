@@ -12,7 +12,7 @@
       
       <div class="token-pair">
         <span class="token-name">{{ tokenB?.symbol }}</span>
-        <span class="token-price">@ ${{ tokenB?.price }}</span>
+        <span class="token-price">@ ${{ tokenB?.price.toFixed(8) }}</span>
       </div>
       
       <button 
@@ -307,7 +307,6 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #eee;
 }
 
 .control-btn {
