@@ -180,23 +180,32 @@
           v-else-if="currentMode === 'automatic' && !isEditingTokens"
           class="automatic-mode"
         >
-          <div v-for="tokenInRow in tokensInRow" class="token-row">
-            <div
-              class="token-details"
-              v-if="tokenInRow?.token?.symbol"
-            >
-              <p class="token-symbol">{{ tokenInRow.token.symbol || 'Select Token' }}</p>
-              <p class="token-price">
-                @ ${{ spaceThousands(tokenInRow.token.price?.toFixed(5)) }}
-              </p>
-            </div>
-            <div class="horizontal-scroll">
-              <OrderBookLevels
-                v-for="token in tokenInRow.columns.filter(t => t.symbol && t.address)"
-                :tokenA="tokenInRow.token"
-                :tokenB="token"
-                :price-threshold="0.01"
-              />
+          <div class="matrix">
+            <div v-for="(tokenInRow, i) in tokensInRow" class="token-row">
+              <div
+                class="token-details"
+                v-if="tokenInRow?.token?.symbol"
+              >
+                <p class="token-symbol">{{ tokenInRow.token.symbol || 'Select Token' }}</p>
+                <p class="token-price">
+                  @ ${{ spaceThousands(tokenInRow.token.price?.toFixed(5)) }}
+                </p>
+                <img :src="deleteImage" class="delete-row" @click="deleteRow(i)" />
+              </div>
+              <div class="horizontal-scroll">
+                <div
+                  v-for="(token, j) in tokenInRow.columns"
+                  :key="token?.address + j + '-' + cell"
+                >
+                  <OrderBookLevels
+                    v-if="token?.address && token.decimals"
+                    :tokenA="tokenInRow.token"
+                    :tokenB="token"
+                    :price-threshold="0.01"
+                    @delete="deleteColumn(i, j)"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -392,6 +401,58 @@ export default {
     ]);
 
     const tokensInRow = reactive([
+      {
+        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
+        columns: [
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+        ]
+      },
+      {
+        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
+        columns: [
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+        ]
+      },
+      {
+        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
+        columns: [
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+        ]
+      },
+      {
+        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
+        columns: [
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+        ]
+      },
       {
         token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
         columns: [
@@ -2229,6 +2290,22 @@ export default {
       }
     });
 
+    const deleteColumn = (i, j) => {
+      console.log({i, j});
+      tokensInRow[i].columns.splice(j, 1);
+    }
+
+    const deleteRow = (i) => {
+      tokensInRow[i] = {
+        token: {
+          symbol: null,
+          decimals: null,
+          price: null,
+        },
+        columns: []
+      }
+    }
+
     return {
       // state
       isEditingTokens,
@@ -2280,6 +2357,9 @@ export default {
       
       currentMode,
       tokensInRow,
+
+      deleteColumn,
+      deleteRow,
     };
   }
 };
@@ -2474,6 +2554,21 @@ input.small-number {
   display: inline-block;
   position: relative;
   top: 3px;
+  cursor: pointer;
+}
+
+
+.token-details .delete-row {
+  display: none;
+  width: 20px;
+  height: 15px;
+}
+
+.token-details:hover .delete-row {
+  width: 15px;
+  height: 15px;
+  display: inline-block;
+  cursor: pointer;
 }
 
 .checkbox-label.edit-label input {
@@ -2882,6 +2977,11 @@ h3 {
   padding: 40px 20px 20px;
 }
 
+.matrix {
+  max-height: 900px;
+  overflow-y: auto;
+}
+
 .token-details {
   border: 2px solid #ddd;
   border-radius: 8px;
@@ -2909,4 +3009,5 @@ h3 {
 .token-symbol {
   font-size: 16px;
 }
+
 </style>

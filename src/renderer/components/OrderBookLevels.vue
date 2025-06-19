@@ -42,8 +42,8 @@
             {{ getLevelStatus('buy', level) }}
           </div>
           <div class="level-inputs">
+            <img :src="deleteImage" class="delete" @click="level.triggerPrice = null; level.balancePercentage = null;" />
             <label class="input-group">
-              <img :src="deleteImage" class="delete" @click="level.triggerPrice = 0; level.balancePercentage = 0;" />
               <span class="first-part-price">{{ tokenA?.symbol }} ≤ </span>
               <input
                 v-model.number="level.triggerPrice"
@@ -84,8 +84,8 @@
             {{ getLevelStatus('sell', level) }}
           </div>
           <div class="level-inputs">
+            <img :src="deleteImage" class="delete" @click="level.triggerPrice = null; level.balancePercentage = null;" />
             <label class="input-group">
-              <img :src="deleteImage" class="delete" @click="level.triggerPrice = 0; level.balancePercentage = 0;" />
               <span class="first-part-price">{{ tokenA?.symbol }} ≥ </span>
               <input
                 v-model.number="level.triggerPrice"
@@ -318,6 +318,13 @@ export default {
   cursor: pointer;
   transition: all 0.2s;
   font-size: 14px; /* Reduced from 16px */
+}
+
+.order-book-levels .control-btn {
+  display: none;
+}
+.order-book-levels:hover .control-btn {
+  display: inline-block;
 }
 
 .pause-btn:hover {
@@ -629,5 +636,6 @@ input.percentage-input {
   position: absolute;
   top: 3px;
   right: 3px;
+  cursor: pointer;
 }
 </style>
