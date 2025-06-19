@@ -1501,6 +1501,7 @@ export default {
     // Persist tokens configuration on mount
     onMounted(async () => {
       const settings = await window.electronAPI.loadSettings();
+      console.log(settings)
       if (settings?.tokens) {
         for (let i = 0; i < settings.tokens.length; i++) {
           if (settings.tokens[i]?.address && settings.tokens[i]?.symbol) {
@@ -1510,7 +1511,7 @@ export default {
       }
       if (settings?.tokensInRow) {
         for (let i = 0; i < settings.tokensInRow.length; i++) {
-          if (settings.tokensInRow[i]?.address && settings.tokensInRow[i]?.symbol) {
+          if (settings.tokensInRow[i]?.token?.address && settings.tokensInRow[i]?.token?.symbol) {
             tokensInRow[i] = settings.tokensInRow[i];
           }
         }

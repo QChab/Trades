@@ -854,6 +854,7 @@ function createWindow() {
 
   ipcMain.handle('save-settings', (event, newSettings) => {
     console.log('saving');
+    console.log(newSettings);
     settings = newSettings;
     fs.writeFileSync(settingsPath, JSON.stringify(settings));
   });
