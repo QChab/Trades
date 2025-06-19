@@ -2,12 +2,25 @@
   <div class="manual-trading">
     <!-- Token selection list -->
     <div class="form-group">
-      <h3>Manual trade</h3>
+      <div class="top-nav-bar">
+        <div 
+          @click="currentMode='manual'"
+          :class="{'active-tab': currentMode === 'manual'}"
+        > 
+          <h3> Manual trade </h3>
+        </div>
+        <div 
+          @click="currentMode='automatic'"
+          :class="{'active-tab': currentMode === 'automatic'}"
+        >
+          <h3> Automatic trade</h3>
+        </div>
+      </div>
       <button @click="isEditingTokens = !isEditingTokens" class="edit-button">
         {{ isEditingTokens ? 'Stop editing' : 'Edit tokens' }}
       </button>
       <div>
-        <div v-if="!isEditingTokens">
+        <div v-if="!isEditingTokens && currentMode === 'manual'">
           <div class="price-form">
             <div class="tabs-price">
               <div :class="{active: tabOrder === 'market'}" @click="tabOrder = 'market'">Market order</div>
@@ -163,8 +176,33 @@
           </div>
         </div>
 
+        <div
+          v-else-if="currentMode === 'automatic' && !isEditingTokens"
+          class="automatic-mode"
+        >
+          <div v-for="tokenInRow in tokensInRow" class="token-row">
+            <div
+              class="token-details"
+              v-if="tokenInRow?.token?.symbol"
+            >
+              <p class="token-symbol">{{ tokenInRow.token.symbol || 'Select Token' }}</p>
+              <p class="token-price">
+                @ ${{ spaceThousands(tokenInRow.token.price?.toFixed(5)) }}
+              </p>
+            </div>
+            <div class="horizontal-scroll">
+              <OrderBookLevels
+                v-for="token in tokenInRow.columns.filter(t => t.symbol && t.address)"
+                :tokenA="tokenInRow.token"
+                :tokenB="token"
+                :price-threshold="0.01"
+              />
+            </div>
+          </div>
+        </div>
+
         <!-- EDITING TOKENS -->
-        <div v-else>
+        <div v-else class="editing-tokens">
           <p class="text-center">Editing Tokens</p>
           <ul class="two-column-list">
             <li v-for="(token, index) in tokens" :key="index">
@@ -214,7 +252,7 @@
         {{ (new Date(tradeSummary.sentDate)).toLocaleString() }} …
       </p>
       
-      <div v-if="pendingLimitOrders.length">
+      <div v-if="pendingLimitOrders.length" class="pending-orders">
         <h4>Pending Limit Orders</h4>
         <ul>
           <li 
@@ -275,9 +313,13 @@ import deleteImage from '@/../assets/delete.svg';
 import { useUniswapV4 } from '../composables/useUniswap';
 import { useBalancerV3 } from '../composables/useBalancer';
 import spaceThousands from '../composables/spaceThousands';
+import OrderBookLevels from './OrderBookLevels.vue';
 
 export default {
   name: 'ManualTrading',
+  components: {
+    OrderBookLevels,
+  },
   props: {
     addresses: { type: Array, default: () => ([]) },
     gasPrice:   { type: Number, default: 2000000000 },
@@ -349,6 +391,66 @@ export default {
       { price: 0, address: '', symbol: '', decimals: null},
     ]);
 
+    const tokensInRow = reactive([
+      {
+        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
+        columns: [
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
+        ]
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+    ])
+
     // Map of tokenAddress → { price, symbol, decimals }
     const tokensByAddresses = ref({});
 
@@ -382,6 +484,8 @@ export default {
     
     const pendingLimitOrders = ref([]);
     const shouldSwitchTokensForLimit = ref(false);
+
+    const currentMode = ref('automatic'); // 'manual' or 'automatic'
 
     // ─── Computed Helpers ────────────────────────────────────────────────────
 
@@ -1346,6 +1450,13 @@ export default {
           }
         }
       }
+      if (settings?.tokensInRow) {
+        for (let i = 0; i < settings.tokensInRow.length; i++) {
+          if (settings.tokensInRow[i]?.address && settings.tokensInRow[i]?.symbol) {
+            tokensInRow[i] = settings.tokensInRow[i];
+          }
+        }
+      }
 
       const dbOrders = await window.electronAPI.getPendingOrders();
       if (dbOrders && Array.isArray(dbOrders)) {
@@ -1381,6 +1492,7 @@ export default {
       }
     });
     watch(() => tokens, () => emit('update:settings', { tokens: [...tokens] }), { deep: true });
+    watch(() => tokensInRow, () => emit('update:settings', { tokensInRow: [...tokensInRow] }), { deep: true });
 
     // Keep senderDetails in sync
     watch(
@@ -1838,10 +1950,10 @@ export default {
       }
 
       if (!computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()]?.[fromTokenAddress.value.toLowerCase()]) {
-        swapMessage.value = 'No balances found for the selected address and from token';
+        swapMessage.value = 'No balances found for the selected address on ' + tokensByAddresses.value[fromTokenAddress.value].symbol;
         return;
       } else if (computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()][fromTokenAddress.value.toLowerCase()] < fromAmount.value) {
-        swapMessage.value = 'Insufficient balance for the selected from token';
+        swapMessage.value = 'Insufficient balance of ' + tokensByAddresses.value[fromTokenAddress.value].symbol;
         return;
       }
 
@@ -2164,7 +2276,10 @@ export default {
       pendingLimitOrders,
       placeLimitOrder,
       cancelLimitOrder,
-      formatUsdPrice
+      formatUsdPrice,
+      
+      currentMode,
+      tokensInRow,
     };
   }
 };
@@ -2175,12 +2290,11 @@ export default {
   border-radius: 4px;
   box-shadow: 0 6px 8px rgba(0, 0, 0, 0.2);
   border-radius: 5px;
-  padding: 20px;
   background-color: #fff;
   display: flex;
   flex-direction: row;
   position: relative;
-  padding-top: 40px;
+  padding: 0px 0px 20px;
 }
 
 .form-group {
@@ -2303,7 +2417,7 @@ input.small-number {
   -ms-user-select: none; /* Internet Explorer/Edge */
   position: absolute;
   right: 20px;
-  top: 0px;
+  top: 35px;
 }
 
 .swap-button {
@@ -2725,4 +2839,74 @@ button::-webkit-focus-inner {
   font-weight: 600;
 }
 
+.top-nav-bar {
+  width: 100%;
+  display: flex;
+  justify-content: space-around;
+}
+.top-nav-bar div {
+  cursor: pointer;
+  padding: 10px;
+  border-radius: 5px;
+  background-color: #f0f0f0;
+  transition: background-color 0.1s ease-in-out, transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out;
+  width: 50%;
+  z-index: 0;
+}
+.top-nav-bar div:hover {
+  background-color: #e0e0e0;
+}
+.top-nav-bar div.active-tab {
+  background-color: #b0b0b0;
+  transform: scale(1.01);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+.top-nav-bar div.active-tab h3 {
+  font-weight: 700;
+}
+.editing-tokens, .pending-orders {
+  padding: 20px;
+}
+h3 {
+  font-weight: 600;
+  margin: 0;
+}
+
+.token-row {
+  display: flex;
+  flex-direction: row;
+}
+
+.automatic-mode {
+  padding: 40px 20px 20px;
+}
+
+.token-details {
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  padding: 6px;
+  background-color: #fafafa;
+  align-content: center;
+  text-align: center;
+  border-right: 1px solid #eee;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  width: 120px;
+}
+
+.token-price {
+  color: #666;
+  font-size: 12px;
+}
+
+.horizontal-scroll {
+  width: 85vw;
+  overflow-x: auto;
+  display: flex;
+  flex-direction: row;
+}
+.token-symbol {
+  font-size: 16px;
+}
 </style>

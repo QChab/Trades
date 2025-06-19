@@ -165,6 +165,7 @@
 
       const setCurrentSettings = (settings) => {
         currentSettings.value = {
+          ...currentSettings.value,
           ...settings,
           maxGasPrice: maxGasPrice.value,
         };
