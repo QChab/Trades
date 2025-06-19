@@ -1042,14 +1042,16 @@ export default {
         _newAmt.toString(),
         tokensByAddresses.value[_newFrom].decimals
       );
-      const [bestTrades,
+      const [
+        bestTrades,
         bestTrades10,
         bestTrades15,
         bestTrades20,
         bestTrades25,
         bestTrades30,
         bestTrades35,
-        bestTrades40] = await Promise.all([
+        bestTrades40
+      ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
           (_newAmt * .10).toFixed(tokensByAddresses.value[_newFrom].decimals),
@@ -1128,7 +1130,8 @@ export default {
         bestTrades95,
         bestTrades97,
         bestTrades98,
-        bestTrades99] = await Promise.all([
+        bestTrades99
+      ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
           (_newAmt * .80).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
