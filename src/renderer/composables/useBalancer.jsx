@@ -45,7 +45,7 @@ export function useBalancerV3() {
     );
     const wethIsEth = true; // If true, incoming ETH will be wrapped to WETH, otherwise the Vault will pull WETH tokens
     const deadline = 999999999999999999n; // Deadline for the swap, in this case infinite
-    const slippage = Slippage.fromPercentage("0.7"); // 0.1%
+    const slippage = Slippage.fromPercentage("0.5"); // 0.1%
     const swapAmount = TokenAmount.fromHumanAmount(tokenIn, amountIn + '');
 
     // API is used to fetch best swap paths from available liquidity across v2 and v3
@@ -60,6 +60,9 @@ export function useBalancerV3() {
       tokenOut: tokenOut.address,
       swapKind,
       swapAmount,
+      maxPools: 2,
+      forceRefresh: true, // Force a fresh query instead of using cached data
+      filterInvalidPools: true // Filter out pools that might cause issues
     });
 
     // Swap object provides useful helpers for re-querying, building call, etc
@@ -75,7 +78,6 @@ export function useBalancerV3() {
 
     const rpcUrls = await window.electronAPI.getInfuraKeys();
     const updated = await swap.query(rpcUrls[0]);
-    console.log(`Updated amount: ${updated.expectedAmountOut.amount}`);
 
     let buildInput;
     // In v2 the sender/recipient can be set, in v3 it is always the msg.sender
@@ -100,9 +102,11 @@ export function useBalancerV3() {
     // console.log(
     //   `Min Amount Out: ${callData.minAmountOut.amount}\n\nTx Data:\nTo: ${callData.to}\nCallData: ${callData.callData}\nValue: ${callData.value}`
     // );
+    // console.log(callData)
 
     return {
       ...callData,
+      contractAddress: updated.to || BALANCER_VAULT_ADDRESS,
       expectedAmountOut: updated.expectedAmountOut.amount,
     }
   }
