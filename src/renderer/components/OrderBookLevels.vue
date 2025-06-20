@@ -12,7 +12,7 @@
       
       <div class="token-pair">
         <span class="token-name">{{ tokenB?.symbol }}</span>
-        <span class="token-price">@ ${{ tokenB?.price.toFixed(8) }}</span>
+        <span class="token-price">@ ${{ tokenB?.price?.toFixed(8) }}</span>
       </div>
       
       <button 
@@ -25,7 +25,7 @@
 
     <!-- Current market price -->
     <div class="market-price">
-      <span class="price-value">1 {{ tokenA.symbol }} = {{ currentMarketPrice.toFixed(6) }} {{ tokenB?.symbol }}</span>
+      <span class="price-value">1 {{ tokenA?.symbol }} = {{ currentMarketPrice }} {{ tokenB?.symbol }}</span>
     </div>
 
     <!-- Order levels grid -->
@@ -117,7 +117,7 @@
 </template>
 
 <script>
-import { ref, reactive, computed, watch, onMounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, toRefs } from 'vue';
 import deleteImage from '@/../assets/delete.svg';
 
 export default {
@@ -166,11 +166,46 @@ export default {
       { triggerPrice: null, balancePercentage: null  }
     ]);
 
-    // Calculate current market price
-    const currentMarketPrice = computed(() => {
-      if (!props.tokenA?.price || !props.tokenB?.price) return 0;
-      return props.tokenA.price / props.tokenB.price;
+    const { tokenA, tokenB, tokensByAddresses } = toRefs(props);
+    
+    // Create computed properties for prices
+    const tokenAPrice = computed(() => {
+      if (!tokenA.value) return 0;
+      // First check tokensByAddresses for most up-to-date price
+      if (tokensByAddresses.value && tokenA.value.address) {
+        const address = tokenA.value.address.toLowerCase();
+        if (tokensByAddresses.value[address]) {
+          return tokensByAddresses.value[address].price || 0;
+        }
+      }
+      return tokenA.value.price || 0;
     });
+    
+    const tokenBPrice = computed(() => {
+      if (!tokenB.value) return 0;
+      if (tokensByAddresses.value && tokenB.value.address) {
+        const address = tokenB.value.address.toLowerCase();
+        if (tokensByAddresses.value[address]) {
+          return tokensByAddresses.value[address].price || 0;
+        }
+      }
+      return tokenB.value.price || 0;
+    });
+    
+    const currentMarketPrice = computed(() => {
+      const priceA = Number(tokenAPrice.value);
+      const priceB = Number(tokenBPrice.value);
+      
+      if (!priceA || !priceB) {
+        console.log('Cannot calculate market price - missing prices', { priceA, priceB });
+        return 0;
+      }
+      
+      const ratio = priceA / priceB;
+      console.log(`Current market price: ${ratio} (${priceA} / ${priceB})`);
+      return ratio;
+    });
+    
 
     const isCloseToTrigger = (type, level) => {
       if (!level.triggerPrice || !level.balancePercentage || isPaused.value) return false;
@@ -319,6 +354,8 @@ export default {
     };
 
     watch(() => props.tokensByAddresses, (newTokens) => {
+      console.log('Tokens updated:', newTokens);
+      console.log('refreshing prices');
       if (newTokens[props.tokenA.address]) {
         props.tokenA.price = newTokens[props.tokenA.address].price;
       }

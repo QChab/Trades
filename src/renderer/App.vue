@@ -296,6 +296,7 @@
       const ethPrice = ref(0);
 
       async function getEthUsd () {
+        console.log('fetching eth price')
         try {
           const url =
             'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd';
@@ -326,7 +327,10 @@
         return 0;
       }
       ( async () => ethPrice.value = await getEthUsd())();
-      setTimeout(async () => ethPrice.value = await getEthUsd(), 20000);
+      setInterval(async () => { 
+        ethPrice.value = await getEthUsd();
+        console.log({newEthPrice: ethPrice.value})
+       }, 20000);
 
       const readDataFromString = async (args) => { 
         let { fileContent, ext } = args;

@@ -433,7 +433,7 @@ export default {
     const shouldUseUniswapAndBalancer = ref(true);
     const priceLimit = ref(null);
 
-    const tokens = reactive([
+    const tokens = ref([
       { price: 0, address: ethers.constants.AddressZero, symbol: 'ETH', decimals: 18 },
       { price: 0, address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6 },
       { price: 0, address: '0x514910771af9ca656af840dff83e8264ecf986ca', symbol: 'LINK', decimals: 18 },
@@ -455,6 +455,10 @@ export default {
       { price: 0, address: '', symbol: '', decimals: null},
       { price: 0, address: '', symbol: '', decimals: null},
     ]);
+
+    const computedEthPrice = computed(() => {
+      return props.ethPrice || 0;
+    });
 
     const tokensInRow = reactive([
       {
@@ -555,7 +559,7 @@ export default {
 
     // Filter out tokens without valid symbol/address
     const filteredTokens = computed(() =>
-      tokens.filter(t => t.symbol && t.address && t.decimals != null && t.symbol !== '' && t.address !== '')
+      tokens.value.filter(t => t.symbol && t.address && t.decimals != null && t.symbol !== '' && t.address !== '')
     );
 
     // Build a nested map: { [userAddress]: { [tokenAddress]: availableBalance } }
@@ -1543,13 +1547,63 @@ export default {
 
     const setTokenPrices = async (tokenArray) => {
       const tokenPrices = await tokensUsd(tokenArray, props.ethPrice);
+      
+      // Create a copy of the entire array
+      const updatedTokens = [...tokenArray];
+      
+      // Update prices in the copy
       for (const tokenAddress in tokenPrices) {
-        let index = tokenArray.findIndex((t) => t.address.toLowerCase() === tokenAddress)
-        tokenArray[index].price = tokenPrices[tokenAddress]
+        let index = updatedTokens.findIndex((t) => t.address?.toLowerCase() === tokenAddress);
+        if (index >= 0) {
+          // Create new token object with updated price
+          updatedTokens[index] = { 
+            ...updatedTokens[index], 
+            price: tokenPrices[tokenAddress] 
+          };
+          
+          // Also update tokensByAddresses
+          if (tokensByAddresses.value[tokenAddress]) {
+            tokensByAddresses.value[tokenAddress] = {
+              ...tokensByAddresses.value[tokenAddress],
+              price: tokenPrices[tokenAddress]
+            };
+          }
+        }
       }
-    };
-
-    // ─── Methods ─────────────────────────────────────────────────────────────
+      
+      // Replace the entire tokens array to trigger reactivity
+      tokens.value = updatedTokens;
+      
+      // Also update tokensInRow with new references
+      tokensInRow.forEach((row, i) => {
+        if (row.token?.address) {
+          const tokenAddress = row.token.address.toLowerCase();
+          if (tokenPrices[tokenAddress]) {
+            // Create a new object to trigger reactivity
+            tokensInRow[i] = {
+              ...tokensInRow[i],
+              token: {
+                ...row.token,
+                price: tokenPrices[tokenAddress]
+              }
+            };
+          }
+        }
+        
+        // Update prices for columns
+        row.columns.forEach((col, j) => {
+          if (col.address) {
+            const colAddress = col.address.toLowerCase();
+            if (tokenPrices[colAddress]) {
+              tokensInRow[i].columns[j] = {
+                ...col,
+                price: tokenPrices[colAddress]
+              };
+            }
+          }
+        });
+      });
+    }
 
     async function getTokenSymbol(contractAddress) {
       const c = new ethers.Contract(contractAddress, ERC20_ABI, toRaw(props.provider));
@@ -1563,26 +1617,24 @@ export default {
     async function findSymbol(index, contractAddress) {
       try {
         if (contractAddress === ethers.constants.AddressZero) {
-          tokens[index].decimals = 18;
-          tokens[index].symbol = 'ETH';
-          tokens[index].price = props.ethPrice;
+          tokens.value[index].decimals = 18;
+          tokens.value[index].symbol = 'ETH';
+          tokens.value[index].price = props.ethPrice;
         } else if (ethers.utils.isAddress(contractAddress)) {
-          tokens[index].decimals = await getTokenDecimals(contractAddress);
-          tokens[index].symbol   = await getTokenSymbol(contractAddress);
-          tokens[index].price    = await tokenUsd(contractAddress, props.ethPrice);
+          tokens.value[index].decimals = await getTokenDecimals(contractAddress);
+          tokens.value[index].symbol   = await getTokenSymbol(contractAddress);
+          tokens.value[index].price    = await tokenUsd(contractAddress, props.ethPrice);
         } else {
-          tokens[index].symbol = null;
+          tokens.value[index].symbol = null;
         }
-        tokens[index].address = tokens[index].address.toLowerCase();
+        tokens.value[index].address = tokens.value[index].address.toLowerCase();
       } catch {
-        tokens[index].symbol = null;
+        tokens.value[index].symbol = null;
       }
     }
+
     function deleteToken(index) {
-      tokens[index].address = '';
-      tokens[index].symbol = '';
-      tokens[index].decimals = null;
-      tokens[index].price = 0;
+      tokens.value[index] = {address: '', symbol: '', decimals: null, price: 0};
     }
 
     function switchTokens() {
@@ -1822,7 +1874,7 @@ export default {
 
     // Emit when tokens scaffold changes
     const emitSettings = () => {
-      const cleaned = tokens.filter(t =>
+      const cleaned = tokens.value.filter(t =>
         t.symbol &&
         t.address &&
         (ethers.utils.isAddress(t.address) || t.address === ethers.constants.AddressZero)
@@ -1830,7 +1882,7 @@ export default {
       emit('update:settings', { tokens: cleaned });
     };
 
-    watch(() => tokens, () => emitSettings(), { deep: true });
+    watch(() => tokens.value, () => emitSettings(), { deep: true });
 
     watch(
       [() => priceLimit.value, () => fromAmount.value, () => fromTokenAddress.value, () => toTokenAddress.value],
@@ -2015,7 +2067,7 @@ export default {
     let isCheckingPendingOrders = false;
     async function checkPendingOrdersToTrigger() {
       try {
-        await setTokenPrices(tokens);
+        await setTokenPrices(tokens.value);
       } catch (error) {
         console.error('Error updating token prices:', error);
       }
@@ -2365,11 +2417,13 @@ export default {
       automaticOrders.value = orders;
     };
 
-    watch(() => props.ethPrice, () => setTokenPrices(tokens), { immediate: true });
+    watch(() => computedEthPrice.value, () => {
+      console.log('eth price changed');
+    }, { immediate: true });
 
     // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
     watch(
-      () => tokens,
+      () => tokens.value,
       (newTokens) => {
         const map = {};
         for (const t of newTokens) {
@@ -2390,7 +2444,7 @@ export default {
       { immediate: true, deep: true }
     );
 
-    watch(() => tokens, () => emit('update:settings', { tokens: [...tokens] }), { deep: true });
+    watch(() => tokens.value, (tokensValue) => emit('update:settings', { tokens: [...tokensValue] }), { deep: true });
     watch(() => tokensInRow, () => emit('update:settings', { tokensInRow: [...tokensInRow] }), { deep: true });
     watch(
       () => props.addresses,
@@ -2420,7 +2474,7 @@ export default {
       if (settings?.tokens) {
         for (let i = 0; i < settings.tokens.length; i++) {
           if (settings.tokens[i]?.address && settings.tokens[i]?.symbol) {
-            tokens[i] = settings.tokens[i];
+            tokens.value[i] = settings.tokens[i];
           }
         }
       }
@@ -2529,6 +2583,7 @@ export default {
       addCellToRow,
       updateDetailsOrder,
       automaticOrders,
+      computedEthPrice,
     };
   }
 };
