@@ -45,7 +45,7 @@ export function useBalancerV3() {
     );
     const wethIsEth = true; // If true, incoming ETH will be wrapped to WETH, otherwise the Vault will pull WETH tokens
     const deadline = 999999999999999999n; // Deadline for the swap, in this case infinite
-    const slippage = Slippage.fromPercentage("0.7"); // 0.1%
+    const slippage = Slippage.fromPercentage("0.5"); // 0.1%
     const swapAmount = TokenAmount.fromHumanAmount(tokenIn, amountIn + '');
 
     // API is used to fetch best swap paths from available liquidity across v2 and v3

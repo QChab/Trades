@@ -271,7 +271,7 @@ async function sendTransaction(transaction) {
 
     const txData = {
       from: await wallet.getAddress(),
-      to: transaction.contractAddress,
+      to: BALANCER_VAULT_ADDRESS,
       data: transaction.callData,
       value: transaction.value,
       maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
@@ -311,11 +311,9 @@ const ERC20_ABI = [
   "function approve(address spender, uint256 amount) returns (bool)",
 ];
 
-// APPROVE TOKEN OF SPENDER FOR PERMIT2
-async function approveSpender({from, contractAddress, spender, protocol}) {
-  console.log({from, contractAddress, spender});
+// APPROVE TOKEN OF SPENDER FOR PERMIT2 OR TOKEN CONTRACT
+async function approveSpender({ from, contractAddress, spender, permit2Spender }) {
   const warnings = [];
-
   try {
     const wallet = getWallet(from);
     const balance = await provider.getBalance(wallet.address);
@@ -323,57 +321,46 @@ async function approveSpender({from, contractAddress, spender, protocol}) {
     if (balanceEth < 0.0005)
       throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.0005)`)
     else if (balanceEth < 0.01)
-      warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
-    
+      warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`);
+
     const overrides = {
-      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
-      maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (40 * 1000000000))).toFixed(3), 9),
+      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1e9).toFixed(3), 9),
+      maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (40 * 1e9))).toFixed(3), 9),
     };
 
-    const erc20 = new ethers.Contract(
-      contractAddress,
-      ERC20_ABI,
-      provider
-    );
-
-    const allowance = await erc20.allowance(from, spender);
-    if (Number(allowance) === 0 || Number(allowance) < 1e27) {
-      const erc20WithSigner = erc20.connect(wallet);
-      const tx1 = await erc20WithSigner.approve(spender, '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', overrides);
-      await tx1.wait();
+    // 1. Approve ERC20 for spender (Permit2, Vault, or Router)
+    const erc20 = new ethers.Contract(contractAddress, ERC20_ABI, wallet);
+    let allowance = await erc20.allowance(from, spender);
+    if (BigNumber.from(allowance).lt(BigNumber.from('100000000000000000000000000'))) {
+      const tx = await erc20.approve(spender, '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', overrides);
+      await tx.wait();
     }
 
-    if (protocol === 'Uniswap' || protocol === 'Uniswap & Balancer' || protocol === 'Balancer') {
+    // 2. If spender is Permit2 and permit2Spender is provided, approve Permit2 for that spender
+    if (spender.toLowerCase() === PERMIT2_ADDRESS.toLowerCase() && permit2Spender) {
       const PERMIT2_ABI = [
         "function approve(address token, address spender, uint160 amount, uint48 expiration) external",
         "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
       ];
       const permit2Contract = new ethers.Contract(PERMIT2_ADDRESS, PERMIT2_ABI, wallet);
 
-      let results = await permit2Contract.allowance(
-        from,
-        contractAddress,
-        '0xAE563E3f8219521950555F5962419C8919758Ea2',
-      );
-      console.log({results});
-      if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
-        console.log('should send approve for permit2');
+      let [p2allow] = await permit2Contract.allowance(from, contractAddress, permit2Spender);
+      if (BigNumber.from(p2allow).lt(BigNumber.from('100000000000000000000000000'))) {
         const tx2 = await permit2Contract.approve(
           contractAddress,
-          '0xAE563E3f8219521950555F5962419C8919758Ea2',
+          permit2Spender,
           '1000000000000000000000000000000000000000000000',
-          Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50,
+          Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365 * 50, // 50 years
           overrides
         );
-        console.log('tx2', tx2);
         await tx2.wait();
       }
     }
 
-    return {success: true, warnings}
+    return { success: true, warnings };
   } catch (err) {
     console.error(err);
-    return {success: false, error: err.toString(), warnings};
+    return { success: false, error: err.toString(), warnings };
   }
 }
 
@@ -784,8 +771,8 @@ function createWindow() {
     return sendTrade(trade);
   });
 
-  ipcMain.handle('approve-spender', (event, from, contractAddress, spender, protocol) => {
-    return approveSpender({from, contractAddress, spender, protocol});
+  ipcMain.handle('approve-spender', (event, from, contractAddress, spender, permit2Spender) => {
+    return approveSpender({from, contractAddress, spender, permit2Spender});
   });
 
   ipcMain.handle('confirm-trade', (event, txId, gasCost, toAmount) => {

@@ -320,7 +320,7 @@ export default {
     const tabOrder         = ref('market');
     const isSwapButtonDisabled = ref(false);
     const needsToApprove   = ref(false);
-    const slippage         = ref(70);
+    const slippage         = ref(50);
     const shouldUseUniswap = ref(true);
     const shouldUseBalancer = ref(true);
     const shouldUseUniswapAndBalancer = ref(true);
@@ -926,7 +926,7 @@ export default {
       }
     );
 
-    const checkAllowances = async (tokenAddress, isUsingUniswap, globalTrades) => {
+    const checkAllowances = async (tokenAddress, isUsingUniswap, localTrades) => {
       if (!senderDetails.value?.address) {
         needsToApprove.value = false;
         return;
@@ -936,35 +936,18 @@ export default {
         ERC20_ABI,
         toRaw(props.provider)
       );
-      const rawAllowance = await erc20.allowance(
-        senderDetails.value.address,
-        isUsingUniswap ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS,
-      );
-      console.log('Allowance for ', tokenAddress, ' is', rawAllowance.toString());
-      // If allowance < 1e27 (arbitrary “sufficient” threshold), require approval
-      if (BigNumber.from(rawAllowance).lt(BigNumber.from('100000000000000000000000000')))
-        return needsToApprove.value = true;
 
-      let otherBalancerAddress;
-      if (globalTrades && globalTrades.length > 0) {
-        console.log(globalTrades)
-        const balancerTrade = globalTrades.find(t => t.callData && t.contractAddress !== BALANCER_VAULT_ADDRESS);
-        console.log({balancerTrade})
-        if (balancerTrade) {
-          otherBalancerAddress = balancerTrade.contractAddress;
-        }
-        if (otherBalancerAddress) {
-          const otherAllowance = await erc20.allowance(
-            senderDetails.value.address,
-            otherBalancerAddress,
-          );
-          if (BigNumber.from(otherAllowance).lt(BigNumber.from('100000000000000000000000000')))
-            return needsToApprove.value = true;
-        }
-      }
-      
+      // Uniswap (and Uniswap & Balancer mixed)
       if (isUsingUniswap) {
-        // double‐check Permit2 → Router allowance
+        // 1. ERC20.approve(PERMIT2_ADDRESS)
+        const permitAllowance = await erc20.allowance(
+          senderDetails.value.address,
+          PERMIT2_ADDRESS
+        );
+        if (BigNumber.from(permitAllowance).lt(BigNumber.from('100000000000000000000000000')))
+          return needsToApprove.value = true;
+
+        // 2. PERMIT2_CONTRACT.allowance(owner, ERC20, UNIVERSAL_ROUTER_ADDRESS)
         const permit2 = new ethers.Contract(
           PERMIT2_ADDRESS,
           ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
@@ -975,14 +958,69 @@ export default {
           tokenAddress,
           UNIVERSAL_ROUTER_ADDRESS
         );
-        console.log('Permit2 allowance for ', tokenAddress, ' is', remaining.toString());
         if (BigNumber.from(remaining).lt(BigNumber.from('100000000000000000000000000'))) {
           needsToApprove.value = true;
-        } else {
+          return;
+        }
+        needsToApprove.value = false;
+        return;
+      }
+
+      // Balancer V2
+      if (!localTrades || (localTrades && localTrades.length > 0)) {
+        const balancerTradeV2 = localTrades.find(
+          t => t.callData && t.contractAddress.toLowerCase() === BALANCER_VAULT_ADDRESS.toLowerCase()
+        );
+        if (balancerTradeV2) {
+          // ERC20.approve(BALANCER_VAULT_ADDRESS)
+          const balancerAllowance = await erc20.allowance(
+            senderDetails.value.address,
+            BALANCER_VAULT_ADDRESS
+          );
+          if (BigNumber.from(balancerAllowance).lt(BigNumber.from('100000000000000000000000000')))
+            return needsToApprove.value = true;
           needsToApprove.value = false;
+          return;
         }
       }
-    }
+
+      // Balancer V3
+      if (localTrades && localTrades.length > 0) {
+        const balancerTradeV3 = localTrades.find(
+          t => t.callData && t.contractAddress.toLowerCase() !== BALANCER_VAULT_ADDRESS.toLowerCase()
+        );
+        if (balancerTradeV3) {
+          // 1. ERC20.approve(PERMIT2_ADDRESS)
+          const permitAllowance = await erc20.allowance(
+            senderDetails.value.address,
+            PERMIT2_ADDRESS
+          );
+          if (BigNumber.from(permitAllowance).lt(BigNumber.from('100000000000000000000000000')))
+            return needsToApprove.value = true;
+
+          // 2. PERMIT2_CONTRACT.allowance(owner, ERC20, otherContractAddress)
+          const permit2 = new ethers.Contract(
+            PERMIT2_ADDRESS,
+            ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
+            toRaw(props.provider)
+          );
+          const [remaining] = await permit2.allowance(
+            senderDetails.value.address,
+            tokenAddress,
+            balancerTradeV3.contractAddress
+          );
+          if (BigNumber.from(remaining).lt(BigNumber.from('100000000000000000000000000'))) {
+            needsToApprove.value = true;
+            return;
+          }
+          needsToApprove.value = false;
+          return;
+        }
+      }
+
+      // Default: no approval needed
+      needsToApprove.value = false;
+    };
 
     const findBestMixedTrades = (resultsU, rawResultsB, toTokenAddress, gasLimitBalancer) => {
       let validTrades, totalHuman, totalBig;
@@ -1657,104 +1695,42 @@ export default {
     }
 
     // ─── approveSpending(): Approve ERC20 → Permit2 → Router ───────────────
-    const approveSpending = async () => {
+    const approveSpending = async (localTrades) => {
       try {
         isSwapButtonDisabled.value = true;
         const originalAddress = senderDetails.value.address;
 
-        if (tabOrder.value === 'limit') {
-          const { success, error } = await window.electronAPI.approveSpender(
-            originalAddress,
-            fromTokenAddress.value,
-            PERMIT2_ADDRESS,
-            'Uniswap & Balancer'
-          );
-          if (!success) throw error;
-          const resBalancer = await window.electronAPI.approveSpender(
-            originalAddress,
-            fromTokenAddress.value,
-            BALANCER_VAULT_ADDRESS,
-            'Uniswap & Balancer'
-          );
-        } else {
-          const { success, error } = await window.electronAPI.approveSpender(
-            originalAddress,
-            fromTokenAddress.value,
-            tradeSummary.protocol === 'Uniswap' ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS,
-            tradeSummary.protocol
-          );
-          if (!success) throw error;
-        }
-
-        let otherBalancerAddress;
-        if (trades.value && trades.value.length > 0) {
-          const balancerTrade = trades.value.find(t => t.callData && t.contractAddress !== BALANCER_VAULT_ADDRESS);
-          if (balancerTrade) {
-            otherBalancerAddress = balancerTrade.contractAddress;
-          }
-          if (otherBalancerAddress) {
-            await window.electronAPI.approveSpender(
-              originalAddress,
-              fromTokenAddress.value,
-              otherBalancerAddress,
-              'Balancer'
-            );
-          }
-        }
-
-        // Pull until allowance has shown up on‐chain
-        let allowance = BigNumber.from(0);
-        const erc20 = new ethers.Contract(
-          fromTokenAddress.value,
-          ERC20_ABI,
-          toRaw(props.provider)
-        );
-        while (allowance.isZero() && originalAddress === senderDetails.value.address) {
-          allowance = await erc20.allowance(
-            originalAddress,
-            tradeSummary.protocol === 'Uniswap' || tradeSummary.protocol === 'Uniswap & Balancer' ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS
-          );
-          if (allowance.isZero()) {
-            await new Promise(r => setTimeout(r, 2000));
-          }
-        }
-        if (tradeSummary.protocol === 'Uniswap & Balancer' || tabOrder.value === 'limit') {
-          allowance = BigNumber.from(0)
-          while (allowance.isZero() && originalAddress === senderDetails.value.address) {
-            allowance = await erc20.allowance(originalAddress, BALANCER_VAULT_ADDRESS);
-            if (allowance.isZero()) {
-              await new Promise(r => setTimeout(r, 2000));
-            }
-          }
-        }
-        if (otherBalancerAddress) {
-          allowance = BigNumber.from(0)
-          while (allowance.isZero() && originalAddress === senderDetails.value.address) {
-            allowance = await erc20.allowance(originalAddress, otherBalancerAddress);
-            if (allowance.isZero()) {
-              await new Promise(r => setTimeout(r, 2000));
-            }
-          }
-        }
-
+        // Uniswap
         if (tradeSummary.protocol === 'Uniswap' || tradeSummary.protocol === 'Uniswap & Balancer') {
-          // Now check Permit2's allowance
-          const permit2 = new ethers.Contract(
+          const { success, error } = await window.electronAPI.approveSpender(
+            originalAddress,
+            fromTokenAddress.value,
             PERMIT2_ADDRESS,
-            ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
-            toRaw(props.provider)
+            UNIVERSAL_ROUTER_ADDRESS
           );
-          let p2allow = BigNumber.from(0);
-          while (p2allow.isZero() && originalAddress === senderDetails.value.address) {
-            const [remaining] = await permit2.allowance(
+          if (!success) throw error;
+        }
+        // Balancer
+        if (tradeSummary.protocol === 'Balancer' || tradeSummary.protocol === 'Uniswap & Balancer') {
+          const myTrades = localTrades || trades.value;
+          const balancerTradeV3 = myTrades.value.find(
+            t => t.callData && t.contractAddress.toLowerCase() !== BALANCER_VAULT_ADDRESS.toLowerCase
+          );
+          if (!balancerTradeV3) {
+            const { success, error } = await window.electronAPI.approveSpender(
               originalAddress,
               fromTokenAddress.value,
-              UNIVERSAL_ROUTER_ADDRESS
+              BALANCER_VAULT_ADDRESS
             );
-            p2allow = BigNumber.from(remaining.toString());
-            if (p2allow.isZero()) {
-              await new Promise(r => setTimeout(r, 2000));
-            }
+            if (!success) throw error;
+          } else {
+            const { success, error } = await window.electronAPI.approveSpender(
+              originalAddress,
+              fromTokenAddress.value,
+              PERMIT2_ADDRESS,
+              balancerTradeV3.contractAddress
+            );
+            if (!success) throw error;
           }
         }
 
@@ -2110,6 +2086,7 @@ export default {
 
             try {
               // Execute the trade with the specific trades and summary for this order
+              await approveSpending(bestTradeResult.trades);
               await triggerTrade(bestTradeResult.trades, limitOrderTradeSummary);
 
               // Only mark as completed if trade was successful
