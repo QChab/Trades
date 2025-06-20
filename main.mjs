@@ -252,6 +252,8 @@ function refreshProviders () {
     new ethers.providers.JsonRpcProvider(url,{ chainId: 1, name: 'homestead' })
   );
   provider = new ethers.providers.FallbackProvider(providersList, 1);
+
+  (async () => console.log(await provider.getTransactionCount('0x30c4b0ff44fc27d58fbbcf0405799c36d12da62e', 'pending')))()
 }
 
 async function sendTransaction(transaction) {
@@ -318,7 +320,7 @@ async function approveSpender({from, contractAddress, spender, protocol}) {
     const wallet = getWallet(from);
     const balance = await provider.getBalance(wallet.address);
     const balanceEth = Number(ethers.utils.formatEther(balance));
-    if (balanceEth < 0.0005)
+    if (balanceEth < 0.0004)
       throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.0005)`)
     else if (balanceEth < 0.01)
       warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
@@ -334,12 +336,14 @@ async function approveSpender({from, contractAddress, spender, protocol}) {
       provider
     );
 
+    console.log('Checking allowance for', contractAddress, 'to', spender);
     const allowance = await erc20.allowance(from, spender);
     if (Number(allowance) === 0 || Number(allowance) < 1e27) {
       const erc20WithSigner = erc20.connect(wallet);
       const tx1 = await erc20WithSigner.approve(spender, '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', overrides);
       await tx1.wait();
     }
+    console.log('Allowance approved for', contractAddress, 'to', spender);
 
     if (protocol === 'Uniswap' || protocol === 'Uniswap & Balancer') {
       const PERMIT2_ABI = [
@@ -854,7 +858,6 @@ function createWindow() {
 
   ipcMain.handle('save-settings', (event, newSettings) => {
     console.log('saving');
-    console.log(newSettings);
     settings = newSettings;
     fs.writeFileSync(settingsPath, JSON.stringify(settings));
   });
