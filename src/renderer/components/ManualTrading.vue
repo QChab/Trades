@@ -129,7 +129,7 @@
               </button>
             </div>
             <div v-else>
-              <p class="details-message">Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 50000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
+              <p class="details-message">Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 100000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
               <button
                 @click="approveSpending()"
                 :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
@@ -555,7 +555,7 @@ export default {
       let uniswapGasLimit = 0
       let offsetUniswap, outputUniswap;
       if (validTrades && validTrades.length && toToken.price && props.gasPrice && props.ethPrice) {
-        uniswapGasLimit = 100000 + 50000 * validTrades.length;
+        uniswapGasLimit = 120000 + 60000 * validTrades.length;
         offsetUniswap = BigNumber.from(Math.ceil((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, toToken.decimals) / toToken.price).toPrecision(50).split('.')[0])
         outputUniswap = totalBig.sub(offsetUniswap)
       }
@@ -744,7 +744,7 @@ export default {
           bestMixed.tradesB,
         ];
         protocol = 'Uniswap & Balancer';
-        finalGasLimit = Number(100000 + 50000 * bestMixed.tradesU.validTrades.length) + Number(gasLimit);
+        finalGasLimit = Number(120000 + 60000 * bestMixed.tradesU.validTrades.length) + Number(gasLimit);
       } else if (isUsingUniswap) {
         finalTrades = validTrades;
         protocol = 'Uniswap';
@@ -1040,7 +1040,7 @@ export default {
       let uniswapGasLimit = 0
       let offsetUniswap, outputUniswap;
       if (validTrades && validTrades.length && tokensByAddresses.value[toTokenAddress].price && props.gasPrice && props.ethPrice) {
-        uniswapGasLimit = 100000 + 50000 * validTrades.length; // Fixed reference
+        uniswapGasLimit = 120000 + 60000 * validTrades.length; // Fixed reference
         offsetUniswap = BigNumber.from(Math.ceil((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[toTokenAddress].decimals) / tokensByAddresses.value[toTokenAddress].price).toPrecision(50).split('.')[0])
         outputUniswap = totalBig.sub(offsetUniswap)
       }
@@ -1713,8 +1713,8 @@ export default {
         // Balancer
         if (tradeSummary.protocol === 'Balancer' || tradeSummary.protocol === 'Uniswap & Balancer') {
           const myTrades = localTrades || trades.value;
-          const balancerTradeV3 = myTrades.value.find(
-            t => t.callData && t.contractAddress.toLowerCase() !== BALANCER_VAULT_ADDRESS.toLowerCase
+          const balancerTradeV3 = myTrades.find(
+            t => t.callData && t.contractAddress.toLowerCase() !== BALANCER_VAULT_ADDRESS.toLowerCase()
           );
           if (!balancerTradeV3) {
             const { success, error } = await window.electronAPI.approveSpender(

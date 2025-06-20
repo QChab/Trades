@@ -20,7 +20,7 @@ const stateStoreFile = path.join(userDataPath, 'window-state.json');
 const infuraKeyFile = path.join(userDataPath, 'ik.json');
 let infuraKeys = [];
 
-import { ethers } from 'ethers';
+import { ethers, BigNumber } from 'ethers';
 const UNIVERSAL_ROUTER_ADDRESS = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
 const BALANCER_VAULT_ADDRESS   = '0xBA12222222228d8Ba445958a75a0704d566BF2C8';
 const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
@@ -271,7 +271,7 @@ async function sendTransaction(transaction) {
 
     const txData = {
       from: await wallet.getAddress(),
-      to: BALANCER_VAULT_ADDRESS,
+      to: transaction.contractAddress,
       data: transaction.callData,
       value: transaction.value,
       maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
