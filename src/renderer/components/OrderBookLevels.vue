@@ -148,7 +148,6 @@ export default {
   emits: ['orderUpdate', 'delete'],
   setup(props, { emit }) {
     const isPaused = ref(false);
-    console.log(props.details);
 
     // Initialize 3 sell levels and 3 buy levels
     const sellLevels = reactive([

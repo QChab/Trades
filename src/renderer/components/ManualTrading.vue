@@ -181,6 +181,7 @@
           class="automatic-mode"
           :class="{'no-addresses-unlocked': !addresses.length}"
         >
+          <h3>{{ automaticOrders.length }} buy/sell levels set</h3>
           <div class="matrix">
             <div v-for="(tokenInRow, i) in tokensInRow" class="token-row">
               <div
@@ -505,6 +506,8 @@ export default {
         columns: []
       },
     ])
+
+    const automaticOrders = ref([]);
 
     const shouldSelectTokenInRow = ref(false);
     const newTokenAddress = ref(null);
@@ -1544,111 +1547,6 @@ export default {
         tokenArray[index].price = tokenPrices[tokenAddress]
       }
     };
-    watch(() => props.ethPrice, () => setTokenPrices(tokens), { immediate: true });
-    const priceUpdateInterval = setInterval(() => {
-      if (!pendingLimitOrders.value.length) setTokenPrices(tokens);
-    }, 12_000);
-
-    // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
-    watch(
-      () => tokens,
-      (newTokens) => {
-        const map = {};
-        for (const t of newTokens) {
-          if (t.address && t.symbol && t.decimals != null) {
-            map[t.address] = t;
-          }
-        }
-        tokensByAddresses.value = map;
-
-        // Initialize default selection if not set
-        if (!fromTokenAddress.value && filteredTokens.value.length > 0) {
-          fromTokenAddress.value = filteredTokens.value[0].address;
-        }
-        if (!toTokenAddress.value && filteredTokens.value.length > 1) {
-          toTokenAddress.value = filteredTokens.value[1].address;
-        }
-      },
-      { immediate: true, deep: true }
-    );
-
-    // Persist tokens configuration on mount
-    onMounted(async () => {
-      const settings = await window.electronAPI.loadSettings();
-      console.log(settings)
-      if (settings?.tokens) {
-        for (let i = 0; i < settings.tokens.length; i++) {
-          if (settings.tokens[i]?.address && settings.tokens[i]?.symbol) {
-            tokens[i] = settings.tokens[i];
-          }
-        }
-      }
-      if (settings?.tokensInRow) {
-        for (let i = 0; i < settings.tokensInRow.length; i++) {
-          if (settings.tokensInRow[i]?.token?.address && settings.tokensInRow[i]?.token?.symbol) {
-            tokensInRow[i] = settings.tokensInRow[i];
-            console.log(settings.tokensInRow[i])
-          }
-        }
-      }
-
-      const dbOrders = await window.electronAPI.getPendingOrders();
-      if (dbOrders && Array.isArray(dbOrders)) {
-        pendingLimitOrders.value = dbOrders.map(o => ({
-          id: o.id,
-          fromAmount: o.fromAmount,
-          toAmount: o.toAmount, // Make sure to map this field
-          fromToken: { 
-            address: o.fromTokenAddress, 
-            symbol: o.fromTokenSymbol 
-          },
-          toToken: { 
-            address: o.toTokenAddress, 
-            symbol: o.toTokenSymbol 
-          },
-          priceLimit: parseFloat(o.priceLimit),
-          currentMarketPrice: o.currentMarketPrice ? parseFloat(o.currentMarketPrice) : null,
-          orderType: o.orderType || 'take_profit',
-          shouldSwitchTokensForLimit: Boolean(o.shouldSwitchTokensForLimit),
-          sender: { 
-            address: o.senderAddress, 
-            name: o.senderName 
-          },
-          status: o.status || 'pending',
-          createdAt: o.createdAt || null,
-          completedAt: o.completedAt || null,
-          executionPrice: o.executionPrice ? parseFloat(o.executionPrice) : null
-        })).sort((a, b) => {
-          const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
-          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
-          return dateB.getTime() - dateA.getTime();
-        });
-      }
-    });
-    watch(() => tokens, () => emit('update:settings', { tokens: [...tokens] }), { deep: true });
-    watch(() => tokensInRow, () => emit('update:settings', { tokensInRow: [...tokensInRow] }), { deep: true });
-
-    // Keep senderDetails in sync
-    watch(
-      () => props.addresses,
-      (addrs) => {
-        if (addrs && addrs[0]) {
-          senderDetails.value = addrs[0];
-        }
-      },
-      { immediate: true }
-    );
-    watch(
-      () => senderDetails.value,
-      (val) => {
-        if (!val) {
-          isSwapButtonDisabled.value = true;
-        } else {
-          needsToApprove.value = false;
-        }
-      },
-      { immediate: true }
-    );
 
     // ─── Methods ─────────────────────────────────────────────────────────────
 
@@ -2296,7 +2194,7 @@ export default {
               await window.electronAPI.updatePendingOrder(order);
 
               // Remove from pending orders list
-              pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);              // Save to database
+              pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
               await window.electronAPI.saveFailedTrade(failedTradeEntry);
             }
           } else {
@@ -2381,7 +2279,198 @@ export default {
 
     const updateDetailsOrder = (i, j, details) => {
       tokensInRow[i].columns[j].details = details;
+      generateOrdersFromLevels();
     }
+
+    const generateOrdersFromLevels = () => {
+      const orders = [];
+      const sender = senderDetails.value;
+      if (!sender?.address) return;
+    
+      // Build a quick lookup for balances
+      const balances = computedBalancesByAddress.value[sender.address.toLowerCase()] || {};
+    
+      tokensInRow.forEach((row, i) => {
+        // row.token is the "to" token for buys, "from" token for sells
+        row.columns.forEach((col, j) => {
+          // col is the "from" token for buys, "to" token for sells
+          if (!col.details || !col.details.buyLevels || !col.details.sellLevels) return;
+    
+          // BUY LEVELS (buy col with row.token)
+          col.details.buyLevels.forEach((buyLevel, k) => {
+            if (
+              buyLevel.triggerPrice &&
+              buyLevel.balancePercentage &&
+              !isNaN(buyLevel.triggerPrice) &&
+              !isNaN(buyLevel.balancePercentage)
+            ) {
+              // For a buy, fromToken is col, toToken is row.token
+              const fromToken = col;
+              const toToken = row.token;
+              const fromTokenAddr = fromToken.address?.toLowerCase();
+              const balance = balances[fromTokenAddr] || 0;
+              const fromAmount = (buyLevel.balancePercentage * 0.01 * balance);
+    
+              console.log(fromAmount)
+              if (fromAmount > 0) {
+                orders.push({
+                  id: Date.now() + i + j + k,
+                  fromAmount,
+                  fromToken: { ...fromToken },
+                  toToken: { ...toToken },
+                  priceLimit: buyLevel.triggerPrice,
+                  orderType: 'take_profit',
+                  shouldSwitchTokensForLimit: false,
+                  sender,
+                  status: 'pending',
+                  createdAt: new Date().toISOString(),
+                });
+              }
+            }
+          });
+    
+          // SELL LEVELS (sell col for row.token)
+          col.details.sellLevels.forEach((sellLevel, k) => {
+            if (
+              sellLevel.triggerPrice &&
+              sellLevel.balancePercentage &&
+              !isNaN(sellLevel.triggerPrice) &&
+              !isNaN(sellLevel.balancePercentage)
+            ) {
+              // For a sell, fromToken is row.token, toToken is col
+              const fromToken = row.token;
+              const toToken = col;
+              const fromTokenAddr = fromToken.address?.toLowerCase();
+              const balance = balances[fromTokenAddr] || 0;
+              const fromAmount = (sellLevel.balancePercentage * 0.01 * balance);
+    
+              if (fromAmount > 0) {
+                orders.push({
+                  id: Date.now() + i + j + k + 1000,
+                  fromAmount,
+                  fromToken: { ...fromToken },
+                  toToken: { ...toToken },
+                  priceLimit: sellLevel.triggerPrice,
+                  orderType: 'stop_loss',
+                  shouldSwitchTokensForLimit: true,
+                  sender,
+                  status: 'pending',
+                  createdAt: new Date().toISOString(),
+                });
+              }
+            }
+          });
+        });
+      });
+    
+      console.log(orders)
+      automaticOrders.value = orders;
+    };
+
+    watch(() => props.ethPrice, () => setTokenPrices(tokens), { immediate: true });
+    const priceUpdateInterval = setInterval(() => {
+      if (!pendingLimitOrders.value.length) setTokenPrices(tokens);
+    }, 12_000);
+
+    // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
+    watch(
+      () => tokens,
+      (newTokens) => {
+        const map = {};
+        for (const t of newTokens) {
+          if (t.address && t.symbol && t.decimals != null) {
+            map[t.address] = t;
+          }
+        }
+        tokensByAddresses.value = map;
+
+        // Initialize default selection if not set
+        if (!fromTokenAddress.value && filteredTokens.value.length > 0) {
+          fromTokenAddress.value = filteredTokens.value[0].address;
+        }
+        if (!toTokenAddress.value && filteredTokens.value.length > 1) {
+          toTokenAddress.value = filteredTokens.value[1].address;
+        }
+      },
+      { immediate: true, deep: true }
+    );
+
+    watch(() => tokens, () => emit('update:settings', { tokens: [...tokens] }), { deep: true });
+    watch(() => tokensInRow, () => emit('update:settings', { tokensInRow: [...tokensInRow] }), { deep: true });
+    watch(
+      () => props.addresses,
+      (addrs) => {
+        if (addrs && addrs[0]) {
+          senderDetails.value = addrs[0];
+        }
+        generateOrdersFromLevels();
+      },
+      { immediate: true }
+    );
+    watch(
+      () => senderDetails.value,
+      (val) => {
+        if (!val) {
+          isSwapButtonDisabled.value = true;
+        } else {
+          needsToApprove.value = false;
+        }
+      },
+      { immediate: true }
+    );
+
+    onMounted(async () => {
+      const settings = await window.electronAPI.loadSettings();
+      console.log(settings)
+      if (settings?.tokens) {
+        for (let i = 0; i < settings.tokens.length; i++) {
+          if (settings.tokens[i]?.address && settings.tokens[i]?.symbol) {
+            tokens[i] = settings.tokens[i];
+          }
+        }
+      }
+      if (settings?.tokensInRow) {
+        for (let i = 0; i < settings.tokensInRow.length; i++) {
+          if (settings.tokensInRow[i]?.token?.address && settings.tokensInRow[i]?.token?.symbol) {
+            tokensInRow[i] = settings.tokensInRow[i];
+          }
+        }
+        generateOrdersFromLevels();
+      }
+
+      const dbOrders = await window.electronAPI.getPendingOrders();
+      if (dbOrders && Array.isArray(dbOrders)) {
+        pendingLimitOrders.value = dbOrders.map(o => ({
+          id: o.id,
+          fromAmount: o.fromAmount,
+          toAmount: o.toAmount, // Make sure to map this field
+          fromToken: { 
+            address: o.fromTokenAddress, 
+            symbol: o.fromTokenSymbol 
+          },
+          toToken: { 
+            address: o.toTokenAddress, 
+            symbol: o.toTokenSymbol 
+          },
+          priceLimit: parseFloat(o.priceLimit),
+          currentMarketPrice: o.currentMarketPrice ? parseFloat(o.currentMarketPrice) : null,
+          orderType: o.orderType || 'take_profit',
+          shouldSwitchTokensForLimit: Boolean(o.shouldSwitchTokensForLimit),
+          sender: { 
+            address: o.senderAddress, 
+            name: o.senderName 
+          },
+          status: o.status || 'pending',
+          createdAt: o.createdAt || null,
+          completedAt: o.completedAt || null,
+          executionPrice: o.executionPrice ? parseFloat(o.executionPrice) : null
+        })).sort((a, b) => {
+          const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
+          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
+          return dateB.getTime() - dateA.getTime();
+        });
+      }
+    });
 
     return {
       // state
@@ -2444,6 +2533,7 @@ export default {
       addRowToMatrix,
       addCellToRow,
       updateDetailsOrder,
+      automaticOrders,
     };
   }
 };
@@ -3058,7 +3148,7 @@ h3 {
 }
 
 .automatic-mode {
-  padding: 40px 20px 20px;
+  padding: 20px 20px 20px;
 }
 
 .matrix {
@@ -3091,7 +3181,7 @@ h3 {
   flex-direction: row;
 }
 .token-symbol {
-  font-size: 16px;
+  font-size: 22px;
 }
 .new-token-details {
   cursor: pointer;
