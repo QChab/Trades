@@ -82,7 +82,6 @@ export function useBalancerV3() {
     let buildInput;
     // In v2 the sender/recipient can be set, in v3 it is always the msg.sender
     if (swap.protocolVersion === 2) {
-      console.log(`Using v2 protocol version`);
       buildInput = {
         slippage,
         deadline,
@@ -92,7 +91,6 @@ export function useBalancerV3() {
         recipient: senderAddress,
       };
     } else {
-      console.log(`Using v3 protocol version`);
       buildInput = {
         slippage,
         deadline,
