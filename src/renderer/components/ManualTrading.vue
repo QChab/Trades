@@ -540,12 +540,13 @@ export default {
           console.error(results[0].reason);
       }
 
-      let callData, outputAmount, value, gasLimit;
+      let callData, outputAmount, value, gasLimit, contractAddress;
       if (results[1] && results[1].status === 'fulfilled' && results[1].value) {
         callData = results[1].value.callData;
         outputAmount = results[1].value.outputAmount;
         value = results[1].value.value;
         gasLimit = results[1].value.gasLimit;
+        contractAddress = results[1].value.contractAddress;
       } else if (!shouldUseUniswapAndBalancerValue && !shouldUseUniswapValue && (!results[1] || results[1].status === 'rejected')) {
         if (results[1] && results[1].reason)
           throw results[1].reason;
@@ -749,7 +750,13 @@ export default {
         protocol = 'Uniswap';
         finalGasLimit = uniswapGasLimit;
       } else if (outputAmount) {
-        finalTrades = [{callData, outputAmount, value, tradeSummary}];
+        finalTrades = [{
+          callData,
+          outputAmount,
+          value,
+          tradeSummary,
+          contractAddress,
+        }];
         totalHuman = ethers.utils.formatUnits(outputAmount, toToken.decimals);
         protocol = 'Balancer';
         finalGasLimit = gasLimit;
@@ -891,10 +898,10 @@ export default {
             // Check if approval is needed
             if (_newFrom !== ethers.constants.AddressZero) {
               if (tradeSummary.protocol === 'Uniswap & Balancer') {
-                await checkAllowances(_newFrom, true);
-                await checkAllowances(_newFrom, false);
+                await checkAllowances(_newFrom, true, bestTradeResult.trades);
+                await checkAllowances(_newFrom, false, bestTradeResult.trades);
               } else 
-                await checkAllowances(_newFrom, tradeSummary.protocol === 'Uniswap');
+                await checkAllowances(_newFrom, tradeSummary.protocol === 'Uniswap', bestTradeResult.trades);
             } else {
               needsToApprove.value = false;
             }
@@ -919,7 +926,7 @@ export default {
       }
     );
 
-    const checkAllowances = async (tokenAddress, isUsingUniswap) => {
+    const checkAllowances = async (tokenAddress, isUsingUniswap, globalTrades) => {
       if (!senderDetails.value?.address) {
         needsToApprove.value = false;
         return;
@@ -935,8 +942,25 @@ export default {
       );
       console.log('Allowance for ', tokenAddress, ' is', rawAllowance.toString());
       // If allowance < 1e27 (arbitrary “sufficient” threshold), require approval
-      if (BigNumber.from(rawAllowance).lt(BigNumber.from('100000000000000000000000000'))) {
+      if (BigNumber.from(rawAllowance).lt(BigNumber.from('100000000000000000000000000')))
         return needsToApprove.value = true;
+
+      let otherBalancerAddress;
+      if (globalTrades && globalTrades.length > 0) {
+        console.log(globalTrades)
+        const balancerTrade = globalTrades.find(t => t.callData && t.contractAddress !== BALANCER_VAULT_ADDRESS);
+        console.log({balancerTrade})
+        if (balancerTrade) {
+          otherBalancerAddress = balancerTrade.contractAddress;
+        }
+        if (otherBalancerAddress) {
+          const otherAllowance = await erc20.allowance(
+            senderDetails.value.address,
+            otherBalancerAddress,
+          );
+          if (BigNumber.from(otherAllowance).lt(BigNumber.from('100000000000000000000000000')))
+            return needsToApprove.value = true;
+        }
       }
       
       if (isUsingUniswap) {
@@ -967,11 +991,12 @@ export default {
         totalHuman = resultsU.totalHuman;
         totalBig = resultsU.totalBig;
       }
-      let callData, outputAmount, value;
+      let callData, outputAmount, value, contractAddress
       if (rawResultsB && rawResultsB.status === 'fulfilled' && rawResultsB.value) {
         callData = rawResultsB.value.callData;
         outputAmount = BigNumber.from(rawResultsB.value.outputAmount || '0'); // Add fallback
         value = rawResultsB.value.value || '0'; // Add fallback
+        contractAddress = rawResultsB.value.contractAddress || BALANCER_VAULT_ADDRESS; // Add fallback
       }
 
       let uniswapGasLimit = 0
@@ -1000,6 +1025,7 @@ export default {
           callData: callData || null,
           outputAmount: outputAmount || BigNumber.from('0'),
           value: value || '0',
+          contractAddress: contractAddress || BALANCER_VAULT_ADDRESS,
         }
       }
     }
@@ -1008,7 +1034,7 @@ export default {
 
       const txData = {
         from: _newSenderAddress,
-        to: BALANCER_VAULT_ADDRESS,
+        to: result.contractAddress,
         data: result.callData,
         value: result.value,
         maxFeePerGas: ethers.utils.parseUnits((Number(props.gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
@@ -1033,7 +1059,13 @@ export default {
       }
       console.log(gasLimit);
 
-      return {outputAmount: result.expectedAmountOut, callData: result.callData, value: result.value, gasLimit: gasLimit}
+      return {
+        outputAmount: result.expectedAmountOut,
+        callData: result.callData,
+        value: result.value,
+        gasLimit: gasLimit,
+        contractAddress: result.contractAddress
+      };
     }
 
     const getTradesUniswap = async (_newFrom, _newTo, _newAmt) => {
@@ -1452,7 +1484,7 @@ export default {
       }
     }
 
-    // ─── triggerTrade(): Execute *all* legs in one Universal Router call ────
+    // ─── triggerTrade(): Execute *all* legs ────
     const triggerTrade = async (providedTrades = null, providedTradeSummary = null) => {
       let globalWarnings;
       try {
@@ -1499,6 +1531,7 @@ export default {
             value: currentTrades[0].value.toString(),
             from: currentTradeSummary.sender.address,
             tradeSummary: JSON.parse(JSON.stringify(currentTradeSummary)),
+            contractAddress: currentTrades[0].contractAddress,
           }
           const response = await window.electronAPI.sendTransaction(args);
           if (!response?.success)
@@ -1527,12 +1560,13 @@ export default {
             outputAmount: currentTrades.filter(t => t.callData)[0].outputAmount.toString(),
             value: currentTrades.filter(t => t.callData)[0].value.toString(),
             from: currentTradeSummary.sender.address,
+            contractAddress: currentTrades.filter(t => t.contractAddress)[0].contractAddress,
             tradeSummary: JSON.parse(JSON.stringify({
               ...currentTradeSummary,
               fromAmount: currentTradeSummary.fromAmountB,
               expectedToAmount: currentTradeSummary.toAmountB,
               toAmount: currentTradeSummary.toAmountB,
-              protocol: 'Balancer'
+              protocol: 'Balancer',
             })),
           })
           if (!resultsU?.success)
@@ -1652,6 +1686,22 @@ export default {
           if (!success) throw error;
         }
 
+        let otherBalancerAddress;
+        if (trades.value && trades.value.length > 0) {
+          const balancerTrade = trades.value.find(t => t.callData && t.contractAddress !== BALANCER_VAULT_ADDRESS);
+          if (balancerTrade) {
+            otherBalancerAddress = balancerTrade.contractAddress;
+          }
+          if (otherBalancerAddress) {
+            await window.electronAPI.approveSpender(
+              originalAddress,
+              fromTokenAddress.value,
+              otherBalancerAddress,
+              'Balancer'
+            );
+          }
+        }
+
         // Pull until allowance has shown up on‐chain
         let allowance = BigNumber.from(0);
         const erc20 = new ethers.Contract(
@@ -1672,6 +1722,15 @@ export default {
           allowance = BigNumber.from(0)
           while (allowance.isZero() && originalAddress === senderDetails.value.address) {
             allowance = await erc20.allowance(originalAddress, BALANCER_VAULT_ADDRESS);
+            if (allowance.isZero()) {
+              await new Promise(r => setTimeout(r, 2000));
+            }
+          }
+        }
+        if (otherBalancerAddress) {
+          allowance = BigNumber.from(0)
+          while (allowance.isZero() && originalAddress === senderDetails.value.address) {
+            allowance = await erc20.allowance(originalAddress, otherBalancerAddress);
             if (allowance.isZero()) {
               await new Promise(r => setTimeout(r, 2000));
             }

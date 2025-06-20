@@ -60,7 +60,21 @@ export function useBalancerV3() {
       tokenOut: tokenOut.address,
       swapKind,
       swapAmount,
+      maxPools: 2,
+      forceRefresh: true, // Force a fresh query instead of using cached data
+      filterInvalidPools: true // Filter out pools that might cause issues
     });
+
+    // const swapAmountOut = TokenAmount.fromHumanAmount(tokenOut, (amountIn * tokenInObject.price / tokenOutObject.price).toFixed(6));
+    
+    // const sorPaths = await balancerApi.sorSwapPaths.fetchSorSwapPaths({
+    //   chainId,
+    //   tokenIn: tokenIn.address,
+    //   tokenOut: tokenOut.address,
+    //   swapKind: SwapKind.GivenOut,
+    //   swapAmount: swapAmountOut,
+    //   maxPools: 4,
+    // });
 
     // Swap object provides useful helpers for re-querying, building call, etc
     const swap = new Swap({
@@ -75,11 +89,13 @@ export function useBalancerV3() {
 
     const rpcUrls = await window.electronAPI.getInfuraKeys();
     const updated = await swap.query(rpcUrls[0]);
+    console.log(updated);
     console.log(`Updated amount: ${updated.expectedAmountOut.amount}`);
 
     let buildInput;
     // In v2 the sender/recipient can be set, in v3 it is always the msg.sender
     if (swap.protocolVersion === 2) {
+      console.log(`Using v2 protocol version`);
       buildInput = {
         slippage,
         deadline,
@@ -89,6 +105,7 @@ export function useBalancerV3() {
         recipient: senderAddress,
       };
     } else {
+      console.log(`Using v3 protocol version`);
       buildInput = {
         slippage,
         deadline,
@@ -100,9 +117,11 @@ export function useBalancerV3() {
     // console.log(
     //   `Min Amount Out: ${callData.minAmountOut.amount}\n\nTx Data:\nTo: ${callData.to}\nCallData: ${callData.callData}\nValue: ${callData.value}`
     // );
+    // console.log(callData)
 
     return {
       ...callData,
+      contractAddress: updated.to,
       expectedAmountOut: updated.expectedAmountOut.amount,
     }
   }

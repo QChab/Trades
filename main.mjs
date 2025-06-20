@@ -267,13 +267,15 @@ async function sendTransaction(transaction) {
     else if (balanceEth < 0.01)
       warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
     
+    console.log(transaction.contractAddress);
+
     const txData = {
       from: await wallet.getAddress(),
-      to: BALANCER_VAULT_ADDRESS,
+      to: transaction.contractAddress,
       data: transaction.callData,
       value: transaction.value,
       maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
-      maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (40 * 1000000000))).toFixed(3), 9)
+      maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (40 * 1000000000))).toFixed(3), 9),
     }
 
     console.log(txData);
@@ -341,7 +343,7 @@ async function approveSpender({from, contractAddress, spender, protocol}) {
       await tx1.wait();
     }
 
-    if (protocol === 'Uniswap' || protocol === 'Uniswap & Balancer') {
+    if (protocol === 'Uniswap' || protocol === 'Uniswap & Balancer' || protocol === 'Balancer') {
       const PERMIT2_ABI = [
         "function approve(address token, address spender, uint160 amount, uint48 expiration) external",
         "function allowance(address owner, address token, address spender) view returns (uint160, uint48, uint48)",
@@ -351,14 +353,14 @@ async function approveSpender({from, contractAddress, spender, protocol}) {
       let results = await permit2Contract.allowance(
         from,
         contractAddress,
-        UNIVERSAL_ROUTER_ADDRESS,
+        '0xAE563E3f8219521950555F5962419C8919758Ea2',
       );
       console.log({results});
       if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
         console.log('should send approve for permit2');
         const tx2 = await permit2Contract.approve(
           contractAddress,
-          UNIVERSAL_ROUTER_ADDRESS,
+          '0xAE563E3f8219521950555F5962419C8919758Ea2',
           '1000000000000000000000000000000000000000000000',
           Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50,
           overrides
