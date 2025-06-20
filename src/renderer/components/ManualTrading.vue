@@ -933,6 +933,7 @@ export default {
         senderDetails.value.address,
         isUsingUniswap ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS,
       );
+      console.log('Allowance for ', tokenAddress, ' is', rawAllowance.toString());
       // If allowance < 1e27 (arbitrary “sufficient” threshold), require approval
       if (BigNumber.from(rawAllowance).lt(BigNumber.from('100000000000000000000000000'))) {
         return needsToApprove.value = true;
@@ -950,6 +951,7 @@ export default {
           tokenAddress,
           UNIVERSAL_ROUTER_ADDRESS
         );
+        console.log('Permit2 allowance for ', tokenAddress, ' is', remaining.toString());
         if (BigNumber.from(remaining).lt(BigNumber.from('100000000000000000000000000'))) {
           needsToApprove.value = true;
         } else {
@@ -1555,7 +1557,7 @@ export default {
           increaseOffsetBalance(
             currentTradeSummary.fromToken?.address.toLowerCase(),
             currentTradeSummary.sender.address.toLowerCase(),
-            tradeSummary.value
+            tradeSummary
           )
 
         // Finalize summary & emit upwards
@@ -1610,6 +1612,7 @@ export default {
     };
 
     const increaseOffsetBalance = (tokLower, senderLc, currentTradeSummary) => {
+      console.log(currentTradeSummary)
       if (!balanceOffsetByTokenByAddress[tokLower]) {
         balanceOffsetByTokenByAddress[tokLower] = {};
       }
@@ -1630,7 +1633,6 @@ export default {
             originalAddress,
             fromTokenAddress.value,
             PERMIT2_ADDRESS,
-            props.gasPrice,
             'Uniswap & Balancer'
           );
           if (!success) throw error;
@@ -1638,7 +1640,6 @@ export default {
             originalAddress,
             fromTokenAddress.value,
             BALANCER_VAULT_ADDRESS,
-            props.gasPrice,
             'Uniswap & Balancer'
           );
         } else {
@@ -1646,7 +1647,6 @@ export default {
             originalAddress,
             fromTokenAddress.value,
             tradeSummary.protocol === 'Uniswap' ? PERMIT2_ADDRESS : BALANCER_VAULT_ADDRESS,
-            props.gasPrice,
             tradeSummary.protocol
           );
           if (!success) throw error;
@@ -1804,7 +1804,7 @@ export default {
         }
       }
     );
-
+    
     watch(
       () => senderDetails.value,
       async () => {

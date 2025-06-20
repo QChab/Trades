@@ -353,7 +353,9 @@ async function approveSpender({from, contractAddress, spender, protocol}) {
         contractAddress,
         UNIVERSAL_ROUTER_ADDRESS,
       );
+      console.log({results});
       if (!results || !results[0] || results[0]?.toString() === '0' || Number(results[0].toString()) < 1e27) {
+        console.log('should send approve for permit2');
         const tx2 = await permit2Contract.approve(
           contractAddress,
           UNIVERSAL_ROUTER_ADDRESS,
@@ -361,6 +363,7 @@ async function approveSpender({from, contractAddress, spender, protocol}) {
           Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 * 365 * 50,
           overrides
         );
+        console.log('tx2', tx2);
         await tx2.wait();
       }
     }
