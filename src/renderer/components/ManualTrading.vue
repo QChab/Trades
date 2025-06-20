@@ -2417,10 +2417,6 @@ export default {
       automaticOrders.value = orders;
     };
 
-    watch(() => computedEthPrice.value, () => {
-      console.log('eth price changed');
-    }, { immediate: true });
-
     // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
     watch(
       () => tokens.value,
