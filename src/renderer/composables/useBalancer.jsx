@@ -12,7 +12,7 @@ import {
     Swap,
 } from "@balancer/sdk";
 
-// import { SOR, SwapTypes } from "@balancer-labs/sor";
+// import { SOR, SwapTypes } from '@balancer-labs/sor';
 
 // User defined
 const chainId = ChainId.MAINNET;
@@ -60,6 +60,9 @@ export function useBalancerV3() {
       tokenOut: tokenOut.address,
       swapKind,
       swapAmount,
+      maxPools: 2,
+      forceRefresh: true, // Force a fresh query instead of using cached data
+      filterInvalidPools: true // Filter out pools that might cause issues
     });
 
     // Swap object provides useful helpers for re-querying, building call, etc
@@ -75,7 +78,6 @@ export function useBalancerV3() {
 
     const rpcUrls = await window.electronAPI.getInfuraKeys();
     const updated = await swap.query(rpcUrls[0]);
-    console.log(`Updated amount: ${updated.expectedAmountOut.amount}`);
 
     let buildInput;
     // In v2 the sender/recipient can be set, in v3 it is always the msg.sender
@@ -100,9 +102,11 @@ export function useBalancerV3() {
     // console.log(
     //   `Min Amount Out: ${callData.minAmountOut.amount}\n\nTx Data:\nTo: ${callData.to}\nCallData: ${callData.callData}\nValue: ${callData.value}`
     // );
+    // console.log(callData)
 
     return {
       ...callData,
+      contractAddress: updated.to || BALANCER_VAULT_ADDRESS,
       expectedAmountOut: updated.expectedAmountOut.amount,
     }
   }

@@ -22,7 +22,7 @@
           <span v-else> {{ t.toAmount || t.expectedToAmount }} </span>
           {{ t.toTokenSymbol || t.toToken?.symbol }}
         </span>
-        <span class="from">{{ t.senderName || t.sender?.name }} on {{ t.protocol }}</span>
+        <span class="from">{{ t.senderName || t.sender?.name }} | {{ t.protocol }}</span>
         <span class="date">{{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}</span>
         <span class="gas" v-if="t.gasCost"> ${{ t.gasCost.substring(0, 4)}} </span>
         <span @click.stop="openTxDetails(t.txId)" class="view">View</span>
