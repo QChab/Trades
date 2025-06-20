@@ -42,7 +42,7 @@
             {{ getLevelStatus('buy', level) }}
           </div>
           <div class="level-inputs">
-            <img :src="deleteImage" class="delete" @click="level.triggerPrice = null; level.balancePercentage = null;" />
+            <img :src="deleteImage" class="delete" @click="cleanLevel(level, index)" />
             <label class="input-group">
               <span class="first-part-price">{{ tokenA?.symbol }} ≤ </span>
               <input
@@ -84,7 +84,7 @@
             {{ getLevelStatus('sell', level) }}
           </div>
           <div class="level-inputs">
-            <img :src="deleteImage" class="delete" @click="level.triggerPrice = null; level.balancePercentage = null;" />
+            <img :src="deleteImage" class="delete" @click="cleanLevel(level, index)" />
             <label class="input-group">
               <span class="first-part-price">{{ tokenA?.symbol }} ≥ </span>
               <input
@@ -183,6 +183,21 @@ export default {
       isPaused.value = !isPaused.value;
       emitOrderUpdate();
     };
+    
+    const isPriceValid = (type, price) => {
+      if (price === null) return true; // No price entered yet
+      
+      const marketPrice = currentMarketPrice.value;
+      if (!marketPrice || marketPrice <= 0) return true; // Can't validate without market price
+      
+      if (type === 'buy') {
+        // Buy level price shouldn't be higher than current market price
+        return price <= marketPrice;
+      } else {
+        // Sell level price shouldn't be lower than current market price
+        return price >= marketPrice;
+      }
+    };
 
     const updateLevel = (type, index) => {
       const levels = type === 'sell' ? sellLevels : buyLevels;
@@ -193,11 +208,14 @@ export default {
       if (level.balancePercentage < 0) level.balancePercentage = 0;
       if (level.balancePercentage > 100) level.balancePercentage = 100;
       
+      // Add price validity check
+      level.priceValid = isPriceValid(type, level.triggerPrice);
+      
       // Update status based on inputs
       updateLevelStatus(type, index);
       
-      // Emit the update
-      emitOrderUpdate();
+      if (level.priceValid && level.balancePercentage)
+        emitOrderUpdate();
     };
 
     const updateLevelStatus = (type, index) => {
@@ -211,6 +229,12 @@ export default {
       
       if (isPaused.value) {
         level.status = 'paused';
+        return;
+      }
+      
+      // Check if price is valid
+      if (!level.priceValid) {
+        level.status = 'invalid';
         return;
       }
       
@@ -229,6 +253,16 @@ export default {
     const getLevelStatus = (type, level) => {
       if (!level.triggerPrice || !level.balancePercentage) return 'Not set';
       if (isPaused.value) return 'Paused';
+      
+      // Check price validity
+      if (level.triggerPrice !== null && !isPriceValid(type, level.triggerPrice)) {
+        if (type === 'buy') {
+          return 'Buy lower';
+        } else {
+          return 'Sell higher';
+        }
+      }
+      
       if (level.status === 'active') return 'Active';
       if (level.status === 'triggered') return 'Triggered';
       if (isCloseToTrigger(type, level)) return 'Close';
@@ -238,6 +272,12 @@ export default {
     const getLevelStatusClass = (type, level) => {
       if (!level.triggerPrice || !level.balancePercentage) return 'status-inactive';
       if (isPaused.value) return 'status-paused';
+      
+      // Check price validity
+      if (level.triggerPrice !== null && !isPriceValid(type, level.triggerPrice)) {
+        return 'status-invalid';
+      }
+      
       if (level.status === 'active') return 'status-active';
       if (level.status === 'triggered') return 'status-triggered';
       if (isCloseToTrigger(type, level)) return 'status-close-trigger';
@@ -251,49 +291,68 @@ export default {
           ...level,
           index,
           type: 'sell',
-          isValid: !!(level.triggerPrice && level.balancePercentage)
+          priceValid: isPriceValid('sell', level.triggerPrice),
+          isValid: !!(level.triggerPrice && level.balancePercentage && isPriceValid('sell', level.triggerPrice))
         })),
         buyLevels: buyLevels.map((level, index) => ({
           ...level,
           index,
           type: 'buy',
-          isValid: !!(level.triggerPrice && level.balancePercentage)
+          priceValid: isPriceValid('buy', level.triggerPrice),
+          isValid: !!(level.triggerPrice && level.balancePercentage && isPriceValid('buy', level.triggerPrice))
         })),
       };
       
       emit('orderUpdate', orderData);
     };
 
-    // Watch for token price changes to update status
-    watch(
-      () => [props.tokenA?.price, props.tokenB?.price],
-      () => {
-        // Update all level statuses when market price changes
-        sellLevels.forEach((_, index) => updateLevelStatus('sell', index));
-        buyLevels.forEach((_, index) => updateLevelStatus('buy', index));
-      }
-    );
-
+    const cleanLevel = (level, index) => {
+      level.triggerPrice = null;
+      level.balancePercentage = null;
+      level.priceValid = true; // Reset price validity
+      updateLevelStatus('sell', index);
+      updateLevelStatus('buy', index);
+      emitOrderUpdate();
+    };
+    
     onMounted(() => {
       if (props.details) {
         if (props.details.sellLevels) {
           for (let i = 0; i < props.details.sellLevels.length; i++) {
-            sellLevels[i] = props.details.sellLevels[i]
+            sellLevels[i] = props.details.sellLevels[i];
+            sellLevels[i].priceValid = isPriceValid('sell', sellLevels[i].triggerPrice);
           }
         }
         if (props.details.buyLevels) {
           for (let i = 0; i < props.details.buyLevels.length; i++) {
-            buyLevels[i] = props.details.buyLevels[i]
+            buyLevels[i] = props.details.buyLevels[i];
+            buyLevels[i].priceValid = isPriceValid('buy', buyLevels[i].triggerPrice);
           }
         }
         if (props.details.isPaused)
           isPaused.value = true
       }
-    })
+      
+      // Initialize all rows
+      sellLevels.forEach((level, index) => updateLevelStatus('sell', index));
+      buyLevels.forEach((level, index) => updateLevelStatus('buy', index));
+    });
 
-    watch(() => props.details, (newDetails) => {
-      console.log(newDetails);
-    }, {deep: true})
+    // Watch for market price changes to update price validity
+    watch(
+      () => currentMarketPrice.value,
+      () => {
+        // Update all price validations when market price changes
+        sellLevels.forEach((level, index) => {
+          level.priceValid = isPriceValid('sell', level.triggerPrice);
+          updateLevelStatus('sell', index);
+        });
+        buyLevels.forEach((level, index) => {
+          level.priceValid = isPriceValid('buy', level.triggerPrice);
+          updateLevelStatus('buy', index);
+        });
+      }
+    );
 
     return {
       isPaused,
@@ -306,6 +365,7 @@ export default {
       getLevelStatusClass,
       isCloseToTrigger,
       deleteImage,
+      cleanLevel,
     };
   }
 };
@@ -447,7 +507,6 @@ export default {
   background-color: #ff47579c !important; /* Bright red */
   color: white;
   border-color: #ff3742;
-  box-shadow: 0 0 10px rgba(255, 71, 87, 0.5); /* Reduced shadow */
   animation: pulse-red 2s infinite;
 }
 
@@ -455,7 +514,6 @@ export default {
   background-color: #2ed5739c !important; /* Bright green */
   color: white;
   border-color: #1dd565;
-  box-shadow: 0 0 10px rgba(46, 213, 115, 0.5); /* Reduced shadow */
   animation: pulse-green 2s infinite;
 }
 
@@ -566,8 +624,8 @@ export default {
 
 .status-waiting {
   background-color: #cdcfff;
-  color: #9ebbd1;
-  border: 1px solid #ffeaa7;
+  color: #1e7cc4;
+  border: 1px solid #cdcfff;
 }
 
 .status-active {
@@ -630,7 +688,7 @@ input.percentage-input[type=number] {
 
 /* Style the percentage input to make spinners more visible */
 input.percentage-input {
-  max-width: 60px; /* Increased from 50px to accommodate spinners */
+  max-width: 24px;
   padding-right: 2px; /* Less padding on right to make room for spinners */
 }
 .first-part-price {
@@ -656,4 +714,16 @@ input.percentage-input {
   right: 3px;
   cursor: pointer;
 }
+.status-invalid {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  font-weight: 600;
+}
+
+.price-input.invalid {
+  border-color: #dc3545 !important;
+  background-color: rgba(255, 230, 230, 0.7) !important;
+}
+
 </style>
