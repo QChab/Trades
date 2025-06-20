@@ -203,6 +203,7 @@
                     v-if="token?.address && token.decimals"
                     :tokenA="tokenInRow.token"
                     :tokenB="token"
+                    :tokensByAddresses="tokensByAddresses"
                     :price-threshold="0.01"
                     :details="token.details"
                     @orderUpdate="(details) => updateDetailsOrder(i, j, details)"
@@ -2013,17 +2014,17 @@ export default {
 
     let isCheckingPendingOrders = false;
     async function checkPendingOrdersToTrigger() {
-      if (isCheckingPendingOrders) return;
-      isCheckingPendingOrders = true;
-
-      if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
-      if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
-
       try {
         await setTokenPrices(tokens);
       } catch (error) {
         console.error('Error updating token prices:', error);
       }
+
+      if (isCheckingPendingOrders) return;
+      isCheckingPendingOrders = true;
+
+      if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
+      if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
 
       for (const order of pendingLimitOrders.value) {
         // Skip if order is not pending
@@ -2220,9 +2221,6 @@ export default {
       if (checkOrdersInterval) {
         clearInterval(checkOrdersInterval);
       }
-      if (priceUpdateInterval) {
-        clearInterval(priceUpdateInterval);
-      }
     });
 
     const deleteColumn = (i, j) => {
@@ -2247,7 +2245,7 @@ export default {
         return;
 
       tokensInRow[firstEmptyIndex] = {
-        token: {...tokensByAddresses.value[newTokenAddress.value]},
+        token: tokensByAddresses.value[newTokenAddress.value],
         columns: []
       }
 
@@ -2368,9 +2366,6 @@ export default {
     };
 
     watch(() => props.ethPrice, () => setTokenPrices(tokens), { immediate: true });
-    const priceUpdateInterval = setInterval(() => {
-      if (!pendingLimitOrders.value.length) setTokenPrices(tokens);
-    }, 12_000);
 
     // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
     watch(

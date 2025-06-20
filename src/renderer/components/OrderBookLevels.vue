@@ -143,7 +143,11 @@ export default {
     },
     details: {
       type: Object,
-    }
+    },
+    tokensByAddresses: {
+      type: Object,
+      default: () => ({})
+    },
   },
   emits: ['orderUpdate', 'delete'],
   setup(props, { emit }) {
@@ -313,6 +317,15 @@ export default {
       updateLevelStatus('buy', index);
       emitOrderUpdate();
     };
+
+    watch(() => props.tokensByAddresses, (newTokens) => {
+      if (newTokens[props.tokenA.address]) {
+        props.tokenA.price = newTokens[props.tokenA.address].price;
+      }
+      if (newTokens[props.tokenB.address]) {
+        props.tokenB.price = newTokens[props.tokenB.address].price;
+      }
+    }, { immediate: true, deep: true });
     
     onMounted(() => {
       if (props.details) {

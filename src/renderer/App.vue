@@ -326,7 +326,7 @@
         return 0;
       }
       ( async () => ethPrice.value = await getEthUsd())();
-      setTimeout(async () => ethPrice.value = await getEthUsd(), 30000)
+      setTimeout(async () => ethPrice.value = await getEthUsd(), 20000);
 
       const readDataFromString = async (args) => { 
         let { fileContent, ext } = args;
