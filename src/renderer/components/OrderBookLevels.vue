@@ -117,7 +117,7 @@
 </template>
 
 <script>
-import { ref, reactive, computed, watch } from 'vue';
+import { ref, reactive, computed, watch, onMounted } from 'vue';
 import deleteImage from '@/../assets/delete.svg';
 
 export default {
@@ -140,12 +140,16 @@ export default {
     priceThreshold: {
       type: Number,
       default: 0.01 // 1% threshold for "close to trigger"
+    },
+    details: {
+      type: Object,
     }
   },
   emits: ['orderUpdate', 'delete'],
   setup(props, { emit }) {
     const isPaused = ref(false);
-    
+    console.log(props.details);
+
     // Initialize 3 sell levels and 3 buy levels
     const sellLevels = reactive([
       { triggerPrice: null, balancePercentage: null },
@@ -242,12 +246,7 @@ export default {
 
     const emitOrderUpdate = () => {
       const orderData = {
-        tokenPair: {
-          tokenA: props.tokenA,
-          tokenB: props.tokenB
-        },
         isPaused: isPaused.value,
-        senderAddress: props.senderAddress,
         sellLevels: sellLevels.map((level, index) => ({
           ...level,
           index,
@@ -260,7 +259,6 @@ export default {
           type: 'buy',
           isValid: !!(level.triggerPrice && level.balancePercentage)
         })),
-        currentMarketPrice: currentMarketPrice.value
       };
       
       emit('orderUpdate', orderData);
@@ -275,6 +273,27 @@ export default {
         buyLevels.forEach((_, index) => updateLevelStatus('buy', index));
       }
     );
+
+    onMounted(() => {
+      if (props.details) {
+        if (props.details.sellLevels) {
+          for (let i = 0; i < props.details.sellLevels.length; i++) {
+            sellLevels[i] = props.details.sellLevels[i]
+          }
+        }
+        if (props.details.buyLevels) {
+          for (let i = 0; i < props.details.buyLevels.length; i++) {
+            buyLevels[i] = props.details.buyLevels[i]
+          }
+        }
+        if (props.details.isPaused)
+          isPaused.value = true
+      }
+    })
+
+    watch(() => props.details, (newDetails) => {
+      console.log(newDetails);
+    }, {deep: true})
 
     return {
       isPaused,

@@ -202,6 +202,8 @@
                     :tokenA="tokenInRow.token"
                     :tokenB="token"
                     :price-threshold="0.01"
+                    :details="token.details"
+                    @orderUpdate="(details) => updateDetailsOrder(i, j, details)"
                     @delete="deleteColumn(i, j)"
                   />
                 </div>
@@ -453,9 +455,8 @@ export default {
 
     const tokensInRow = reactive([
       {
-        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: 2500},
+        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: props.ethPrice},
         columns: [
-          {symbol: 'USDT', address: '0xdac17f958d2ee523a2206206994597c13d831ec7', decimals: 6, price: 1},
         ]
       },
       {
@@ -1513,6 +1514,7 @@ export default {
         for (let i = 0; i < settings.tokensInRow.length; i++) {
           if (settings.tokensInRow[i]?.token?.address && settings.tokensInRow[i]?.token?.symbol) {
             tokensInRow[i] = settings.tokensInRow[i];
+            console.log(settings.tokensInRow[i])
           }
         }
       }
@@ -2319,10 +2321,29 @@ export default {
     }
 
     const addCellToRow = (i) => {
-      tokensInRow[i].columns.push({...tokensByAddresses.value[newCellTokenAddress.value]})
+      tokensInRow[i].columns.push({
+        ...tokensByAddresses.value[newCellTokenAddress.value],
+        details: {
+          isPaused: false,
+          buyLevels: [
+            { triggerPrice: null, balancePercentage: null },
+            { triggerPrice: null, balancePercentage: null },
+            { triggerPrice: null, balancePercentage: null }
+          ],
+          sellLevels: [
+            { triggerPrice: null, balancePercentage: null },
+            { triggerPrice: null, balancePercentage: null },
+            { triggerPrice: null, balancePercentage: null }
+          ]
+        }
+      })
 
       shouldSelectTokenInCell.value = false;
       newCellTokenAddress.value = null;
+    }
+
+    const updateDetailsOrder = (i, j, details) => {
+      tokensInRow[i].columns[j].details = details;
     }
 
     return {
@@ -2385,6 +2406,7 @@ export default {
       newCellTokenAddress,
       addRowToMatrix,
       addCellToRow,
+      updateDetailsOrder,
     };
   }
 };
