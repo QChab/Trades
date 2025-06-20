@@ -65,17 +65,6 @@ export function useBalancerV3() {
       filterInvalidPools: true // Filter out pools that might cause issues
     });
 
-    // const swapAmountOut = TokenAmount.fromHumanAmount(tokenOut, (amountIn * tokenInObject.price / tokenOutObject.price).toFixed(6));
-    
-    // const sorPaths = await balancerApi.sorSwapPaths.fetchSorSwapPaths({
-    //   chainId,
-    //   tokenIn: tokenIn.address,
-    //   tokenOut: tokenOut.address,
-    //   swapKind: SwapKind.GivenOut,
-    //   swapAmount: swapAmountOut,
-    //   maxPools: 4,
-    // });
-
     // Swap object provides useful helpers for re-querying, building call, etc
     const swap = new Swap({
       chainId,
@@ -121,7 +110,7 @@ export function useBalancerV3() {
 
     return {
       ...callData,
-      contractAddress: updated.to,
+      contractAddress: updated.to || BALANCER_VAULT_ADDRESS,
       expectedAmountOut: updated.expectedAmountOut.amount,
     }
   }
