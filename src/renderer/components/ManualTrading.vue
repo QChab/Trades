@@ -2334,6 +2334,39 @@ export default {
         generateOrdersFromLevels();
     }
 
+    const summedBalances = computed(() => {
+      const result = {};
+      
+      // Loop through all addresses
+      for (const detail of props.addresses) {
+        if (!detail.balances) continue;
+        
+        // For each token in the address's balance
+        for (const tokenAddr in detail.balances) {
+          const tokenAddrLower = tokenAddr.toLowerCase();
+          
+          // Initialize if not exists
+          if (!result[tokenAddrLower]) {
+            result[tokenAddrLower] = 0;
+          }
+          
+          // Add to summed balance
+          let bal = detail.balances[tokenAddr];
+          
+          // Subtract any pending offsets
+          if (balanceOffsetByTokenByAddress[tokenAddrLower] && 
+              balanceOffsetByTokenByAddress[tokenAddrLower][detail.address.toLowerCase()]) {
+            bal -= balanceOffsetByTokenByAddress[tokenAddrLower][detail.address.toLowerCase()];
+          }
+          
+          result[tokenAddrLower] += bal;
+        }
+      }
+      
+      console.log('Summed balances across all addresses:', result);
+      return result;
+    });
+
     const generateOrdersFromLevels = async () => {
       const orders = [];
       const sender = senderDetails.value;
@@ -2342,14 +2375,15 @@ export default {
         return;
       }
 
+      // Wait for initial balance fetch if needed
       while (!props.isInitialBalanceFetchDone) {
-        await new Promise(r => setTimeout(r, 1000))
-        console.log('sleep wait for initial balance end')
+        await new Promise(r => setTimeout(r, 1000));
+        console.log('sleep wait for initial balance end');
       }
 
-      // Build a quick lookup for balances
-      const balances = computedBalancesByAddress.value[sender.address.toLowerCase()] || {};
-      console.log('Available balances for address', sender.address.toLowerCase(), balances);
+      // Use SUMMED balances instead of single address balance
+      const balances = summedBalances.value;
+      console.log('Available summed balances across all addresses:', balances);
       
       // Check if we have any valid rows
       const validRows = tokensInRow.filter(row => row.token?.address && row.columns?.length > 0);
@@ -2469,12 +2503,12 @@ export default {
       
       console.log(`Generated ${orders.length} orders:`, orders);
       automaticOrders.value = orders;
+      
+      // Save orders to DB
+      orders.forEach(order => {
+        window.electronAPI.savePendingOrder(order);
+      });
     };
-
-    // watch(() => props.isInitialBalanceFetchDone, (val) => {
-    //   if (val) generateOrdersFromLevels()
-    // });
-
     // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
     watch(
       () => tokens.value,
