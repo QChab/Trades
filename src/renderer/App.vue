@@ -329,7 +329,6 @@
       ( async () => ethPrice.value = await getEthUsd())();
       setInterval(async () => { 
         ethPrice.value = await getEthUsd();
-        console.log({newEthPrice: ethPrice.value})
        }, 20000);
 
       const readDataFromString = async (args) => { 

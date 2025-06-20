@@ -191,7 +191,7 @@ export default {
       }
       return tokenB.value.price || 0;
     });
-    
+
     const currentMarketPrice = computed(() => {
       const priceA = Number(tokenAPrice.value);
       const priceB = Number(tokenBPrice.value);
@@ -202,7 +202,6 @@ export default {
       }
       
       const ratio = priceA / priceB;
-      console.log(`Current market price: ${ratio} (${priceA} / ${priceB})`);
       return ratio;
     });
     
@@ -354,8 +353,6 @@ export default {
     };
 
     watch(() => props.tokensByAddresses, (newTokens) => {
-      console.log('Tokens updated:', newTokens);
-      console.log('refreshing prices');
       if (newTokens[props.tokenA.address]) {
         props.tokenA.price = newTokens[props.tokenA.address].price;
       }
