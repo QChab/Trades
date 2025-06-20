@@ -99,6 +99,7 @@
             :ethPrice="ethPrice"
             :provider="provider"
             :confirmedTrade="confirmedTrade"
+            :isInitialBalanceFetchDone="isInitialBalanceFetchDone"
           />
         </div>
 
@@ -232,7 +233,9 @@
       // Boolean to control whether the Infura API keys section is visible or not
       const showInfuraKeys = ref(false);
 
+      const isInitialBalanceFetchDone = ref(false);
       watch(() => loadedAddresses.value, async (loadedAddressesValue) => {
+        isInitialBalanceFetchDone.value = false;
         for (const addressDetail of loadedAddressesValue) {
           if (!currentSettings.value?.tokens) continue;
           for (const token of currentSettings.value.tokens) {
@@ -242,6 +245,7 @@
             await new Promise((r) => setTimeout(r, 100))
           }
         }
+        isInitialBalanceFetchDone.value = true;
       })
 
       const refreshBalance = async (addressDetail, token) => {
@@ -534,6 +538,7 @@
         provider,
         setConfirmedTrade,
         confirmedTrade,
+        isInitialBalanceFetchDone,
       }
     }
   };

@@ -392,6 +392,7 @@ export default {
     ethPrice:   { type: Number },
     provider:   { type: Object },
     confirmedTrade: { type: Object },
+    isInitialBalanceFetchDone: {type: Boolean, default: false},
   },
   emits: ['update:settings', 'update:trade', 'refreshBalance'],
   setup(props, { emit }) {
@@ -2329,24 +2330,58 @@ export default {
 
     const updateDetailsOrder = (i, j, details) => {
       tokensInRow[i].columns[j].details = details;
-      generateOrdersFromLevels();
+      if (props.isInitialBalanceFetchDone)
+        generateOrdersFromLevels();
     }
 
-    const generateOrdersFromLevels = () => {
+    const generateOrdersFromLevels = async () => {
       const orders = [];
       const sender = senderDetails.value;
-      if (!sender?.address) return;
-    
+      if (!sender?.address) {
+        console.log('No sender address, skipping order generation');
+        return;
+      }
+
+      while (!props.isInitialBalanceFetchDone) {
+        await new Promise(r => setTimeout(r, 1000))
+        console.log('sleep wait for initial balance end')
+      }
+
       // Build a quick lookup for balances
       const balances = computedBalancesByAddress.value[sender.address.toLowerCase()] || {};
-    
+      console.log('Available balances for address', sender.address.toLowerCase(), balances);
+      
+      // Check if we have any valid rows
+      const validRows = tokensInRow.filter(row => row.token?.address && row.columns?.length > 0);
+      if (validRows.length === 0) {
+        console.log('No valid token rows found');
+        return;
+      }
+      
       tokensInRow.forEach((row, i) => {
-        // row.token is the "to" token for buys, "from" token for sells
+        // Skip rows without valid tokens
+        if (!row.token?.address) {
+          console.log('Skipping row', i, 'missing token address');
+          return;
+        }
+        
+        console.log(`Processing row ${i} with token ${row.token.symbol || row.token.address}`);
+        
         row.columns.forEach((col, j) => {
-          // col is the "from" token for buys, "to" token for sells
-          if (!col.details || !col.details.buyLevels || !col.details.sellLevels) return;
-    
-          // BUY LEVELS (buy col with row.token)
+          // Skip columns without valid tokens or details
+          if (!col?.address) {
+            console.log(`Skipping column ${j} in row ${i} - missing address`);
+            return;
+          }
+          
+          if (!col.details || !col.details.buyLevels || !col.details.sellLevels) {
+            console.log(`Skipping column ${j} in row ${i} - missing level details`);
+            return;
+          }
+          
+          console.log(`Processing column ${j} - ${col.symbol || col.address}`);
+          
+          // BUY LEVELS - user sells "col" token to buy "row.token"
           col.details.buyLevels.forEach((buyLevel, k) => {
             if (
               buyLevel.triggerPrice &&
@@ -2358,10 +2393,18 @@ export default {
               const fromToken = col;
               const toToken = row.token;
               const fromTokenAddr = fromToken.address?.toLowerCase();
+              
+              // Check if we have balance for this token
+              if (!balances[fromTokenAddr] && fromTokenAddr) {
+                console.log(`No balance found for token ${fromTokenAddr} (${fromToken.symbol})`);
+                return;
+              }
+              
               const balance = balances[fromTokenAddr] || 0;
               const fromAmount = (buyLevel.balancePercentage * 0.01 * balance);
-    
-              console.log(fromAmount)
+              
+              console.log(`Buy level ${k}: Token ${fromToken.symbol}, balance: ${balance}, amount: ${fromAmount}, trigger price: ${buyLevel.triggerPrice}`);
+              
               if (fromAmount > 0) {
                 orders.push({
                   id: Date.now() + i + j + k,
@@ -2375,11 +2418,12 @@ export default {
                   status: 'pending',
                   createdAt: new Date().toISOString(),
                 });
+                console.log(`Created BUY order for ${fromAmount} ${fromToken.symbol} → ${toToken.symbol}`);
               }
             }
           });
-    
-          // SELL LEVELS (sell col for row.token)
+          
+          // SELL LEVELS - user sells "row.token" to buy "col" token
           col.details.sellLevels.forEach((sellLevel, k) => {
             if (
               sellLevel.triggerPrice &&
@@ -2391,9 +2435,18 @@ export default {
               const fromToken = row.token;
               const toToken = col;
               const fromTokenAddr = fromToken.address?.toLowerCase();
+              
+              // Check if we have balance for this token
+              if (!balances[fromTokenAddr] && fromTokenAddr) {
+                console.log(`No balance found for token ${fromTokenAddr} (${fromToken.symbol})`);
+                return;
+              }
+              
               const balance = balances[fromTokenAddr] || 0;
               const fromAmount = (sellLevel.balancePercentage * 0.01 * balance);
-    
+              
+              console.log(`Sell level ${k}: Token ${fromToken.symbol}, balance: ${balance}, amount: ${fromAmount}, trigger price: ${sellLevel.triggerPrice}`);
+              
               if (fromAmount > 0) {
                 orders.push({
                   id: Date.now() + i + j + k + 1000,
@@ -2407,15 +2460,20 @@ export default {
                   status: 'pending',
                   createdAt: new Date().toISOString(),
                 });
+                console.log(`Created SELL order for ${fromAmount} ${fromToken.symbol} → ${toToken.symbol}`);
               }
             }
           });
         });
       });
-    
-      console.log(orders)
+      
+      console.log(`Generated ${orders.length} orders:`, orders);
       automaticOrders.value = orders;
     };
+
+    // watch(() => props.isInitialBalanceFetchDone, (val) => {
+    //   if (val) generateOrdersFromLevels()
+    // });
 
     // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
     watch(
@@ -2444,7 +2502,7 @@ export default {
     watch(() => tokensInRow, () => emit('update:settings', { tokensInRow: [...tokensInRow] }), { deep: true });
     watch(
       () => props.addresses,
-      (addrs) => {
+      async (addrs) => {
         if (addrs && addrs[0]) {
           senderDetails.value = addrs[0];
         }
