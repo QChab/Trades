@@ -179,6 +179,7 @@
         <div
           v-else-if="currentMode === 'automatic' && !isEditingTokens"
           class="automatic-mode"
+          :class="{'no-addresses-unlocked': !addresses.length}"
         >
           <div class="matrix">
             <div v-for="(tokenInRow, i) in tokensInRow" class="token-row">
@@ -3074,5 +3075,9 @@ h3 {
   flex-wrap: wrap;
   width: 50px;
   padding: 20px;
+}
+.no-addresses-unlocked {
+  background-color: #aaa;
+  opacity: .5;
 }
 </style>
