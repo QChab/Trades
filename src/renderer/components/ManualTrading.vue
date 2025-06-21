@@ -192,7 +192,7 @@
               >
                 <p class="token-symbol">{{ tokenInRow.token.symbol || 'Select Token' }}</p>
                 <p class="token-price">
-                  @ ${{ spaceThousands(tokenInRow.token.price?.toFixed(5)) }}
+                  @ ${{ spaceThousands(removeTrailingZeros(tokenInRow.token.price, 7)) }}
                 </p>
                 <img :src="deleteImage" class="delete-row" @click="deleteRow(i)" />
               </div>
