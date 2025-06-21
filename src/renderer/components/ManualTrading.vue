@@ -2541,9 +2541,9 @@ export default {
                   createdAt: new Date().toISOString(),
                   automatic: true,
                   sourceLocation: {
-                    rowIndex,
-                    colIndex,
-                    levelIndex,
+                    rowIndex: i,
+                    colIndex: j,
+                    levelIndex: k,
                     levelType: 'buy'
                   }
                 });
@@ -2590,9 +2590,9 @@ export default {
                   createdAt: new Date().toISOString(),
                   automatic: true,
                   sourceLocation: {
-                    rowIndex,
-                    colIndex,
-                    levelIndex,
+                    rowIndex: i,
+                    colIndex: j,
+                    levelIndex: k,
                     levelType: 'sell'
                   }
                 });
