@@ -12,7 +12,7 @@
       
       <div class="token-pair">
         <span class="token-name">{{ tokenB?.symbol }}</span>
-        <span class="token-price">@ ${{ tokenB?.price?.toFixed(8) }}</span>
+        <span class="token-price">@ ${{ removeTrailingZeros(tokenB?.price, 8) }}</span>
       </div>
       
       <button 
@@ -25,7 +25,7 @@
 
     <!-- Current market price -->
     <div class="market-price">
-      <span class="price-value">1 {{ tokenA?.symbol }} = {{ currentMarketPrice }} {{ tokenB?.symbol }}</span>
+      <span class="price-value">1 {{ tokenA?.symbol }} = {{ currentMarketPrice.toFixed(7) }} {{ tokenB?.symbol }}</span>
     </div>
 
     <!-- Order levels grid -->
@@ -205,6 +205,16 @@ export default {
       return ratio;
     });
     
+    const removeTrailingZeros = (num, precision = 8) => {
+      if (num === null || num === undefined) return '0';
+      
+      // Convert to string with fixed precision
+      const fixed = Number(num).toFixed(precision);
+      
+      // Remove trailing zeros after the decimal point
+      // If all digits after decimal are zeros, remove decimal point too
+      return fixed.replace(/\.?0+$/, '');
+    };
 
     const isCloseToTrigger = (type, level) => {
       if (!level.triggerPrice || !level.balancePercentage || isPaused.value) return false;
@@ -412,6 +422,7 @@ export default {
       isCloseToTrigger,
       deleteImage,
       cleanLevel,
+      removeTrailingZeros,
     };
   }
 };

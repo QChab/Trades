@@ -73,7 +73,7 @@
                 </option>
               </select>
               <span class="right-price">
-                @ ${{ spaceThousands(tokensByAddresses[fromTokenAddress]?.price.toFixed(5)) }}
+                @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[fromTokenAddress]?.price, 7)) }}
               </span>
             </div>
             <span v-if="fromAmount" class="usd-amount">
@@ -107,7 +107,7 @@
               </span>
             </span>
             <p class="right-price">
-              @ ${{ spaceThousands(tokensByAddresses[toTokenAddress]?.price.toFixed(5)) }}
+              @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[toTokenAddress]?.price, 7)) }}
             </p>
           </div>
 
@@ -181,7 +181,9 @@
           class="automatic-mode"
           :class="{'no-addresses-unlocked': !addresses.length}"
         >
-          <h3>{{ automaticOrders.length }} buy/sell levels set</h3>
+          <h3 v-if="isInitialBalanceFetchDone">{{ automaticOrders.length }} buy/sell levels set</h3>
+          <h3 v-else>Initializing balances...</h3>
+          {{ automaticOrders }}
           <div class="matrix">
             <div v-for="(tokenInRow, i) in tokensInRow" class="token-row">
               <div
@@ -2334,6 +2336,17 @@ export default {
         generateOrdersFromLevels();
     }
 
+    const removeTrailingZeros = (num, precision = 8) => {
+      if (num === null || num === undefined) return '0';
+      
+      // Convert to string with fixed precision
+      const fixed = Number(num).toFixed(precision);
+      
+      // Remove trailing zeros after the decimal point
+      // If all digits after decimal are zeros, remove decimal point too
+      return fixed.replace(/\.?0+$/, '');
+    };
+
     const summedBalances = computed(() => {
       const result = {};
       
@@ -2441,7 +2454,6 @@ export default {
               
               if (fromAmount > 0) {
                 orders.push({
-                  id: Date.now() + i + j + k,
                   fromAmount,
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
@@ -2483,7 +2495,6 @@ export default {
               
               if (fromAmount > 0) {
                 orders.push({
-                  id: Date.now() + i + j + k + 1000,
                   fromAmount,
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
@@ -2672,6 +2683,7 @@ export default {
       updateDetailsOrder,
       automaticOrders,
       computedEthPrice,
+      removeTrailingZeros,
     };
   }
 };
