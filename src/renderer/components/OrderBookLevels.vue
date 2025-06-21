@@ -155,15 +155,15 @@ export default {
 
     // Initialize 3 sell levels and 3 buy levels
     const sellLevels = reactive([
-      { triggerPrice: null, balancePercentage: null },
-      { triggerPrice: null, balancePercentage: null },
-      { triggerPrice: null, balancePercentage: null  }
+      { triggerPrice: null, balancePercentage: null, status: 'inactive' },
+      { triggerPrice: null, balancePercentage: null, status: 'inactive' },
+      { triggerPrice: null, balancePercentage: null, status: 'inactive' }
     ]);
     
     const buyLevels = reactive([
-      { triggerPrice: null, balancePercentage: null },
-      { triggerPrice: null, balancePercentage: null },
-      { triggerPrice: null, balancePercentage: null  }
+      { triggerPrice: null, balancePercentage: null, status: 'inactive' },
+      { triggerPrice: null, balancePercentage: null, status: 'inactive' },
+      { triggerPrice: null, balancePercentage: null, status: 'inactive' }
     ]);
 
     const { tokenA, tokenB, tokensByAddresses } = toRefs(props);
@@ -301,6 +301,11 @@ export default {
       if (!level.triggerPrice || !level.balancePercentage) return 'Not set';
       if (isPaused.value) return 'Paused';
       
+      // Check if level is being processed or has completed
+      if (level.status === 'processing') return 'Processing...';
+      if (level.status === 'processed') return 'Processed ✓';
+      if (level.status === 'failed') return 'Failed ✗';
+      
       // Check price validity
       if (level.triggerPrice !== null && !isPriceValid(type, level.triggerPrice)) {
         if (type === 'buy') {
@@ -316,9 +321,15 @@ export default {
       return 'Waiting';
     };
 
+    // Also update the getLevelStatusClass method
     const getLevelStatusClass = (type, level) => {
       if (!level.triggerPrice || !level.balancePercentage) return 'status-inactive';
       if (isPaused.value) return 'status-paused';
+      
+      // Add new status classes
+      if (level.status === 'processing') return 'status-processing';
+      if (level.status === 'processed') return 'status-processed';
+      if (level.status === 'failed') return 'status-failed';
       
       // Check price validity
       if (level.triggerPrice !== null && !isPriceValid(type, level.triggerPrice)) {
@@ -783,4 +794,37 @@ input.percentage-input {
   background-color: rgba(255, 230, 230, 0.7) !important;
 }
 
+.status-processing {
+  background-color: #ffc107;
+  color: #212529;
+  border: 1px solid #ffc107;
+  font-weight: 600;
+  animation: pulse-yellow 1.5s infinite;
+}
+
+.status-processed {
+  background-color: #28a745;
+  color: white;
+  border: 1px solid #28a745;
+  font-weight: 600;
+}
+
+.status-failed {
+  background-color: #dc3545;
+  color: white;
+  border: 1px solid #dc3545;
+  font-weight: 600;
+}
+
+@keyframes pulse-yellow {
+  0% {
+    box-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 193, 7, 0.8);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
+  }
+}
 </style>

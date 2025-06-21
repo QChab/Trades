@@ -183,7 +183,6 @@
         >
           <h3 v-if="isInitialBalanceFetchDone">{{ automaticOrders.length }} buy/sell levels set</h3>
           <h3 v-else>Initializing balances...</h3>
-          {{ automaticOrders }}
           <div class="matrix">
             <div v-for="(tokenInRow, i) in tokensInRow" class="token-row">
               <div
@@ -2078,13 +2077,17 @@ export default {
       if (isCheckingPendingOrders) return;
       isCheckingPendingOrders = true;
 
-      if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
-      if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
+      generateOrdersFromLevels();
 
-      for (const order of pendingLimitOrders.value) {
+      const allOrders = pendingLimitOrders.value.concat(automaticOrders.value);
+
+      if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
+      if (!allOrders || !allOrders.length) return;
+
+      for (const order of allOrders) {
         // Skip if order is not pending
         if (!order || !order.status || order.status !== 'pending') continue;
-        
+
         try {
           // Get current token prices from our updated token list
           const fromToken = tokensByAddresses.value[order.fromToken.address];
@@ -2184,81 +2187,153 @@ export default {
             shouldTrigger = exactExecutionPrice >= order.priceLimit;
           }
 
-          if (shouldTrigger) {
-            console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(10)} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
+          if (!shouldTrigger) {
+            console.log(`Order ${order.id} (${order.orderType || 'limit'}): exact execution price ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit} - not triggered`);
+            continue
+          }
+        
+          console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(10)} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
+          
+          order.status = 'processing';
+
+          if (order.automatic && order.sourceLocation) {
+            const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+            if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+              const levels = levelType === 'sell' 
+                ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                
+              if (levels[levelIndex]) {
+                levels[levelIndex].status = 'processing';
+                // Update the UI
+                updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+              }
+            }
+          }
+
+          // Create a trade summary object for this limit order
+          const limitOrderTradeSummary = {
+            protocol: bestTradeResult.protocol,
+            sender: order.sender,
+            fromAmount: order.fromAmount.toString(),
+            toAmount: bestTradeResult.totalHuman,
+            expectedToAmount: bestTradeResult.totalHuman,
+            fromTokenSymbol: bestTradeResult.fromToken.symbol,
+            toTokenSymbol: bestTradeResult.toToken.symbol,
+            fromAddressName: order.sender.name,
+            fromToken: bestTradeResult.fromToken,
+            fromTokenAddress: bestTradeResult.fromToken.address,
+            toToken: bestTradeResult.toToken,
+            toTokenAddress: bestTradeResult.toToken.address,
+            gasLimit: bestTradeResult.gasLimit,
+          };
+
+          if (bestTradeResult.bestMixed) {
+            limitOrderTradeSummary.fromAmountU = (order.fromAmount * bestTradeResult.fractionMixed / 100).toFixed(7);
+            limitOrderTradeSummary.fromAmountB = (order.fromAmount - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
+            limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
+            limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
+            limitOrderTradeSummary.fraction = bestTradeResult.fractionMixed;
+          }
+
+          try {
+            // Execute the trade with the specific trades and summary for this order
+            await approveSpending(bestTradeResult.trades);
+            await triggerTrade(bestTradeResult.trades, limitOrderTradeSummary);
+
+            // Only mark as completed if trade was successful
+            order.status = 'completed';
+            order.completedAt = new Date().toISOString();
+            order.executionPrice = exactExecutionPrice;
+
+            if (order.automatic && order.sourceLocation) {
+              const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+              if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                const levels = levelType === 'sell' 
+                  ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                  : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                  
+                if (levels[levelIndex]) {
+                  levels[levelIndex].status = 'processed';
+                  levels[levelIndex].executionPrice = exactExecutionPrice;
+                  levels[levelIndex].executionDate = new Date().toISOString();
+                  // Update the UI
+                  updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                }
+              }
+            }
             
-            // Create a trade summary object for this limit order
-            const limitOrderTradeSummary = {
-              protocol: bestTradeResult.protocol,
-              sender: order.sender,
-              fromAmount: order.fromAmount.toString(),
-              toAmount: bestTradeResult.totalHuman,
-              expectedToAmount: bestTradeResult.totalHuman,
-              fromTokenSymbol: bestTradeResult.fromToken.symbol,
-              toTokenSymbol: bestTradeResult.toToken.symbol,
-              fromAddressName: order.sender.name,
-              fromToken: bestTradeResult.fromToken,
-              fromTokenAddress: bestTradeResult.fromToken.address,
-              toToken: bestTradeResult.toToken,
-              toTokenAddress: bestTradeResult.toToken.address,
-              gasLimit: bestTradeResult.gasLimit,
+            // Update in database
+            if (!order.automatic) {
+              pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
+              await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
+            }
+            
+            console.log(`${order.orderType || 'Limit'} order ${order.id} completed successfully at price ${exactExecutionPrice}`);
+          } catch (tradeError) {
+            console.error(`Failed to execute trade for order ${order.id}:`, tradeError);
+            order.status = 'failed';
+
+            const failedTradeEntry = {
+              ...limitOrderTradeSummary,
+              sentDate: new Date(),
+              isConfirmed: true,
+              timestamp: new Date(),
             };
 
-            if (bestTradeResult.bestMixed) {
-              limitOrderTradeSummary.fromAmountU = (order.fromAmount * bestTradeResult.fractionMixed / 100).toFixed(7);
-              limitOrderTradeSummary.fromAmountB = (order.fromAmount - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
-              limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
-              limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
-              limitOrderTradeSummary.fraction = bestTradeResult.fractionMixed;
+            // Emit the failed trade to be added to history
+            emit('update:trade', failedTradeEntry);
+
+            // Mark order as failed and update in database
+            order.status = 'failed';
+            order.failedAt = new Date().toISOString();
+            order.errorMessage = tradeError.message || String(tradeError);
+            
+            if (order.automatic && order.sourceLocation) {
+              const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+              if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                const levels = levelType === 'sell' 
+                  ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                  : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                  
+                if (levels[levelIndex]) {
+                  levels[levelIndex].status = 'failed';
+                  levels[levelIndex].failureReason = tradeError.message || String(tradeError);
+                  // Update the UI
+                  updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                }
+              }
             }
 
-            try {
-              // Execute the trade with the specific trades and summary for this order
-              await approveSpending(bestTradeResult.trades);
-              await triggerTrade(bestTradeResult.trades, limitOrderTradeSummary);
-
-              // Only mark as completed if trade was successful
-              order.status = 'completed';
-              order.completedAt = new Date().toISOString();
-              order.executionPrice = exactExecutionPrice;
-              
-              // Remove from local array
-              pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
-              
-              // Update in database
-              await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
-              
-              console.log(`${order.orderType || 'Limit'} order ${order.id} completed successfully at price ${exactExecutionPrice}`);
-            } catch (tradeError) {
-              console.error(`Failed to execute trade for order ${order.id}:`, tradeError);
-              order.status = 'failed';
-
-              const failedTradeEntry = {
-                ...limitOrderTradeSummary,
-                sentDate: new Date(),
-                isConfirmed: true,
-                timestamp: new Date(),
-              };
-
-              // Emit the failed trade to be added to history
-              emit('update:trade', failedTradeEntry);
-
-              // Mark order as failed and update in database
-              order.status = 'failed';
-              order.failedAt = new Date().toISOString();
-              order.errorMessage = tradeError.message || String(tradeError);
+            if (!order.automatic) {
               await window.electronAPI.updatePendingOrder(order);
-
               // Remove from pending orders list
               pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
-              await window.electronAPI.saveFailedTrade(failedTradeEntry);
             }
-          } else {
-            // Log exact price vs target for debugging
-            console.log(`Order ${order.id} (${order.orderType || 'limit'}): exact execution price ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit} - not triggered`);
+
+            await window.electronAPI.saveFailedTrade(failedTradeEntry);
           }
         } catch (error) {
           console.error(`Error checking limit order ${order.id}:`, error);
+
+           if (order.status === 'processing') {
+            order.status = 'pending';
+            
+            // Reset source level status if needed
+            if (order.automatic && order.sourceLocation) {
+              const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+              if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                const levels = levelType === 'sell' 
+                  ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                  : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                  
+                if (levels[levelIndex] && levels[levelIndex].status === 'processing') {
+                  levels[levelIndex].status = 'active';
+                  updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                }
+              }
+            }
+          }
         }
         isCheckingPendingOrders = false;
       }
@@ -2434,7 +2509,9 @@ export default {
               buyLevel.triggerPrice &&
               buyLevel.balancePercentage &&
               !isNaN(buyLevel.triggerPrice) &&
-              !isNaN(buyLevel.balancePercentage)
+              !isNaN(buyLevel.balancePercentage) &&        
+              buyLevel.status !== 'processed' &&
+              buyLevel.status !== 'pending'
             ) {
               // For a buy, fromToken is col, toToken is row.token
               const fromToken = col;
@@ -2458,11 +2535,17 @@ export default {
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
                   priceLimit: buyLevel.triggerPrice,
-                  orderType: 'take_profit',
-                  shouldSwitchTokensForLimit: false,
-                  sender,
+                  orderType: 'stop_loss',
+                  shouldSwitchTokensForLimit: true,
                   status: 'pending',
                   createdAt: new Date().toISOString(),
+                  automatic: true,
+                  sourceLocation: {
+                    rowIndex,
+                    colIndex,
+                    levelIndex,
+                    levelType: 'buy'
+                  }
                 });
                 console.log(`Created BUY order for ${fromAmount} ${fromToken.symbol} → ${toToken.symbol}`);
               }
@@ -2475,7 +2558,9 @@ export default {
               sellLevel.triggerPrice &&
               sellLevel.balancePercentage &&
               !isNaN(sellLevel.triggerPrice) &&
-              !isNaN(sellLevel.balancePercentage)
+              !isNaN(sellLevel.balancePercentage) &&
+              sellLevel.status !== 'processed' &&
+              sellLevel.status !== 'pending'
             ) {
               // For a sell, fromToken is row.token, toToken is col
               const fromToken = row.token;
@@ -2499,11 +2584,17 @@ export default {
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
                   priceLimit: sellLevel.triggerPrice,
-                  orderType: 'stop_loss',
-                  shouldSwitchTokensForLimit: true,
-                  sender,
+                  orderType: 'take_profit',
+                  shouldSwitchTokensForLimit: false,
                   status: 'pending',
                   createdAt: new Date().toISOString(),
+                  automatic: true,
+                  sourceLocation: {
+                    rowIndex,
+                    colIndex,
+                    levelIndex,
+                    levelType: 'sell'
+                  }
                 });
                 console.log(`Created SELL order for ${fromAmount} ${fromToken.symbol} → ${toToken.symbol}`);
               }
@@ -2514,11 +2605,6 @@ export default {
       
       console.log(`Generated ${orders.length} orders:`, orders);
       automaticOrders.value = orders;
-      
-      // Save orders to DB
-      orders.forEach(order => {
-        window.electronAPI.savePendingOrder(order);
-      });
     };
     // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
     watch(
