@@ -73,7 +73,7 @@
                 </option>
               </select>
               <span class="right-price">
-                @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[fromTokenAddress]?.price, 7)) }}
+                @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[fromTokenAddress]?.price)) }}
               </span>
             </div>
             <span v-if="fromAmount" class="usd-amount">
@@ -107,7 +107,7 @@
               </span>
             </span>
             <p class="right-price">
-              @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[toTokenAddress]?.price, 7)) }}
+              @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[toTokenAddress]?.price)) }}
             </p>
           </div>
 
@@ -192,7 +192,7 @@
               >
                 <p class="token-symbol">{{ tokenInRow.token.symbol || 'Select Token' }}</p>
                 <p class="token-price">
-                  @ ${{ spaceThousands(removeTrailingZeros(tokenInRow.token.price, 7)) }}
+                  @ ${{ spaceThousands(removeTrailingZeros(tokenInRow.token.price)) }}
                 </p>
                 <img :src="deleteImage" class="delete-row" @click="deleteRow(i)" />
               </div>
