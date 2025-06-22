@@ -748,7 +748,7 @@ export default {
           bestMixed.tradesB,
         ];
         protocol = 'Uniswap & Balancer';
-        finalGasLimit = Number(120000 + 60000 * bestMixed.tradesU.validTrades.length) + Number(gasLimit);
+        finalGasLimit = Number(120000 + 60000 * bestMixed.tradesU.validTrades.length) + Number(bestMixed.tradesB.gasLimit);
       } else if (isUsingUniswap) {
         finalTrades = validTrades;
         protocol = 'Uniswap';
@@ -779,6 +779,8 @@ export default {
       if (finalTotalHuman === '0.000000' || finalTotalHuman === '0.00') {
         finalTotalHuman = tokensByAddresses.value[toTokenAddr].decimals >= 9 ? Number(totalHuman).toFixed(9) : Number(totalHuman).toFixed(6);
       }
+
+      console.log({finalGasLimit});
 
       return {
         trades: finalTrades,
@@ -1070,10 +1072,12 @@ export default {
           callData: callData || null,
           outputAmount: outputAmount || BigNumber.from('0'),
           value: value || '0',
+          gasLimit: gasLimitBalancer || 400000, // Default gas limit
           contractAddress: contractAddress || BALANCER_VAULT_ADDRESS,
         }
       }
     }
+
     const getTradesBalancer = async (_newFrom, _newTo, _newAmt, _newSenderAddress, shouldFetchGasLimit) => {
       const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, _newSenderAddress);
 
@@ -1298,7 +1302,6 @@ export default {
 
     const processBestTrades = (bestTrades, _newFrom, _newTo) => {
       // Filter out any null/undefined
-      console.log(bestTrades)
       const validTrades = bestTrades.filter(t => t && t.outputAmount);
       if (validTrades.length === 0) {
        return {validTrades: [], totalHuman: '0', totalBig: BigNumber.from(0)}

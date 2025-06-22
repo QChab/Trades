@@ -254,7 +254,6 @@ export function useUniswapV4() {
   }
 
   async function selectBestPath(tokenInObject, tokenOutObject, pools, rawIn) {
-    console.log(pools);
     if (!BigNumber.isBigNumber(rawIn)) {
       throw new Error('[selectBestPath] rawIn must be an ethers.BigNumber');
     }
@@ -273,9 +272,7 @@ export function useUniswapV4() {
     try {
       if (!pools.length) return []
 
-      trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 3, maxNumResults: 8 });
-
-      console.log(trades);
+      trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 8 });
 
       if (trades.length < 2)
         return [trades[0]];
