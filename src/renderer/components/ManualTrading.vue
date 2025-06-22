@@ -529,11 +529,15 @@ export default {
       let validTrades, totalHuman, totalBig;
       if (results[0] && results[0].status === 'fulfilled' && results[0].value) {
         if (results[0].value === 'outdated') throw new Error('Quote is outdated');
-        if (!results[0].value[100] || results[0].value[100] === 'outdated') throw new Error('Quote is outdated');
-
-        validTrades = results[0].value[100].validTrades;
-        totalHuman = results[0].value[100].totalHuman;
-        totalBig = results[0].value[100].totalBig;
+        if (results[0].value === 'no swap found') {
+          isUsingUniswap = false;
+        }
+        else if (!results[0].value[100] || results[0].value[100] === 'outdated') throw new Error('Quote is outdated');
+        else {
+          validTrades = results[0].value[100].validTrades;
+          totalHuman = results[0].value[100].totalHuman;
+          totalBig = results[0].value[100].totalBig;
+        }
       } else if (!results[0] || results[0].status === 'rejected') {
         isUsingUniswap = false;
         if (results[0] && results[0].reason)
@@ -585,7 +589,7 @@ export default {
 
       // Handle mixed trades if enabled
       let bestMixed, fractionMixed;
-      if (shouldUseUniswapAndBalancerValue && results[0]?.value) {
+      if (shouldUseUniswapAndBalancerValue && results[0]?.value && results[0].value[100]) {
         // Only proceed with mixed if we have valid Balancer results
         let best25U, best50U, best75U, best90U;
         if (results[4].status === 'fulfilled') 
@@ -768,6 +772,9 @@ export default {
         throw new Error('No swap found');
       }
 
+      if (!finalTrades || finalTrades.length === 0 || !totalHuman) {
+        throw new Error('No valid trades found');
+      }
       finalTotalHuman = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(4) : Number(totalHuman).toFixed(6);
       if (finalTotalHuman === '0.000000' || finalTotalHuman === '0.00') {
         finalTotalHuman = tokensByAddresses.value[toTokenAddr].decimals >= 9 ? Number(totalHuman).toFixed(9) : Number(totalHuman).toFixed(6);
@@ -1267,6 +1274,11 @@ export default {
       const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
       const expectedInRawBN = ethers.utils.parseUnits(_newAmt + '', decimalsIn);
       
+      if (!tradesByPercent[100] || !tradesByPercent[100].validTrades || tradesByPercent[100].validTrades.length === 0) {
+        console.log('No valid trades found');
+        return 'no swap found';
+      }
+
       const totalInBN = tradesByPercent[100].validTrades.reduce(
         (acc, t) => {
           // Convert each JSBI quotient → string → BigNumber, then add
@@ -1286,6 +1298,7 @@ export default {
 
     const processBestTrades = (bestTrades, _newFrom, _newTo) => {
       // Filter out any null/undefined
+      console.log(bestTrades)
       const validTrades = bestTrades.filter(t => t && t.outputAmount);
       if (validTrades.length === 0) {
        return {validTrades: [], totalHuman: '0', totalBig: BigNumber.from(0)}

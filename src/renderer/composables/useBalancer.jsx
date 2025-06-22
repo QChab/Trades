@@ -60,9 +60,8 @@ export function useBalancerV3() {
       tokenOut: tokenOut.address,
       swapKind,
       swapAmount,
-      maxPools: 2,
+      maxPools: 4,
       forceRefresh: true, // Force a fresh query instead of using cached data
-      filterInvalidPools: true // Filter out pools that might cause issues
     });
 
     // Swap object provides useful helpers for re-querying, building call, etc
