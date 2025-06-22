@@ -665,7 +665,6 @@ export default {
             const fraction = [60, 40, 55, 45][i]
             if (res && res.status === 'fulfilled' && res.value) {
               const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              console.log(trade)
               if (trade.outputAmount.gt(0)) {
                 mixedOptions.push({ trade, fraction: fraction });
               }
@@ -686,7 +685,6 @@ export default {
             const fraction = [70, 80, 65, 85][i]
             if (res && res.status === 'fulfilled' && res.value) {
               const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              console.log(trade)
               if (trade.outputAmount.gt(0)) {
                 mixedOptions.push({ trade, fraction: fraction });
               }
@@ -708,7 +706,6 @@ export default {
             const fraction = [20, 30, 15, 10, 35][i]
             if (res && res.status === 'fulfilled' && res.value) {
               const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              console.log(trade)
               if (trade.outputAmount.gt(0)) {
                 mixedOptions.push({ trade, fraction: fraction });
               }
@@ -731,9 +728,6 @@ export default {
           fractionMixed = bestMixedOption.fraction;
         } else {
           if (bestMixedOption && bestMixedOption.trade) {
-            console.log(bestOutputLessGas)
-            console.log(bestMixedOption.trade.outputAmount)
-            console.log(bestMixedOption.trade.outputAmount.gte(bestOutputLessGas))
             const hasBetterOutput = !bestOutputLessGas || 
               (bestMixedOption.trade.outputAmount && 
                 typeof bestMixedOption.trade.outputAmount.gte === 'function' && 
@@ -750,8 +744,8 @@ export default {
       // Build final trade result
       let finalTrades, finalTotalHuman, protocol, finalGasLimit;
       
-      console.log(bestMixed)
       if (bestMixed) {
+        console.log(bestMixed)
         totalHuman = ethers.utils.formatUnits(bestMixed.tradesU.totalBig.add(bestMixed.tradesB.outputAmount), toToken.decimals);
         finalTrades = [
           ...bestMixed.tradesU.validTrades,
@@ -789,8 +783,6 @@ export default {
       if (finalTotalHuman === '0.000000' || finalTotalHuman === '0.00') {
         finalTotalHuman = tokensByAddresses.value[toTokenAddr].decimals >= 9 ? Number(totalHuman).toFixed(9) : Number(totalHuman).toFixed(6);
       }
-
-      console.log({finalGasLimit});
 
       return {
         trades: finalTrades,

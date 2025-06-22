@@ -75,8 +75,12 @@ export function useBalancerV3() {
       `Amount: ${swap.outputAmount.amount}`
     );
 
+    // console.log(swap)
+
     const rpcUrls = await window.electronAPI.getInfuraKeys();
     const updated = await swap.query(rpcUrls[0]);
+
+    // console.log(updated)
 
     let buildInput;
     // In v2 the sender/recipient can be set, in v3 it is always the msg.sender
