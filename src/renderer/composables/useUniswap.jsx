@@ -194,11 +194,16 @@ export function useUniswapV4() {
     const rawPools = [...poolsDirect, ...poolsOut];
     const unique = new Map();
     rawPools.forEach(p => unique.set(p.id, p));
-    const candidatePools = Array.from(unique.values()).filter((pool) => (
-      pool.hooks === '0x0000000000000000000000000000000000000000' && pool.liquidity > 100000
+    let candidatePools = Array.from(unique.values()).filter((pool) => (
+      pool.hooks === '0x0000000000000000000000000000000000000000' && pool.liquidity > 100000 && pool.totalValueLockedUSD && Number(pool.totalValueLockedUSD) >= 10000
     ))
   
-    const pools = [];
+    if (candidatePools.length <= 6)
+      candidatePools = Array.from(unique.values()).filter((pool) => (
+        pool.hooks === '0x0000000000000000000000000000000000000000' && pool.liquidity > 100000
+      ))
+
+      const pools = [];
     for (const pool of candidatePools) {
       const {tokenA, tokenB} = instantiateTokens(
         {address: pool.token0?.id, symbol: pool.token0?.symbol, decimals: pool.token0?.decimals},

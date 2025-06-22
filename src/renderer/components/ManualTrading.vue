@@ -520,7 +520,7 @@ export default {
         (shouldUseUniswapAndBalancerValue) 
           ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .75, senderAddr, false) : null,
         (shouldUseUniswapAndBalancerValue)
-          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .10, senderAddr, false) : null,
+          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .10, senderAddr, !shouldUseBalancerValue) : null,
       ]);
 
       console.log(results);
@@ -571,12 +571,13 @@ export default {
       let outputU = outputUniswap || totalBig || BigNumber.from('0'); // Changed default
       let outputB = outputBalancer || BigNumber.from('0'); // Changed default and removed undefined check
 
-      let bestOutputLessGas = outputU;
+      let bestOutputLessGas = 0;
       if (outputU && outputB && outputB.gt(0)) { // Add check for outputB > 0
-        if (outputU.gt(outputB)) {
+        if (outputU.gt(outputB) && shouldUseUniswapValue) {
+          bestOutputLessGas = outputU;
           isUsingUniswap = true;
           console.log('Using Uniswap')
-        } else {
+        } else if (shouldUseBalancerValue) {
           bestOutputLessGas = outputB;
           isUsingUniswap = false;
           console.log('Using Balancer')
@@ -729,10 +730,19 @@ export default {
           bestMixed = bestMixedOption.trade;
           fractionMixed = bestMixedOption.fraction;
         } else {
-          // When other protocols are also enabled, compare against bestOutputLessGas
-          if (bestMixedOption?.trade && (!bestOutputLessGas || bestMixedOption?.trade?.outputAmount?.gte(bestOutputLessGas))) {
-            bestMixed = bestMixedOption.trade;
-            fractionMixed = bestMixedOption.fraction;
+          if (bestMixedOption && bestMixedOption.trade) {
+            console.log(bestOutputLessGas)
+            console.log(bestMixedOption.trade.outputAmount)
+            console.log(bestMixedOption.trade.outputAmount.gte(bestOutputLessGas))
+            const hasBetterOutput = !bestOutputLessGas || 
+              (bestMixedOption.trade.outputAmount && 
+                typeof bestMixedOption.trade.outputAmount.gte === 'function' && 
+                bestMixedOption.trade.outputAmount.gte(bestOutputLessGas));
+            
+            if (hasBetterOutput) {
+              bestMixed = bestMixedOption.trade;
+              fractionMixed = bestMixedOption.fraction;
+            }
           }
         }
       }
