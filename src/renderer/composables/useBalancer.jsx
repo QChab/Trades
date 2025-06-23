@@ -63,7 +63,7 @@ export function useBalancerV3() {
         swapAmount,
       });
 
-      console.log(`Balancer API found ${sorPaths.length} paths for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}`);
+      // console.log(`Balancer API found ${sorPaths.length} paths for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}`);
 
       if (!sorPaths || sorPaths.length === 0) {
         throw new Error(`No Balancer swap paths found for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}`);
