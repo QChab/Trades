@@ -429,7 +429,7 @@ export default {
     const tabOrder         = ref('market');
     const isSwapButtonDisabled = ref(false);
     const needsToApprove   = ref(false);
-    const slippage         = ref(50);
+    const slippage         = ref(70);
     const shouldUseUniswap = ref(true);
     const shouldUseBalancer = ref(true);
     const shouldUseUniswapAndBalancer = ref(true);
@@ -694,7 +694,7 @@ export default {
         (shouldUseUniswapAndBalancerValue) 
           ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .75, senderAddr, false) : null,
         (shouldUseUniswapAndBalancerValue)
-          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .10, senderAddr, false) : null,
+          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .10, senderAddr, !shouldUseBalancerValue) : null,
       ]);
 
       console.log(results);
@@ -703,11 +703,15 @@ export default {
       let validTrades, totalHuman, totalBig;
       if (results[0] && results[0].status === 'fulfilled' && results[0].value) {
         if (results[0].value === 'outdated') throw new Error('Quote is outdated');
-        if (!results[0].value[100] || results[0].value[100] === 'outdated') throw new Error('Quote is outdated');
-
-        validTrades = results[0].value[100].validTrades;
-        totalHuman = results[0].value[100].totalHuman;
-        totalBig = results[0].value[100].totalBig;
+        if (results[0].value === 'no swap found') {
+          isUsingUniswap = false;
+        }
+        else if (!results[0].value[100] || results[0].value[100] === 'outdated') throw new Error('Quote is outdated');
+        else {
+          validTrades = results[0].value[100].validTrades;
+          totalHuman = results[0].value[100].totalHuman;
+          totalBig = results[0].value[100].totalBig;
+        }
       } else if (!results[0] || results[0].status === 'rejected') {
         isUsingUniswap = false;
         if (results[0] && results[0].reason)
@@ -741,12 +745,13 @@ export default {
       let outputU = outputUniswap || totalBig || BigNumber.from('0'); // Changed default
       let outputB = outputBalancer || BigNumber.from('0'); // Changed default and removed undefined check
 
-      let bestOutputLessGas = outputU;
+      let bestOutputLessGas = 0;
       if (outputU && outputB && outputB.gt(0)) { // Add check for outputB > 0
-        if (outputU.gt(outputB)) {
+        if (outputU.gt(outputB) && shouldUseUniswapValue) {
+          bestOutputLessGas = outputU;
           isUsingUniswap = true;
           console.log('Using Uniswap')
-        } else {
+        } else if (shouldUseBalancerValue) {
           bestOutputLessGas = outputB;
           isUsingUniswap = false;
           console.log('Using Balancer')
@@ -759,7 +764,7 @@ export default {
 
       // Handle mixed trades if enabled
       let bestMixed, fractionMixed;
-      if (shouldUseUniswapAndBalancerValue && results[0]?.value) {
+      if (shouldUseUniswapAndBalancerValue && results[0]?.value && results[0].value[100]) {
         // Only proceed with mixed if we have valid Balancer results
         let best25U, best50U, best75U, best90U;
         if (results[4].status === 'fulfilled') 
@@ -834,7 +839,6 @@ export default {
             const fraction = [60, 40, 55, 45][i]
             if (res && res.status === 'fulfilled' && res.value) {
               const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              console.log(trade)
               if (trade.outputAmount.gt(0)) {
                 mixedOptions.push({ trade, fraction: fraction });
               }
@@ -855,7 +859,6 @@ export default {
             const fraction = [70, 80, 65, 85][i]
             if (res && res.status === 'fulfilled' && res.value) {
               const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              console.log(trade)
               if (trade.outputAmount.gt(0)) {
                 mixedOptions.push({ trade, fraction: fraction });
               }
@@ -877,7 +880,6 @@ export default {
             const fraction = [20, 30, 15, 10, 35][i]
             if (res && res.status === 'fulfilled' && res.value) {
               const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              console.log(trade)
               if (trade.outputAmount.gt(0)) {
                 mixedOptions.push({ trade, fraction: fraction });
               }
@@ -899,10 +901,16 @@ export default {
           bestMixed = bestMixedOption.trade;
           fractionMixed = bestMixedOption.fraction;
         } else {
-          // When other protocols are also enabled, compare against bestOutputLessGas
-          if (bestMixedOption?.trade && (!bestOutputLessGas || bestMixedOption?.trade?.outputAmount?.gte(bestOutputLessGas))) {
-            bestMixed = bestMixedOption.trade;
-            fractionMixed = bestMixedOption.fraction;
+          if (bestMixedOption && bestMixedOption.trade) {
+            const hasBetterOutput = !bestOutputLessGas || 
+              (bestMixedOption.trade.outputAmount && 
+                typeof bestMixedOption.trade.outputAmount.gte === 'function' && 
+                bestMixedOption.trade.outputAmount.gte(bestOutputLessGas));
+            
+            if (hasBetterOutput) {
+              bestMixed = bestMixedOption.trade;
+              fractionMixed = bestMixedOption.fraction;
+            }
           }
         }
       }
@@ -910,15 +918,15 @@ export default {
       // Build final trade result
       let finalTrades, finalTotalHuman, protocol, finalGasLimit;
       
-      console.log(bestMixed)
       if (bestMixed) {
+        console.log(bestMixed)
         totalHuman = ethers.utils.formatUnits(bestMixed.tradesU.totalBig.add(bestMixed.tradesB.outputAmount), toToken.decimals);
         finalTrades = [
           ...bestMixed.tradesU.validTrades,
           bestMixed.tradesB,
         ];
         protocol = 'Uniswap & Balancer';
-        finalGasLimit = Number(120000 + 60000 * bestMixed.tradesU.validTrades.length) + Number(gasLimit);
+        finalGasLimit = Number(120000 + 60000 * bestMixed.tradesU.validTrades.length) + Number(bestMixed.tradesB.gasLimit);
       } else if (isUsingUniswap) {
         finalTrades = validTrades;
         protocol = 'Uniswap';
@@ -942,6 +950,9 @@ export default {
         throw new Error('No swap found');
       }
 
+      if (!finalTrades || finalTrades.length === 0 || !totalHuman) {
+        throw new Error('No valid trades found');
+      }
       finalTotalHuman = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(4) : Number(totalHuman).toFixed(6);
       if (finalTotalHuman === '0.000000' || finalTotalHuman === '0.00') {
         finalTotalHuman = tokensByAddresses.value[toTokenAddr].decimals >= 9 ? Number(totalHuman).toFixed(9) : Number(totalHuman).toFixed(6);
@@ -1237,10 +1248,12 @@ export default {
           callData: callData || null,
           outputAmount: outputAmount || BigNumber.from('0'),
           value: value || '0',
+          gasLimit: gasLimitBalancer || 400000, // Default gas limit
           contractAddress: contractAddress || BALANCER_VAULT_ADDRESS,
         }
       }
     }
+
     const getTradesBalancer = async (_newFrom, _newTo, _newAmt, _newSenderAddress, shouldFetchGasLimit) => {
       const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, _newSenderAddress);
 
@@ -1296,7 +1309,22 @@ export default {
         bestTrades25,
         bestTrades30,
         bestTrades35,
-        bestTrades40
+        bestTrades40,
+        bestTrades45,
+        bestTrades50,
+        bestTrades55,
+        bestTrades60,
+        bestTrades65,
+        bestTrades70,
+        bestTrades75,
+        bestTrades80,
+        bestTrades85,
+        bestTrades90,
+        bestTrades93,
+        bestTrades95,
+        bestTrades97,
+        bestTrades98,
+        bestTrades99
       ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
@@ -1327,17 +1355,6 @@ export default {
           (_newAmt * .40).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
-      ]);
-
-      const [
-        bestTrades45,
-        bestTrades50,
-        bestTrades55,
-        bestTrades60,
-        bestTrades65,
-        bestTrades70,
-        bestTrades75,
-      ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
           (_newAmt * .45).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
@@ -1366,18 +1383,6 @@ export default {
           (_newAmt * .75).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
-      ]);
-
-      const [ 
-        bestTrades80,
-        bestTrades85,
-        bestTrades90,
-        bestTrades93,
-        bestTrades95,
-        bestTrades97,
-        bestTrades98,
-        bestTrades99
-      ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
           (_newAmt * .80).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
@@ -1441,6 +1446,11 @@ export default {
       const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
       const expectedInRawBN = ethers.utils.parseUnits(_newAmt + '', decimalsIn);
       
+      if (!tradesByPercent[100] || !tradesByPercent[100].validTrades || tradesByPercent[100].validTrades.length === 0) {
+        console.log('No valid trades found');
+        return 'no swap found';
+      }
+
       const totalInBN = tradesByPercent[100].validTrades.reduce(
         (acc, t) => {
           // Convert each JSBI quotient → string → BigNumber, then add

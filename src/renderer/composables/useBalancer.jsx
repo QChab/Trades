@@ -45,7 +45,7 @@ export function useBalancerV3() {
     );
     const wethIsEth = true; // If true, incoming ETH will be wrapped to WETH, otherwise the Vault will pull WETH tokens
     const deadline = 999999999999999999n; // Deadline for the swap, in this case infinite
-    const slippage = Slippage.fromPercentage("0.5"); // 0.1%
+    const slippage = Slippage.fromPercentage("0.7"); // 0.1%
     const swapAmount = TokenAmount.fromHumanAmount(tokenIn, amountIn + '');
 
     // API is used to fetch best swap paths from available liquidity across v2 and v3
@@ -54,18 +54,22 @@ export function useBalancerV3() {
       chainId
     );
 
-    const sorPaths = await balancerApi.sorSwapPaths.fetchSorSwapPaths({
-      chainId,
-      tokenIn: tokenIn.address,
-      tokenOut: tokenOut.address,
-      swapKind,
-      swapAmount,
-      maxPools: 2,
-      forceRefresh: true, // Force a fresh query instead of using cached data
-      filterInvalidPools: true // Filter out pools that might cause issues
-    });
+    try {
+      const sorPaths = await balancerApi.sorSwapPaths.fetchSorSwapPaths({
+        chainId,
+        tokenIn: tokenIn.address,
+        tokenOut: tokenOut.address,
+        swapKind,
+        swapAmount,
+      });
 
-    // Swap object provides useful helpers for re-querying, building call, etc
+      // console.log(`Balancer API found ${sorPaths.length} paths for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}`);
+
+      if (!sorPaths || sorPaths.length === 0) {
+        throw new Error(`No Balancer swap paths found for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}`);
+      }
+
+      // Swap object provides useful helpers for re-querying, building call, etc
     const swap = new Swap({
       chainId,
       paths: sorPaths,
@@ -76,8 +80,12 @@ export function useBalancerV3() {
       `Amount: ${swap.outputAmount.amount}`
     );
 
+    // console.log(swap)
+
     const rpcUrls = await window.electronAPI.getInfuraKeys();
     const updated = await swap.query(rpcUrls[0]);
+
+    // console.log(updated)
 
     let buildInput;
     // In v2 the sender/recipient can be set, in v3 it is always the msg.sender
@@ -108,6 +116,10 @@ export function useBalancerV3() {
       ...callData,
       contractAddress: updated.to || BALANCER_VAULT_ADDRESS,
       expectedAmountOut: updated.expectedAmountOut.amount,
+    }
+    } catch (error) {
+      console.error(`Balancer API error for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}:`, error);
+      throw error;
     }
   }
   
