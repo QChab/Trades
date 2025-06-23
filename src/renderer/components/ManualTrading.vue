@@ -320,7 +320,7 @@ export default {
     const tabOrder         = ref('market');
     const isSwapButtonDisabled = ref(false);
     const needsToApprove   = ref(false);
-    const slippage         = ref(50);
+    const slippage         = ref(70);
     const shouldUseUniswap = ref(true);
     const shouldUseBalancer = ref(true);
     const shouldUseUniswapAndBalancer = ref(true);
@@ -1135,7 +1135,22 @@ export default {
         bestTrades25,
         bestTrades30,
         bestTrades35,
-        bestTrades40
+        bestTrades40,
+        bestTrades45,
+        bestTrades50,
+        bestTrades55,
+        bestTrades60,
+        bestTrades65,
+        bestTrades70,
+        bestTrades75,
+        bestTrades80,
+        bestTrades85,
+        bestTrades90,
+        bestTrades93,
+        bestTrades95,
+        bestTrades97,
+        bestTrades98,
+        bestTrades99
       ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
@@ -1166,17 +1181,6 @@ export default {
           (_newAmt * .40).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
-      ]);
-
-      const [
-        bestTrades45,
-        bestTrades50,
-        bestTrades55,
-        bestTrades60,
-        bestTrades65,
-        bestTrades70,
-        bestTrades75,
-      ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
           (_newAmt * .45).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
@@ -1205,18 +1209,6 @@ export default {
           (_newAmt * .75).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
-      ]);
-
-      const [ 
-        bestTrades80,
-        bestTrades85,
-        bestTrades90,
-        bestTrades93,
-        bestTrades95,
-        bestTrades97,
-        bestTrades98,
-        bestTrades99
-      ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
           (_newAmt * .80).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals

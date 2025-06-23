@@ -424,7 +424,7 @@ export function useUniswapV4() {
     return { fraction: frac, output: bestOutput, trades: bestTrades };
   }
 
-  async function executeMixedSwaps(trades, tradeSummary, slippageBips = 50, gasPrice) {
+  async function executeMixedSwaps(trades, tradeSummary, slippageBips = 70, gasPrice) {
     const totalBigIn = trades.reduce(
       (acc, t) => {
         const legInBN = BigNumber.from(t.inputAmount.quotient.toString());
