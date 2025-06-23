@@ -54,17 +54,22 @@ export function useBalancerV3() {
       chainId
     );
 
-    const sorPaths = await balancerApi.sorSwapPaths.fetchSorSwapPaths({
-      chainId,
-      tokenIn: tokenIn.address,
-      tokenOut: tokenOut.address,
-      swapKind,
-      swapAmount,
-      maxPools: 4,
-      forceRefresh: true, // Force a fresh query instead of using cached data
-    });
+    try {
+      const sorPaths = await balancerApi.sorSwapPaths.fetchSorSwapPaths({
+        chainId,
+        tokenIn: tokenIn.address,
+        tokenOut: tokenOut.address,
+        swapKind,
+        swapAmount,
+      });
 
-    // Swap object provides useful helpers for re-querying, building call, etc
+      console.log(`Balancer API found ${sorPaths.length} paths for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}`);
+
+      if (!sorPaths || sorPaths.length === 0) {
+        throw new Error(`No Balancer swap paths found for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}`);
+      }
+
+      // Swap object provides useful helpers for re-querying, building call, etc
     const swap = new Swap({
       chainId,
       paths: sorPaths,
@@ -111,6 +116,10 @@ export function useBalancerV3() {
       ...callData,
       contractAddress: updated.to || BALANCER_VAULT_ADDRESS,
       expectedAmountOut: updated.expectedAmountOut.amount,
+    }
+    } catch (error) {
+      console.error(`Balancer API error for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}:`, error);
+      throw error;
     }
   }
   
