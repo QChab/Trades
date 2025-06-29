@@ -183,6 +183,7 @@
         >
           <h3 v-if="isInitialBalanceFetchDone">{{ automaticOrders.length }} buy/sell levels set</h3>
           <h3 v-else>Initializing balances...</h3>
+          <p>{{ automaticMessage }}</p>
           <div class="matrix">
             <div v-for="(tokenInRow, i) in tokensInRow" class="token-row">
               <div
@@ -515,6 +516,7 @@ export default {
     ])
 
     const automaticOrders = ref([]);
+    const = ref(null);
 
     const shouldSelectTokenInRow = ref(false);
     const newTokenAddress = ref(null);
@@ -2344,6 +2346,7 @@ export default {
 
     let isCheckingPendingOrders = false;
     async function checkPendingOrdersToTrigger() {
+      automaticMessage.value = null;
       try {
         await setTokenPrices(tokens.value);
       } catch (error) {
@@ -2634,7 +2637,7 @@ export default {
           }
         }
       } catch (err) {
-        automaticMessage.value = err;
+      .value = err;
         console.error(err)
       }
       isCheckingPendingOrders = false;
@@ -3138,6 +3141,8 @@ export default {
       automaticOrders,
       computedEthPrice,
       removeTrailingZeros,
+
+    ,
     };
   }
 };
