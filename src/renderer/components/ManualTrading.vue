@@ -516,7 +516,7 @@ export default {
     ])
 
     const automaticOrders = ref([]);
-    const = ref(null);
+    const automaticMessage= ref(null);
 
     const shouldSelectTokenInRow = ref(false);
     const newTokenAddress = ref(null);
@@ -2637,7 +2637,7 @@ export default {
           }
         }
       } catch (err) {
-      .value = err;
+      automaticMessage.value = err;
         console.error(err)
       }
       isCheckingPendingOrders = false;
@@ -3141,8 +3141,7 @@ export default {
       automaticOrders,
       computedEthPrice,
       removeTrailingZeros,
-
-    ,
+      automaticMessage,
     };
   }
 };
