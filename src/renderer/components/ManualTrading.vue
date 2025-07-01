@@ -1603,10 +1603,17 @@ export default {
             props.gasPrice
           )
 
+          const nonce = resultsU.tx.nonce + 1;
+          const maxFeePerGas = resultsU.tx.maxFeePerGas;
+          const maxPriorityFeePerGas = resultsU.tx.maxPriorityFeePerGas;
+
           const resultsB = await window.electronAPI.sendTransaction({
             callData: currentTrades.filter(t => t.callData)[0].callData,
             outputAmount: currentTrades.filter(t => t.callData)[0].outputAmount.toString(),
             value: currentTrades.filter(t => t.callData)[0].value.toString(),
+            nonce,
+            maxFeePerGas,
+            maxPriorityFeePerGas,
             from: currentTradeSummary.sender.address,
             contractAddress: currentTrades.filter(t => t.contractAddress)[0].contractAddress,
             tradeSummary: JSON.parse(JSON.stringify({
