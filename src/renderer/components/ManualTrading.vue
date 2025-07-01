@@ -382,6 +382,10 @@ export default {
     
     const pendingLimitOrders = ref([]);
     const shouldSwitchTokensForLimit = ref(false);
+    
+    // ETH balance monitoring for insufficient gas errors
+    const isInsufficientEthError = ref(false);
+    const ethBalanceCheckInterval = ref(null);
 
     // ─── Computed Helpers ────────────────────────────────────────────────────
 
@@ -420,6 +424,35 @@ export default {
       return b.toFixed(5);
     };
 
+    // Helper: check if current wallet has sufficient ETH for gas
+    const hasSufficientEthForGas = () => {
+      if (!senderDetails.value?.address) return false;
+      const ethBalance = computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()]?.[ethers.constants.AddressZero.toLowerCase()] || 0;
+      return ethBalance >= 0.001; // Minimum 0.001 ETH for gas
+    };
+
+    // Start ETH balance monitoring for insufficient gas errors
+    const startEthBalanceMonitoring = () => {
+      if (ethBalanceCheckInterval.value) return; // Already running
+      
+      ethBalanceCheckInterval.value = setInterval(() => {
+        if (isInsufficientEthError.value && hasSufficientEthForGas()) {
+          swapMessage.value = '';
+          isSwapButtonDisabled.value = false;
+          isInsufficientEthError.value = false;
+          stopEthBalanceMonitoring();
+        }
+      }, 60000); // Check every minute
+    };
+
+    // Stop ETH balance monitoring
+    const stopEthBalanceMonitoring = () => {
+      if (ethBalanceCheckInterval.value) {
+        clearInterval(ethBalanceCheckInterval.value);
+        ethBalanceCheckInterval.value = null;
+      }
+    };
+
     // ─── Watchers ─────────────────────────────────────────────────────────────
     // Refresh balances
     watch(
@@ -445,6 +478,18 @@ export default {
       { immediate: true }
     );
 
+    // Clear error messages when switching wallets
+    watch(
+      () => senderDetails.value,
+      (newSender, oldSender) => {
+        if (newSender && oldSender && newSender.address !== oldSender.address) {
+          swapMessage.value = '';
+          isSwapButtonDisabled.value = false;
+          isInsufficientEthError.value = false;
+          stopEthBalanceMonitoring();
+        }
+      }
+    );
 
     // Whenever props.confirmedTrade changes, adjust our offset map
     watch(() => props.confirmedTrade, (confirmed) => {
@@ -1685,6 +1730,8 @@ export default {
 
         if (error.toString().includes('insufficient funds for intrinsic transaction cost')) {
           swapMessage.value = 'Error: Not enough ETH on the address';
+          isInsufficientEthError.value = true;
+          startEthBalanceMonitoring();
         } else if (error.toString().includes('cannot estimate gas')) {
           swapMessage.value = 'Error: Preventing failed swap';
         } else {
@@ -2168,6 +2215,7 @@ export default {
       if (priceUpdateInterval) {
         clearInterval(priceUpdateInterval);
       }
+      stopEthBalanceMonitoring();
     });
 
     return {
