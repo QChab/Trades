@@ -112,8 +112,14 @@
           </div>
 
           <p class="details-message">{{ priceFetchingMessage }}</p>
+          
+          <!-- Effective Price Display -->
+          <div v-if="effectivePrice" class="effective-price" style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 14px; color: #111; text-align: center;">
+            1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.usdValue }}
+          </div>
+          
           <div class="address-form">
-            <p><span v-if="tradeSummary.protocol">
+            <p><span v-if="tradeSummary.protocol && tabOrder === 'market'">
               On {{ tradeSummary.protocol === 'Uniswap & Balancer' ?  (`Uniswap ${tradeSummary.fraction}% & Balancer ${100 - tradeSummary.fraction}%`) : tradeSummary.protocol}}
             </span> with</p>
             <select id="sender-address" v-model="senderDetails">
@@ -556,6 +562,10 @@ export default {
     
     const pendingLimitOrders = ref([]);
     const shouldSwitchTokensForLimit = ref(false);
+    
+    // ETH balance monitoring for insufficient gas errors
+    const isInsufficientEthError = ref(false);
+    const ethBalanceCheckInterval = ref(null);
 
     const currentMode = ref('automatic'); // 'manual' or 'automatic'
 
@@ -589,11 +599,69 @@ export default {
     // Helper: “5.12345” → formatted string with spaces every 3 digits
     const spaceThousandsFn = (str) => spaceThousands(str);
 
+    // Computed property for effective price display
+    const effectivePrice = computed(() => {
+      if (!tradeSummary.fromAmount || !tradeSummary.toAmount || !tradeSummary.fromTokenSymbol || !tradeSummary.toTokenSymbol) {
+        return null;
+      }
+      
+      const fromAmount = parseFloat(tradeSummary.fromAmount);
+      const toAmount = parseFloat(tradeSummary.toAmount);
+      
+      if (fromAmount <= 0 || toAmount <= 0) {
+        return null;
+      }
+      
+      // Calculate price per unit of output token
+      const pricePerOutputToken = fromAmount / toAmount;
+      
+      // Get USD price of the output token
+      const fromTokenPrice = tokensByAddresses.value[fromTokenAddress.value]?.price || 0;
+      console.log(pricePerOutputToken, fromAmount, toAmount);
+      const usdValue = fromTokenPrice > 0 ? (pricePerOutputToken * fromTokenPrice).toFixed(2) : '0.00';
+      
+      return {
+        pricePerToken: pricePerOutputToken.toFixed(6),
+        fromSymbol: tradeSummary.fromTokenSymbol,
+        toSymbol: tradeSummary.toTokenSymbol,
+        usdValue: usdValue
+      };
+    });
+
     // Helper: get a user’s token‐balance as a string with 5 decimals
     const balanceString = (ownerAddress, tokenAddr) => {
       if (!ownerAddress || !tokenAddr) return '0.00000';
       const b = computedBalancesByAddress.value[ownerAddress?.toLowerCase()]?.[tokenAddr.toLowerCase()] || 0;
       return b.toFixed(5);
+    };
+
+    // Helper: check if current wallet has sufficient ETH for gas
+    const hasSufficientEthForGas = () => {
+      if (!senderDetails.value?.address) return false;
+      const ethBalance = computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()]?.[ethers.constants.AddressZero.toLowerCase()] || 0;
+      return ethBalance >= 0.001; // Minimum 0.001 ETH for gas
+    };
+
+    // Start ETH balance monitoring for insufficient gas errors
+    const startEthBalanceMonitoring = () => {
+      if (ethBalanceCheckInterval.value) return; // Already running
+      
+      ethBalanceCheckInterval.value = setInterval(() => {
+        if (isInsufficientEthError.value && hasSufficientEthForGas()) {
+          swapMessage.value = '';
+          isSwapButtonDisabled.value = false;
+          isInsufficientEthError.value = false;
+          stopEthBalanceMonitoring();
+        }
+      }, 60000); // Check every minute
+    };
+
+    // Stop ETH balance monitoring
+    const stopEthBalanceMonitoring = () => {
+      if (ethBalanceCheckInterval.value) {
+        clearInterval(ethBalanceCheckInterval.value);
+        ethBalanceCheckInterval.value = null;
+      }
     };
 
     // ─── Watchers ─────────────────────────────────────────────────────────────
@@ -621,6 +689,18 @@ export default {
       { immediate: true }
     );
 
+    // Clear error messages when switching wallets
+    watch(
+      () => senderDetails.value,
+      (newSender, oldSender) => {
+        if (newSender && oldSender && newSender.address !== oldSender.address) {
+          swapMessage.value = '';
+          isSwapButtonDisabled.value = false;
+          isInsufficientEthError.value = false;
+          stopEthBalanceMonitoring();
+        }
+      }
+    );
 
     // Whenever props.confirmedTrade changes, adjust our offset map
     watch(() => props.confirmedTrade, (confirmed) => {
@@ -1753,10 +1833,17 @@ export default {
             props.gasPrice
           )
 
+          const nonce = resultsU.tx.nonce + 1;
+          const maxFeePerGas = resultsU.tx.maxFeePerGas;
+          const maxPriorityFeePerGas = resultsU.tx.maxPriorityFeePerGas;
+
           const resultsB = await window.electronAPI.sendTransaction({
             callData: currentTrades.filter(t => t.callData)[0].callData,
             outputAmount: currentTrades.filter(t => t.callData)[0].outputAmount.toString(),
             value: currentTrades.filter(t => t.callData)[0].value.toString(),
+            nonce,
+            maxFeePerGas,
+            maxPriorityFeePerGas,
             from: currentTradeSummary.sender.address,
             contractAddress: currentTrades.filter(t => t.contractAddress)[0].contractAddress,
             tradeSummary: JSON.parse(JSON.stringify({
@@ -1828,6 +1915,8 @@ export default {
 
         if (error.toString().includes('insufficient funds for intrinsic transaction cost')) {
           swapMessage.value = 'Error: Not enough ETH on the address';
+          isInsufficientEthError.value = true;
+          startEthBalanceMonitoring();
         } else if (error.toString().includes('cannot estimate gas')) {
           swapMessage.value = 'Error: Preventing failed swap';
         } else {
@@ -3075,6 +3164,7 @@ export default {
           return dateB.getTime() - dateA.getTime();
         });
       }
+      stopEthBalanceMonitoring();
     });
 
     return {
@@ -3111,6 +3201,7 @@ export default {
       computedBalancesByAddress,
       balanceString,
       spaceThousands: spaceThousandsFn,
+      effectivePrice,
 
       // methods
       switchTokens,

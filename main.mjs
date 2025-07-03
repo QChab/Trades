@@ -276,8 +276,12 @@ async function sendTransaction(transaction) {
       to: transaction.contractAddress,
       data: transaction.callData,
       value: transaction.value,
-      maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
-      maxPriorityFeePerGas: ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (40 * 1000000000))).toFixed(3), 9),
+      maxFeePerGas: transaction.maxFeePerGas || ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
+      maxPriorityFeePerGas: transaction.maxPriorityFeePerGas || ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (40 * 1000000000))).toFixed(3), 9),
+    }
+
+    if (transaction.nonce) {
+      txData.nonce = transaction.nonce;
     }
 
     console.log(txData);
