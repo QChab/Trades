@@ -38,9 +38,6 @@
           class="level-row buy-row"
           :class="{ 'close-to-trigger': isCloseToTrigger('buy', level) }"
         >
-          <div class="level-status" :class="getLevelStatusClass('buy', level)">
-            {{ getLevelStatus('buy', level) }}
-          </div>
           <div class="level-inputs">
             <img :src="deleteImage" class="delete" @click="cleanLevel(level, index)" />
             <label class="input-group">
@@ -53,7 +50,8 @@
                 placeholder="0.0"
                 class="price-input"
               />
-              <span class="second-part-price">{{ tokenB?.symbol }} </span>
+              <span class="second-part-price">{{ tokenB?.symbol }}</span>
+              <span v-if="level.triggerPrice" class="usd-price">${{ getUsdPrice(level.triggerPrice) }}</span>
             </label>
             <label class="input-group">
               Buy
@@ -66,8 +64,12 @@
                 step="1"
                 placeholder="0"
                 class="percentage-input"
+                :title="getPercentageTooltip('buy', level.balancePercentage)"
               />
               <span class="percentage-symbol">%</span>
+              <span class="level-status-inline" :class="getLevelStatusClass('buy', level)">
+                {{ getLevelStatus('buy', level) }}
+              </span>
             </label>
           </div>
         </div>
@@ -80,9 +82,6 @@
           class="level-row sell-row"
           :class="{ 'close-to-trigger': isCloseToTrigger('sell', level) }"
         >
-          <div class="level-status" :class="getLevelStatusClass('sell', level)">
-            {{ getLevelStatus('sell', level) }}
-          </div>
           <div class="level-inputs">
             <img :src="deleteImage" class="delete" @click="cleanLevel(level, index)" />
             <label class="input-group">
@@ -90,10 +89,13 @@
               <input
                 v-model.number="level.triggerPrice"
                 @input="updateLevel('sell', index)"
+                type="number"
+                step="0.000001"
                 placeholder="0.0"
                 class="price-input"
               />
-              <span>{{ tokenB?.symbol }} </span>
+              <span class="second-part-price">{{ tokenB?.symbol }}</span>
+              <span v-if="level.triggerPrice" class="usd-price">${{ getUsdPrice(level.triggerPrice) }}</span>
             </label>
             <label class="input-group">
               Sell
@@ -106,8 +108,12 @@
                 step="1"
                 placeholder="0"
                 class="percentage-input"
+                :title="getPercentageTooltip('sell', level.balancePercentage)"
               />
               <span class="percentage-symbol">%</span>
+              <span class="level-status-inline" :class="getLevelStatusClass('sell', level)">
+                {{ getLevelStatus('sell', level) }}
+              </span>
             </label>
           </div>
         </div>
@@ -145,6 +151,10 @@ export default {
       type: Object,
     },
     tokensByAddresses: {
+      type: Object,
+      default: () => ({})
+    },
+    balances: {
       type: Object,
       default: () => ({})
     },
@@ -373,6 +383,25 @@ export default {
       emitOrderUpdate();
     };
 
+    const getUsdPrice = (triggerPrice) => {
+      if (!triggerPrice || !tokenBPrice.value) return '0.00';
+      const usdPrice = triggerPrice * tokenBPrice.value;
+      return removeTrailingZeros(usdPrice, 4);
+    };
+
+    const getPercentageTooltip = (type, percentage) => {
+      if (!percentage) return '';
+      
+      const tokenAddress = tokenA.value?.address?.toLowerCase();
+      if (!tokenAddress || !props.balances[tokenAddress]) return '';
+      
+      const balance = props.balances[tokenAddress];
+      const tokenAmount = (balance * percentage) / 100;
+      const tokenSymbol = tokenA.value?.symbol || 'TOKEN';
+      
+      return `${percentage}% = ${removeTrailingZeros(tokenAmount, 6)} ${tokenSymbol}`;
+    };
+
     watch(() => props.tokensByAddresses, (newTokens) => {
       if (newTokens[props.tokenA.address]) {
         props.tokenA.price = newTokens[props.tokenA.address].price;
@@ -434,6 +463,8 @@ export default {
       deleteImage,
       cleanLevel,
       removeTrailingZeros,
+      getUsdPrice,
+      getPercentageTooltip,
     };
   }
 };
@@ -640,6 +671,7 @@ export default {
   gap: 4px; /* Reduced from 8px */
   margin-left: auto;
   margin-right: auto;
+  flex-wrap: wrap;
 }
 
 .input-group span {
@@ -682,6 +714,23 @@ export default {
   font-weight: 500;
   transition: all 0.3s ease;
   width: 30%;
+}
+
+.level-status-inline {
+  padding: 2px 4px;
+  margin-left: 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  display: inline-block;
+}
+
+.usd-price {
+  font-size: 9px;
+  color: #666;
+  margin-left: 4px;
+  font-weight: 500;
 }
 
 .status-inactive {

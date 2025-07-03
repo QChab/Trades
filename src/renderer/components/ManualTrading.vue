@@ -224,6 +224,7 @@
                     :tokenA="tokenInRow.token"
                     :tokenB="token"
                     :tokensByAddresses="tokensByAddresses"
+                    :balances="computedBalancesByAddress"
                     :price-threshold="0.01"
                     :details="token.details"
                     @orderUpdate="(details) => updateDetailsOrder(i, j, details)"
@@ -2490,18 +2491,20 @@ export default {
           try {
             // Get current token prices from our updated token list
             const fromToken = tokensByAddresses.value[order.fromToken.address];
-            const senderD = props.addresses.find((a) => a.address.toLowerCase() === order.sender.address.toLowerCase());
+            if (!order.automatic) {
+              const senderD = props.addresses.find((a) => a.address.toLowerCase() === order.sender.address.toLowerCase());
 
-            if (senderD?.balances == null || !fromToken) {
-              console.log(`Skipping order ${order.id} due to missing token or sender data`);
-              continue;
-            }
+              if (senderD?.balances == null || !fromToken) {
+                console.log(`Skipping order ${order.id} due to missing token or sender data`);
+                continue;
+              }
 
-            if (Number(order.fromAmount) > senderD.balances[fromToken.address.toLowerCase()]) {
-              order.isWaitingBalance = true;
-              continue;
-            } else if (order.isWaitingBalance) {
-              order.isWaitingBalance = false;
+              if (Number(order.fromAmount) > senderD.balances[fromToken.address.toLowerCase()]) {
+                order.isWaitingBalance = true;
+                continue;
+              } else if (order.isWaitingBalance) {
+                order.isWaitingBalance = false;
+              }
             }
 
             const toToken = tokensByAddresses.value[order.toToken.address];
@@ -3896,8 +3899,8 @@ h3 {
 }
 
 .global-pause-btn {
-  background-color: #4CAF50;
-  color: white;
+  background-color: #fff;
+  color: #000;
   border: none;
   padding: 10px 20px;
   border-radius: 5px;
@@ -3909,7 +3912,7 @@ h3 {
 }
 
 .global-pause-btn:hover {
-  background-color: #61b165;
+  background-color: #ccc;
 }
 
 .global-pause-btn.paused {
