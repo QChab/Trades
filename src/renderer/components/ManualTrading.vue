@@ -2653,7 +2653,7 @@ export default {
                 
                 // Execute multi-address trade asynchronously without blocking main loop
                 // TODO: uncomment this when ready
-                executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
+                // executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
                 console.log(`Started multi-address execution for order ${order.id} in background`);
                 
               } else {
@@ -2813,6 +2813,8 @@ export default {
         ...tokensByAddresses.value[newCellTokenAddress.value],
         details: {
           isPaused: false,
+          isRandomMode: false,
+          minimumAmount: 0,
           buyLevels: [
             { triggerPrice: null, balancePercentage: null },
             { triggerPrice: null, balancePercentage: null },

@@ -23,6 +23,37 @@
       </button>
     </div>
 
+    <!-- Address selection and minimum amount controls -->
+    <div class="address-controls">
+      <div class="address-selection">
+        <span class="slider-label left" :class="{'slider-selected': !isRandomMode}">Highest</span>
+        <label class="slider-toggle">
+          <input 
+            type="checkbox" 
+            v-model="isRandomMode"
+            @change="emitOrderUpdate"
+          />
+          <span class="slider"></span>
+        </label>
+        <span class="slider-label right"  :class="{'slider-selected': isRandomMode}">Random</span>
+      </div>
+      <div class="minimum-amount">
+        <label class="amount-label">
+          Min: 
+          <input 
+            type="number" 
+            v-model.number="minimumAmount"
+            @input="emitOrderUpdate"
+            step="0.000001"
+            min="0"
+            placeholder="0.0"
+            class="min-amount-input"
+          />
+          <span class="token-symbol">{{ tokenA?.symbol }}</span>
+        </label>
+      </div>
+    </div>
+
     <!-- Current market price -->
     <div class="market-price">
       <span class="price-value">1 {{ tokenA?.symbol }} = {{ currentMarketPrice.toFixed(7) }} {{ tokenB?.symbol }}</span>
@@ -162,6 +193,8 @@ export default {
   emits: ['orderUpdate', 'delete'],
   setup(props, { emit }) {
     const isPaused = ref(false);
+    const isRandomMode = ref(false); // false = highest balance, true = random
+    const minimumAmount = ref(0);
 
     // Initialize 3 sell levels and 3 buy levels
     const sellLevels = reactive([
@@ -355,6 +388,8 @@ export default {
     const emitOrderUpdate = () => {
       const orderData = {
         isPaused: isPaused.value,
+        isRandomMode: isRandomMode.value,
+        minimumAmount: minimumAmount.value,
         sellLevels: sellLevels.map((level, index) => ({
           ...level,
           index,
@@ -427,6 +462,10 @@ export default {
         }
         if (props.details.isPaused)
           isPaused.value = true
+        if (props.details.isRandomMode !== undefined)
+          isRandomMode.value = props.details.isRandomMode
+        if (props.details.minimumAmount !== undefined)
+          minimumAmount.value = props.details.minimumAmount
       }
       
       // Initialize all rows
@@ -452,6 +491,8 @@ export default {
 
     return {
       isPaused,
+      isRandomMode,
+      minimumAmount,
       sellLevels,
       buyLevels,
       currentMarketPrice,
@@ -486,6 +527,108 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.address-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #ddd;
+  font-size: 11px;
+}
+
+.address-selection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slider-label {
+  font-size: 10px;
+  color: #666;
+  font-weight: 500;
+}
+
+.slider-label.left {
+  margin-right: 2px;
+}
+
+.slider-label.right {
+  margin-left: 2px;
+}
+
+.slider-toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 18px;
+}
+
+.slider-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #4CAF50;
+  transition: .3s;
+  border-radius: 18px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #2196F3;
+}
+
+input:checked + .slider:before {
+  transform: translateX(18px);
+}
+
+.minimum-amount {
+  display: flex;
+  align-items: center;
+}
+
+.amount-label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: #666;
+}
+
+.min-amount-input {
+  width: 70px;
+  padding: 2px 4px;
+  border: 1px solid #eee;
+  border-radius: 3px;
+  font-size: 10px;
+  text-align: center;
+}
+
+.token-symbol {
+  font-size: 9px;
+  color: #888;
 }
 
 .control-btn {
@@ -684,7 +827,7 @@ export default {
 .price-input {
   flex: 1;
   padding: 4px 6px; /* Reduced from 6px 8px */
-  border: 1px solid #ccc;
+  border: 1px solid #eee;
   border-radius: 3px; /* Reduced from 4px */
   font-size: 12px; /* Reduced from 14px */
   transition: all 0.2s ease;
@@ -792,22 +935,23 @@ export default {
   -moz-appearance: textfield;
 }
 
-/* Keep spinners for percentage inputs - remove the previous rules that hid them */
+/* Hide spinners for percentage inputs */
 input.percentage-input::-webkit-outer-spin-button,
 input.percentage-input::-webkit-inner-spin-button {
-  -webkit-appearance: auto !important; /* Show the spinners */
+  -webkit-appearance: none;
   margin: 0;
-  height: 100%;
 }
 
 input.percentage-input[type=number] {
-  appearance: auto !important; /* Show spinners in Firefox */
-  -moz-appearance: auto !important; /* Show spinners in Firefox */
+  -moz-appearance: textfield;
 }
 
 /* Style the percentage input to make spinners more visible */
 input.percentage-input {
-  max-width: 32px;
+  border: 1px solid #eee;
+  width: 35px;
+  border-radius: 4px;
+  text-align: center;
 }
 .first-part-price {
   width: 35px;
@@ -876,5 +1020,9 @@ input.percentage-input {
   100% {
     box-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
   }
+}
+
+.slider-selected {
+  font-weight: 700;
 }
 </style>
