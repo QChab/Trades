@@ -192,9 +192,9 @@
               @click="toggleGlobalPause" 
               class="global-pause-btn"
               :class="{ 'paused': isGloballyPaused }"
-              :title="isGloballyPaused ? 'Resume' : 'Pause all'"
+              :title="isGloballyPaused ? 'Unpause' : 'Pause'"
             >
-              {{ isGloballyPaused ? '▶️ Resume' : '⏸️ Pause All' }}
+              {{ isGloballyPaused ? '▶️ Unpause' : '⏸️ Pause' }}
             </button>
             <div class="automatic-info">
               <h3 v-if="isInitialBalanceFetchDone">{{ automaticOrders.length }} buy/sell levels set</h3>
@@ -1400,9 +1400,11 @@ export default {
       const pools = await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo]);
       
       // FINDING TRADES
+      const tokenDecimals = tokensByAddresses.value[_newFrom].decimals;
+      const formattedAmount = Number(_newAmt).toFixed(tokenDecimals);
       const fromAmtRaw = ethers.utils.parseUnits(
-        _newAmt.toString(),
-        tokensByAddresses.value[_newFrom].decimals
+        formattedAmount,
+        tokenDecimals
       );
       const [
         bestTrades,

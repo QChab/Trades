@@ -831,6 +831,7 @@ input:checked + .slider:before {
   border-radius: 3px; /* Reduced from 4px */
   font-size: 12px; /* Reduced from 14px */
   transition: all 0.2s ease;
+  text-align: center;
 }
 
 .price-input:focus, .percentage-input:focus {
