@@ -1820,40 +1820,49 @@ export default {
 
           globalTxs.push(response.tx);
         } else if (currentTradeSummary.protocol === 'Uniswap & Balancer') {
-          const resultsU = await executeMixedSwaps(
-            currentTrades.filter((t) => !t.callData),
-            {
-              ...currentTradeSummary,
-              fromAmount: currentTradeSummary.fromAmountU,
-              expectedToAmount: currentTradeSummary.toAmountU,
-              toAmount: currentTradeSummary.toAmountU,
-              protocol: 'Uniswap'
-            },
-            slippage.value,
-            props.gasPrice
+          const maxFeePerGas = ethers.utils.parseUnits(
+            (Number(props.gasPrice) * 1.85 / 1e9).toFixed(3), 9
           )
+          const maxPriorityFeePerGas =  ethers.utils.parseUnits(
+            (0.02 + Math.random()*0.05 + Number(props.gasPrice)/(40e9)).toFixed(3), 9
+          )
+          const nonce = await toRaw(props.provider).getTransactionCount(currentTradeSummary.sender.address, 'pending');
 
-          const nonce = resultsU.tx.nonce + 1;
-          const maxFeePerGas = resultsU.tx.maxFeePerGas;
-          const maxPriorityFeePerGas = resultsU.tx.maxPriorityFeePerGas;
-
-          const resultsB = await window.electronAPI.sendTransaction({
-            callData: currentTrades.filter(t => t.callData)[0].callData,
-            outputAmount: currentTrades.filter(t => t.callData)[0].outputAmount.toString(),
-            value: currentTrades.filter(t => t.callData)[0].value.toString(),
-            nonce,
-            maxFeePerGas,
-            maxPriorityFeePerGas,
-            from: currentTradeSummary.sender.address,
-            contractAddress: currentTrades.filter(t => t.contractAddress)[0].contractAddress,
-            tradeSummary: JSON.parse(JSON.stringify({
-              ...currentTradeSummary,
-              fromAmount: currentTradeSummary.fromAmountB,
-              expectedToAmount: currentTradeSummary.toAmountB,
-              toAmount: currentTradeSummary.toAmountB,
-              protocol: 'Balancer',
-            })),
-          })
+          const [resultsU, resultsB] = await Promise.all([
+            executeMixedSwaps(
+              currentTrades.filter((t) => !t.callData),
+              {
+                ...currentTradeSummary,
+                fromAmount: currentTradeSummary.fromAmountU,
+                expectedToAmount: currentTradeSummary.toAmountU,
+                toAmount: currentTradeSummary.toAmountU,
+                protocol: 'Uniswap'
+              },
+              slippage.value,
+              props.gasPrice,
+              maxFeePerGas,
+              maxPriorityFeePerGas,
+              nonce,
+            ),
+            window.electronAPI.sendTransaction({
+              callData: currentTrades.filter(t => t.callData)[0].callData,
+              outputAmount: currentTrades.filter(t => t.callData)[0].outputAmount.toString(),
+              value: currentTrades.filter(t => t.callData)[0].value.toString(),
+              nonce: nonce + 1,
+              maxFeePerGas: maxFeePerGas,
+              maxPriorityFeePerGas: maxPriorityFeePerGas,
+              from: currentTradeSummary.sender.address,
+              contractAddress: currentTrades.filter(t => t.contractAddress)[0].contractAddress,
+              tradeSummary: JSON.parse(JSON.stringify({
+                ...currentTradeSummary,
+                fromAmount: currentTradeSummary.fromAmountB,
+                expectedToAmount: currentTradeSummary.toAmountB,
+                toAmount: currentTradeSummary.toAmountB,
+                protocol: 'Balancer',
+              })),
+            })
+          ]);
+          
           if (!resultsU?.success)
             swapMessage.value = 'Problem in sending transaction to Uniswap in U + B: ' + resultsU?.error?.toString()
           if (resultsU.warnings && resultsU.warnings.length) {

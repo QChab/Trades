@@ -424,7 +424,7 @@ export function useUniswapV4() {
     return { fraction: frac, output: bestOutput, trades: bestTrades };
   }
 
-  async function executeMixedSwaps(trades, tradeSummary, slippageBips = 70, gasPrice) {
+  async function executeMixedSwaps(trades, tradeSummary, slippageBips = 70, gasPrice, maxFeePerGas, maxPriorityFeePerGas, nonce) {
     const totalBigIn = trades.reduce(
       (acc, t) => {
         const legInBN = BigNumber.from(t.inputAmount.quotient.toString());
@@ -568,23 +568,27 @@ export function useUniswapV4() {
 
     // deadline + call
     const deadline = Math.floor(Date.now()/1e3) + 120;
+    const txArgs = {
+      value: trades
+        .filter(t => t.inputAmount.currency.isNative)
+        .reduce((sum,t) => sum.add(t.inputAmount.quotient.toString()), BigNumber.from(0)),
+      maxFeePerGas: maxFeePerGas || ethers.utils.parseUnits(
+        (Number(gasPrice) * 1.85 / 1e9).toFixed(3), 9
+      ),
+      maxPriorityFeePerGas: maxPriorityFeePerGas || ethers.utils.parseUnits(
+        (0.02 + Math.random()*0.05 + Number(gasPrice)/(40e9)).toFixed(3), 9
+      ),
+    }
+    if (nonce) {
+      txArgs.nonce = nonce;
+    }
     return window.electronAPI.sendTrade({
       tradeSummary: JSON.parse(JSON.stringify(tradeSummary)),
       args: [
         commands,
         inputs,
         deadline,
-        {
-          value: trades
-            .filter(t => t.inputAmount.currency.isNative)
-            .reduce((sum,t) => sum.add(t.inputAmount.quotient.toString()), BigNumber.from(0)),
-          maxFeePerGas: ethers.utils.parseUnits(
-            (Number(gasPrice) * 1.85 / 1e9).toFixed(3), 9
-          ),
-          maxPriorityFeePerGas: ethers.utils.parseUnits(
-            (0.02 + Math.random()*0.05 + Number(gasPrice)/(40e9)).toFixed(3), 9
-          ),
-        }
+        txArgs,
       ]
     });
   }
