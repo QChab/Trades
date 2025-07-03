@@ -2558,7 +2558,7 @@ export default {
               order.fromToken.address,
               order.toToken.address,
               order.fromAmount,
-              order.sender.address,
+              order?.sender?.address || senderDetails.value.address,
               true,
               true,
               tokensByAddresses.value[order.fromToken.address].price * Number(order.fromAmount) >= 100,
@@ -2652,7 +2652,8 @@ export default {
                 }
                 
                 // Execute multi-address trade asynchronously without blocking main loop
-                executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
+                // TODO: uncomment this when ready
+                // executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
                 console.log(`Started multi-address execution for order ${order.id} in background`);
                 
               } else {
@@ -3407,7 +3408,7 @@ input.small-number {
   -ms-user-select: none; /* Internet Explorer/Edge */
   position: absolute;
   right: 20px;
-  top: 35px;
+  top: 40px;
 }
 
 .swap-button {
@@ -3909,6 +3910,7 @@ h3 {
   font-weight: bold;
   transition: background-color 0.3s ease;
   min-width: 150px;
+  position: absolute;
 }
 
 .global-pause-btn:hover {

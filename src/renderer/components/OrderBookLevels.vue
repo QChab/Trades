@@ -319,9 +319,9 @@ export default {
       // Check price validity
       if (level.triggerPrice !== null && !isPriceValid(type, level.triggerPrice)) {
         if (type === 'buy') {
-          return 'Buy lower';
+          return 'lower?';
         } else {
-          return 'Sell higher';
+          return 'higher?';
         }
       }
       
@@ -475,10 +475,11 @@ export default {
   border: 2px solid #ddd;
   border-right: 1px solid #eee;;
   border-left: 1px solid #eee;;
-  padding: 6px; /* Reduced from 16px */
+  padding: 0px; /* Reduced from 16px */
   background-color: #fafafa;
-  width: 310px;
+  width: 309px;
   flex-shrink: 0;
+  min-height: 250px;
 }
 
 .header {
@@ -668,10 +669,11 @@ export default {
 .input-group {
   display: flex;
   align-items: center;
-  gap: 4px; /* Reduced from 8px */
+  gap: 1px; /* Reduced from 8px */
   margin-left: auto;
   margin-right: auto;
   flex-wrap: wrap;
+  min-width: 135px;
 }
 
 .input-group span {
@@ -729,7 +731,7 @@ export default {
 .usd-price {
   font-size: 9px;
   color: #666;
-  margin-left: 4px;
+  margin-left: 50px;
   font-weight: 500;
 }
 
@@ -805,8 +807,7 @@ input.percentage-input[type=number] {
 
 /* Style the percentage input to make spinners more visible */
 input.percentage-input {
-  max-width: 24px;
-  padding-right: 2px; /* Less padding on right to make room for spinners */
+  max-width: 32px;
 }
 .first-part-price {
   width: 35px;
@@ -827,7 +828,7 @@ input.percentage-input {
   height: 15px;
   display: inline-block;
   position: absolute;
-  top: 3px;
+  top: 30px;
   right: 3px;
   cursor: pointer;
 }
