@@ -187,9 +187,21 @@
           class="automatic-mode"
           :class="{'no-addresses-unlocked': !addresses.length}"
         >
-          <h3 v-if="isInitialBalanceFetchDone">{{ automaticOrders.length }} buy/sell levels set</h3>
-          <h3 v-else>Initializing balances...</h3>
-          <p>{{ automaticMessage }}</p>
+          <div class="automatic-header">
+            <button 
+              @click="toggleGlobalPause" 
+              class="global-pause-btn"
+              :class="{ 'paused': isGloballyPaused }"
+              :title="isGloballyPaused ? 'Resume' : 'Pause all'"
+            >
+              {{ isGloballyPaused ? '▶️ Resume' : '⏸️ Pause All' }}
+            </button>
+            <div class="automatic-info">
+              <h3 v-if="isInitialBalanceFetchDone">{{ automaticOrders.length }} buy/sell levels set</h3>
+              <h3 v-else>Initializing balances...</h3>
+              <p>{{ automaticMessage }}</p>
+            </div>
+          </div>
           <div class="matrix">
             <div v-for="(tokenInRow, i) in tokensInRow" class="token-row">
               <div
@@ -523,6 +535,7 @@ export default {
 
     const automaticOrders = ref([]);
     const automaticMessage= ref(null);
+    const isGloballyPaused = ref(false);
 
     const shouldSelectTokenInRow = ref(false);
     const newTokenAddress = ref(null);
@@ -2444,6 +2457,8 @@ export default {
 
     let isCheckingPendingOrders = false;
     async function checkPendingOrdersToTrigger() {
+      // Check global pause state first
+      
       automaticMessage.value = null;
       try {
         await setTokenPrices(tokens.value);
@@ -2457,9 +2472,13 @@ export default {
       isCheckingPendingOrders = true;
 
       try {
-        generateOrdersFromLevels();
 
-        const allOrders = pendingLimitOrders.value.concat(automaticOrders.value);
+        let allOrders = pendingLimitOrders.value;
+        
+        if (!isGloballyPaused.value) {
+          generateOrdersFromLevels();
+          allOrders = allOrders.concat(automaticOrders.value);
+        }
 
         if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
         if (!allOrders || !allOrders.length) return;
@@ -2805,6 +2824,10 @@ export default {
 
       shouldSelectTokenInCell.value = false;
       newCellTokenAddress.value = null;
+    }
+
+    const toggleGlobalPause = () => {
+      isGloballyPaused.value = !isGloballyPaused.value;
     }
 
     const updateDetailsOrder = (i, j, details) => {
@@ -3242,6 +3265,8 @@ export default {
       computedEthPrice,
       removeTrailingZeros,
       automaticMessage,
+      isGloballyPaused,
+      toggleGlobalPause,
     };
   }
 };
@@ -3857,6 +3882,42 @@ h3 {
 
 .automatic-mode {
   padding: 20px 20px 20px;
+}
+
+.automatic-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.automatic-info {
+  flex: 1;
+}
+
+.global-pause-btn {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+  transition: background-color 0.3s ease;
+  min-width: 150px;
+}
+
+.global-pause-btn:hover {
+  background-color: #61b165;
+}
+
+.global-pause-btn.paused {
+  background-color: #fba09a;
+}
+
+.global-pause-btn.paused:hover {
+  background-color: #d27771;
 }
 
 .matrix {
