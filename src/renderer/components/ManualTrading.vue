@@ -99,8 +99,14 @@
           </div>
 
           <p class="details-message">{{ priceFetchingMessage }}</p>
+          
+          <!-- Effective Price Display -->
+          <div v-if="effectivePrice" class="effective-price" style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 14px; color: #111; text-align: center;">
+            1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.usdValue }}
+          </div>
+          
           <div class="address-form">
-            <p><span v-if="tradeSummary.protocol">
+            <p><span v-if="tradeSummary.protocol && tabOrder === 'market'">
               On {{ tradeSummary.protocol === 'Uniswap & Balancer' ?  (`Uniswap ${tradeSummary.fraction}% & Balancer ${100 - tradeSummary.fraction}%`) : tradeSummary.protocol}}
             </span> with</p>
             <select id="sender-address" v-model="senderDetails">
@@ -416,6 +422,35 @@ export default {
 
     // Helper: “5.12345” → formatted string with spaces every 3 digits
     const spaceThousandsFn = (str) => spaceThousands(str);
+
+    // Computed property for effective price display
+    const effectivePrice = computed(() => {
+      if (!tradeSummary.fromAmount || !tradeSummary.toAmount || !tradeSummary.fromTokenSymbol || !tradeSummary.toTokenSymbol) {
+        return null;
+      }
+      
+      const fromAmount = parseFloat(tradeSummary.fromAmount);
+      const toAmount = parseFloat(tradeSummary.toAmount);
+      
+      if (fromAmount <= 0 || toAmount <= 0) {
+        return null;
+      }
+      
+      // Calculate price per unit of output token
+      const pricePerOutputToken = fromAmount / toAmount;
+      
+      // Get USD price of the output token
+      const fromTokenPrice = tokensByAddresses.value[fromTokenAddress.value]?.price || 0;
+      console.log(pricePerOutputToken, fromAmount, toAmount);
+      const usdValue = fromTokenPrice > 0 ? (pricePerOutputToken * fromTokenPrice).toFixed(2) : '0.00';
+      
+      return {
+        pricePerToken: pricePerOutputToken.toFixed(6),
+        fromSymbol: tradeSummary.fromTokenSymbol,
+        toSymbol: tradeSummary.toTokenSymbol,
+        usdValue: usdValue
+      };
+    });
 
     // Helper: get a user’s token‐balance as a string with 5 decimals
     const balanceString = (ownerAddress, tokenAddr) => {
@@ -2252,6 +2287,7 @@ export default {
       computedBalancesByAddress,
       balanceString,
       spaceThousands: spaceThousandsFn,
+      effectivePrice,
 
       // methods
       switchTokens,
