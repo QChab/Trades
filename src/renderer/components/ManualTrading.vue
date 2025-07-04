@@ -214,7 +214,10 @@
                 </p>
                 <img :src="deleteImage" class="delete-row" @click="deleteRow(i)" />
               </div>
-              <div class="horizontal-scroll">
+              <div 
+                class="horizontal-scroll"
+                v-if="tokenInRow?.token?.symbol"
+              >
                 <div
                   v-for="(token, j) in tokenInRow.columns"
                   :key="token?.address + j + '-' + cell"
@@ -2232,12 +2235,23 @@ export default {
     }
 
     // Helper function to find addresses with highest balances for a token
-    function getAddressesWithHighestBalances(tokenAddress, requiredAmount) {
+    function getAddressesWithHighestBalances(tokenAddress, requiredAmount, order = null) {
       const tokenAddr = tokenAddress.toLowerCase();
       const isETH = tokenAddr === '0x0000000000000000000000000000000000000000' || tokenAddr === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
       
       // Calculate gas reserve for ETH trades (use gas price to estimate)
       const gasReserve = isETH ? calculateGasReserve() : 0;
+      
+      // Get minimum amount and random mode settings from order if available
+      let minimumAmount = 0;
+      let isRandomMode = false;
+      
+      if (order && order.automatic && order.sourceLocation) {
+        const { rowIndex, colIndex } = order.sourceLocation;
+        const tradingPairConfig = tokensInRow.value?.[rowIndex]?.columns?.[colIndex];
+        minimumAmount = tradingPairConfig?.details?.minimumAmount || 0;
+        isRandomMode = tradingPairConfig?.details?.isRandomMode || false;
+      }
       
       const availableAddresses = props.addresses
         .map(address => ({
@@ -2246,19 +2260,68 @@ export default {
         }))
         .filter(address => {
           const balance = address.balance;
-          return balance > 0 && (isETH ? balance > gasReserve : true);
-        })
-        .sort((a, b) => b.balance - a.balance);
+          const hasPositiveBalance = balance > 0 && (isETH ? balance > gasReserve : true);
+          
+          // Add minimum amount check
+          if (hasPositiveBalance && minimumAmount > 0) {
+            // For ETH, check if balance minus gas reserve meets minimum
+            const effectiveBalance = isETH ? balance - gasReserve : balance;
+            
+            if (order && order.sourceLocation) {
+              if (order.sourceLocation.levelType === 'buy') {
+                // For buy orders: check if expected output meets minimum
+                const expectedOutputAmount = effectiveBalance * order.priceLimit;
+                return expectedOutputAmount >= minimumAmount;
+              } else if (order.sourceLocation.levelType === 'sell') {
+                // For sell orders: check if input amount meets minimum
+                return effectiveBalance >= minimumAmount;
+              }
+            }
+            
+            // Default check for non-automatic orders
+            return effectiveBalance >= minimumAmount;
+          }
+          
+          return hasPositiveBalance;
+        });
+      
+      // Apply sorting based on mode
+      let sortedAddresses;
+      if (isRandomMode) {
+        // Random mode: shuffle the array
+        sortedAddresses = [...availableAddresses].sort(() => Math.random() - 0.5);
+      } else {
+        // Highest balance mode: sort by balance descending
+        sortedAddresses = availableAddresses.sort((a, b) => b.balance - a.balance);
+      }
       
       const selectedAddresses = [];
       let totalAmount = 0;
       
-      for (const address of availableAddresses) {
+      for (const address of sortedAddresses) {
         if (totalAmount >= requiredAmount) break;
         
         // For ETH, subtract gas reserve from available balance
         const maxAvailable = isETH ? address.balance - gasReserve : address.balance;
-        const availableFromAddress = Math.min(maxAvailable, requiredAmount - totalAmount);
+        let availableFromAddress = Math.min(maxAvailable, requiredAmount - totalAmount);
+        
+        // Additional minimum amount check per address
+        if (minimumAmount > 0 && order && order.sourceLocation) {
+          if (order.sourceLocation.levelType === 'buy') {
+            // For buy orders: ensure this address's contribution results in minimum output
+            const expectedOutputFromAddress = availableFromAddress * order.priceLimit;
+            if (expectedOutputFromAddress < minimumAmount && selectedAddresses.length > 0) {
+              // If we already have other addresses and this one doesn't meet minimum, skip it
+              continue;
+            }
+          } else if (order.sourceLocation.levelType === 'sell') {
+            // For sell orders: ensure this address's contribution meets minimum
+            if (availableFromAddress < minimumAmount && selectedAddresses.length > 0) {
+              // If we already have other addresses and this one doesn't meet minimum, skip it
+              continue;
+            }
+          }
+        }
         
         if (availableFromAddress > 0) {
           selectedAddresses.push({
@@ -2529,6 +2592,36 @@ export default {
               }
             }
 
+            // Check minimum amount requirement for automatic orders
+            if (order.automatic && order.sourceLocation) {
+              const { rowIndex, colIndex } = order.sourceLocation;
+              const tradingPairConfig = tokensInRow.value?.[rowIndex]?.columns?.[colIndex];
+              const minimumAmount = tradingPairConfig?.details?.minimumAmount || 0;
+              
+              if (minimumAmount > 0) {
+                let meetsMinimumRequirement = false;
+                
+                if (order.sourceLocation.levelType === 'buy') {
+                  // For buy orders: check expected output amount (buying toToken)
+                  const expectedOutputAmount = Number(order.fromAmount) * order.priceLimit;
+                  meetsMinimumRequirement = expectedOutputAmount >= minimumAmount;
+                  
+                  if (!meetsMinimumRequirement) {
+                    console.log(`Skipping automatic BUY order ${order.id}: expected output ${expectedOutputAmount} ${order.toToken.symbol} below minimum amount ${minimumAmount}`);
+                    continue;
+                  }
+                } else if (order.sourceLocation.levelType === 'sell') {
+                  // For sell orders: check input amount (selling fromToken)
+                  meetsMinimumRequirement = Number(order.fromAmount) >= minimumAmount;
+                  
+                  if (!meetsMinimumRequirement) {
+                    console.log(`Skipping automatic SELL order ${order.id}: ${order.fromAmount} ${order.fromToken.symbol} below minimum amount ${minimumAmount}`);
+                    continue;
+                  }
+                }
+              }
+            }
+
             const toToken = tokensByAddresses.value[order.toToken.address];
             
             if (!fromToken?.price || !toToken?.price) {
@@ -2665,7 +2758,8 @@ export default {
               if (order.automatic && order.remainingAmount > 0) {
                 const addressSelection = getAddressesWithHighestBalances(
                   order.fromToken.address,
-                  order.remainingAmount
+                  order.remainingAmount,
+                  order
                 );
                 
                 if (addressSelection.totalAvailable < order.remainingAmount) {
@@ -3040,7 +3134,22 @@ export default {
               
               console.log(`Buy level ${k}: Token ${fromToken.symbol}, balance: ${balance}, amount: ${fromAmount}, trigger price: ${buyLevel.triggerPrice}`);
               
-              if (fromAmount > 0) {
+              // Check minimum amount requirement for output token (toToken)
+              const minimumAmount = col.details?.minimumAmount || 0;
+              let meetsMinimumRequirement = true;
+              
+              if (minimumAmount > 0 && fromAmount > 0) {
+                // Calculate expected output amount using trigger price
+                // For buy levels: we're buying toToken with fromToken
+                const expectedOutputAmount = fromAmount * buyLevel.triggerPrice;
+                meetsMinimumRequirement = expectedOutputAmount >= minimumAmount;
+                
+                if (!meetsMinimumRequirement) {
+                  console.log(`Skipping BUY order: expected output ${expectedOutputAmount} ${toToken.symbol} below minimum amount ${minimumAmount}`);
+                }
+              }
+              
+              if (fromAmount > 0 && meetsMinimumRequirement) {
                 orders.push({
                   fromAmount,
                   originalAmount: fromAmount,
@@ -3094,7 +3203,19 @@ export default {
               
               console.log(`Sell level ${k}: Token ${fromToken.symbol}, balance: ${balance}, amount: ${fromAmount}, trigger price: ${sellLevel.triggerPrice}`);
               
-              if (fromAmount > 0) {
+              // Check minimum amount requirement for input token (fromToken being sold)
+              const minimumAmount = col.details?.minimumAmount || 0;
+              let meetsMinimumRequirement = true;
+              
+              if (minimumAmount > 0 && fromAmount > 0) {
+                meetsMinimumRequirement = fromAmount >= minimumAmount;
+                
+                if (!meetsMinimumRequirement) {
+                  console.log(`Skipping SELL order: ${fromAmount} ${fromToken.symbol} below minimum amount ${minimumAmount}`);
+                }
+              }
+              
+              if (fromAmount > 0 && meetsMinimumRequirement) {
                 orders.push({
                   fromAmount,
                   originalAmount: fromAmount,
@@ -3504,6 +3625,7 @@ input.small-number {
   height: 15px;
   display: inline-block;
   cursor: pointer;
+  top: 5px;
 }
 
 .checkbox-label.edit-label input {
@@ -3957,7 +4079,6 @@ h3 {
 .token-details {
   border: 2px solid #ddd;
   border-radius: 8px;
-  padding: 6px;
   background-color: #fafafa;
   align-content: center;
   text-align: center;
@@ -3965,6 +4086,7 @@ h3 {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
   width: 120px;
+  position: relative;
 }
 
 .token-price {
@@ -3978,6 +4100,8 @@ h3 {
   display: flex;
   flex-direction: row;
   background-color: #fafafa;
+  border-bottom: 2px solid #ddd;
+  border-top: 2px solid #ddd;
 }
 .token-symbol {
   font-size: 22px;
@@ -3994,6 +4118,7 @@ h3 {
   border-bottom-right-radius: 5px !important;
   border-left: 1px solid #eee;
   border-right: 2px solid #ddd !important;
+  border: 0px;
   display: flex;
   justify-content: center;
   align-content: center;

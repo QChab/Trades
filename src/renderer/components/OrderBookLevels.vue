@@ -514,7 +514,6 @@ export default {
 
 <style scoped>
 .order-book-levels {
-  border: 2px solid #ddd;
   border-right: 1px solid #eee;;
   border-left: 1px solid #eee;;
   padding: 0px; /* Reduced from 16px */
@@ -729,7 +728,7 @@ input:checked + .slider:before {
 .level-row {
   border: 1px solid #ddd;
   border-radius: 4px;
-  padding: 0 8px 8px;
+  padding: 0 3px 3px;
   margin-bottom: 0px;
   background-color: white;
   transition: all 0.3s ease;
@@ -954,7 +953,7 @@ input.percentage-input {
   text-align: center;
 }
 .first-part-price {
-  width: 35px;
+  width: 38px;
 }
 
 .token-price {
