@@ -114,7 +114,7 @@
           :class="{ 'close-to-trigger': isCloseToTrigger('sell', level) }"
         >
           <div class="level-inputs">
-            <img :src="deleteImage" class="delete" @click="cleanLevel(level, index)" />
+            <img :src="deleteImage" class="delete" @click="cleanLevel(level, index)" v-if="level.triggerPrice"/>
             <label class="input-group">
               <span class="first-part-price">{{ tokenA?.symbol }} ≥ </span>
               <input
