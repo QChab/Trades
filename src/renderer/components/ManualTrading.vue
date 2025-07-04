@@ -210,7 +210,7 @@
               >
                 <p class="token-symbol">{{ tokenInRow.token.symbol || 'Select Token' }}</p>
                 <p class="token-price">
-                  @ ${{ spaceThousands(removeTrailingZeros(tokenInRow.token.price)) }}
+                  ${{ spaceThousands(removeTrailingZeros(tokenInRow.token.price)) }}
                 </p>
                 <img :src="deleteImage" class="delete-row" @click="deleteRow(i)" />
               </div>
@@ -2679,7 +2679,7 @@ export default {
                 
                 // Execute multi-address trade asynchronously without blocking main loop
                 // TODO: uncomment this when ready
-                executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
+                // executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
                 console.log(`Started multi-address execution for order ${order.id} in background`);
                 
               } else {

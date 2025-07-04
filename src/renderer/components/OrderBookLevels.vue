@@ -12,7 +12,7 @@
       
       <div class="token-pair">
         <span class="token-name">{{ tokenB?.symbol }}</span>
-        <span class="token-price">@ ${{ removeTrailingZeros(tokenB?.price, 8) }}</span>
+        <span class="token-price">{{ '  $' + removeTrailingZeros(tokenB?.price, 8) }}</span>
       </div>
       
       <button 
@@ -506,6 +506,7 @@ export default {
       removeTrailingZeros,
       getUsdPrice,
       getPercentageTooltip,
+      emitOrderUpdate,
     };
   }
 };
@@ -535,7 +536,6 @@ export default {
   align-items: center;
   padding: 4px 6px;
   background-color: #f8f9fa;
-  border-bottom: 1px solid #ddd;
   font-size: 11px;
 }
 

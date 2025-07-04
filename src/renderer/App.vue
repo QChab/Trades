@@ -319,21 +319,12 @@
         } catch (err) {
           console.error(err)
         }
-        try {
-          const url =
-            'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd';
-          const { ethereum } = await fetch(url).then(r => r.json());
-          if (ethereum.usd !== '0' && ethereum.usd !== 0)
-            return Number(ethereum.usd);
-        } catch (err) {
-          console.error(err)
-        }
-        return 0;
+        return ethPrice.value;
       }
       ( async () => ethPrice.value = await getEthUsd())();
       setInterval(async () => { 
         ethPrice.value = await getEthUsd();
-       }, 20000);
+       }, 30000);
 
       const readDataFromString = async (args) => { 
         let { fileContent, ext } = args;
