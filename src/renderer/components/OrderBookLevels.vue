@@ -84,7 +84,7 @@
               <span class="second-part-price">{{ tokenB?.symbol }}</span>
               <span v-if="level.triggerPrice" class="usd-price">${{ getUsdPrice(level.triggerPrice) }}</span>
             </label>
-            <label class="input-group">
+            <label class="input-group" v-if="level.triggerPrice">
               Buy
               <input
                 v-model.number="level.balancePercentage"
@@ -128,7 +128,7 @@
               <span class="second-part-price">{{ tokenB?.symbol }}</span>
               <span v-if="level.triggerPrice" class="usd-price">${{ getUsdPrice(level.triggerPrice) }}</span>
             </label>
-            <label class="input-group">
+            <label class="input-group" v-if="level.triggerPrice">
               Sell
               <input
                 v-model.number="level.balancePercentage"
