@@ -1862,7 +1862,9 @@ export default {
           const maxPriorityFeePerGas =  ethers.utils.parseUnits(
             (0.02 + Math.random()*0.05 + Number(props.gasPrice)/(40e9)).toFixed(3), 9
           )
-          const nonce = await toRaw(props.provider).getTransactionCount(currentTradeSummary.sender.address, 'pending');
+
+          const privateProvider = new ethers.providers.JsonRpcProvider('https://rpc.mevblocker.io/fullprivacy', { chainId: 1, name: 'homestead' });
+          const nonce = await privateProvider.getTransactionCount(currentTradeSummary.sender.address, 'pending');
 
           const [resultsU, resultsB] = await Promise.all([
             executeMixedSwaps(

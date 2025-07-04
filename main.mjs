@@ -267,7 +267,7 @@ async function sendTransaction(transaction) {
   const warnings = [];
 
   try {
-    const wallet = getWallet(transaction.from);
+    const wallet = getWallet(transaction.from, true);
 
     const balance = await provider.getBalance(wallet.address);
     const balanceEth = Number(ethers.utils.formatEther(balance));
@@ -304,7 +304,7 @@ async function sendTransaction(transaction) {
   }
 }
 
-  const getWallet = (address) => {
+  const getWallet = (address, isPrivate) => {
     if (!privateKeys || !privateKeys.length) 
       throw new Error('No private keys found');
 
@@ -312,7 +312,9 @@ async function sendTransaction(transaction) {
     const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from);
     const PRIVATE_KEY = pk.pk;
     
-    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+    const wallet = new ethers.Wallet(PRIVATE_KEY, isPrivate ? 
+      new ethers.providers.JsonRpcProvider('https://rpc.mevblocker.io/fullprivacy', { chainId: 1, name: 'homestead' }) : provider);
+
     if (!wallet || !wallet.address || wallet.address.toLowerCase() !== from) {
       throw new Error(`Incorrect private key for address ${transfer.from}`)
     }
@@ -383,7 +385,7 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
   console.log(tradeSummary);
   
   try {
-    const wallet = getWallet(tradeSummary.sender?.address?.toLowerCase());
+    const wallet = getWallet(tradeSummary.sender?.address?.toLowerCase(), true);
 
     if (!tradeSummary.fromToken?.address) throw new Error('Missing from token address in trade details')
     if (!tradeSummary.toToken?.address) throw new Error('Missing to token address in trade details')
