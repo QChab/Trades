@@ -1406,6 +1406,9 @@ export default {
         formattedAmount,
         tokenDecimals
       );
+      
+      console.log({fromAmtRaw});
+
       const [
         bestTrades,
         bestTrades10,
@@ -1549,7 +1552,9 @@ export default {
       }
 
       const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
-      const expectedInRawBN = ethers.utils.parseUnits(_newAmt + '', decimalsIn);
+      const formattedAmountIn = Number(_newAmt).toFixed(decimalsIn);
+      const expectedInRawBN = ethers.utils.parseUnits(formattedAmountIn, decimalsIn);
+      console.log({expectedInRawBN})
       
       if (!tradesByPercent[100] || !tradesByPercent[100].validTrades || tradesByPercent[100].validTrades.length === 0) {
         console.log('No valid trades found');
@@ -1565,6 +1570,7 @@ export default {
         BigNumber.from(0)
       );
 
+      console.log({totalInBN});
       if (!totalInBN.eq(expectedInRawBN)) {
         console.log('Outdated input amount, sum of input of trades: ' + totalInBN.toString());
         return 'outdated';
@@ -2655,7 +2661,7 @@ export default {
                 
                 // Execute multi-address trade asynchronously without blocking main loop
                 // TODO: uncomment this when ready
-                // executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
+                executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
                 console.log(`Started multi-address execution for order ${order.id} in background`);
                 
               } else {
