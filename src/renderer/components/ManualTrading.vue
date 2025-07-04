@@ -1798,6 +1798,20 @@ export default {
         currentTradeSummary.txId = 'pending';
         currentTradeSummary.sentDate = new Date();
         currentTradeSummary.isConfirmed = false;
+        
+        // Determine trade type based on order context
+        if (providedTradeSummary && providedTradeSummary.orderType) {
+          // Check if this is an automatic order execution
+          if (providedTradeSummary.automatic) {
+            currentTradeSummary.type = 'automatic';
+          } else {
+            // This is a manual limit order execution
+            currentTradeSummary.type = 'limit';
+          }
+        } else {
+          // This is a manual trade
+          currentTradeSummary.type = 'manual';
+        }
 
         // Basic balance check for ETH → gas
         if (currentTradeSummary.fromToken.address === ethers.constants.AddressZero) {
@@ -2452,6 +2466,8 @@ export default {
           toToken: toToken,
           toTokenAddress: toToken.address,
           gasLimit: bestTradeResult.gasLimit,
+          orderType: order.orderType,
+          automatic: order.automatic,
         };
         
         await approveSpending(bestTradeResult.trades);

@@ -68,6 +68,12 @@ function initDatabase() {
           console.error('Failed to create trades table:', tableErr);
         } else {
           console.log('trades table ready or already exists.');
+
+          db.run(`ALTER TABLE trades ADD COLUMN type TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding type column:', err);
+            }
+          });
         }
       });
 
@@ -137,8 +143,8 @@ function initDatabase() {
 async function saveTradeInDB(trade) {
   try {
     const sql = `
-      INSERT INTO trades (fromAddress, fromTokenSymbol, fromTokenAddress, toTokenSymbol, toTokenAddress, fromAmount, expectedToAmount, txId, protocol, senderName)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO trades (fromAddress, fromTokenSymbol, fromTokenAddress, toTokenSymbol, toTokenAddress, fromAmount, expectedToAmount, txId, protocol, senderName, type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     db.run(sql, [
@@ -152,6 +158,7 @@ async function saveTradeInDB(trade) {
       trade.txId,
       trade.protocol,
       trade.sender?.name,
+      trade.type,
     ], function (err) {
       if (err) {
         console.error('Failed to insert trade:', err);

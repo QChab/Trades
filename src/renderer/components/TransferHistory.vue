@@ -13,6 +13,9 @@
     <span class="gas">
       Gas
     </span>
+    <span class="gas">
+      Type
+    </span>
     <transition-group name="transfer" tag="ul">
       <li v-for="(t, index) in trades" :key="t.timestamp + t.txId">
         {{ t.hasFailed ? '❌' : (t.isConfirmed ? '✅' : '⏳') }}
@@ -24,7 +27,8 @@
         </span>
         <span class="from">{{ t.senderName || t.sender?.name }} | {{ t.protocol }}</span>
         <span class="date">{{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}</span>
-        <span class="gas" v-if="t.gasCost"> ${{ t.gasCost.substring(0, 4)}} </span>
+        <span class="gas"> ${{ t.gasCost?.substring(0, 4)}} </span>
+        <span class="gas" v-if="t.type"> {{ t.type }} </span>
         <span @click.stop="openTxDetails(t.txId)" class="view">View</span>
         <span @click.stop="deleteTrade(t, index)" class="delete">Delete</span>
       </li>
