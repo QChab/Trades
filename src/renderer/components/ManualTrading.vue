@@ -2348,27 +2348,153 @@ export default {
     }
 
     // Async function to handle multi-address execution without blocking main loop
+    // Helper function to re-validate trigger conditions
+    async function revalidateTriggerCondition(order, executionAmount) {
+      try {
+        // Get current token prices
+        const fromToken = tokensByAddresses.value[order.fromToken.address];
+        const toToken = tokensByAddresses.value[order.toToken.address];
+        
+        if (!fromToken?.price || !toToken?.price) {
+          console.log(`Missing price data for re-validation: fromToken=${fromToken?.symbol}, toToken=${toToken?.symbol}`);
+          return { valid: false, reason: 'Missing price data' };
+        }
+
+        // Calculate current market price
+        let currentMarketPrice;
+        if (!order.shouldSwitchTokensForLimit) {
+          currentMarketPrice = fromToken.price / toToken.price;
+        } else {
+          currentMarketPrice = toToken.price / fromToken.price;
+        }
+
+        // Get exact execution price from DEX
+        const bestTradeResult = await getBestTrades(
+          order.fromToken.address,
+          order.toToken.address,
+          executionAmount,
+          order?.sender?.address || senderDetails.value.address,
+          true,
+          true,
+          fromToken.price * Number(executionAmount) >= 100,
+        );
+
+        if (!bestTradeResult || !bestTradeResult.totalHuman) {
+          return { valid: false, reason: 'Unable to get execution quote' };
+        }
+
+        // Calculate exact execution price
+        let exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(executionAmount);
+        
+        // Apply gas cost adjustment if needed
+        if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
+          if (order.orderType === 'take_profit') {
+            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/toToken.price) / Number(executionAmount);
+          } else if (order.orderType === 'stop_loss') {
+            exactExecutionPrice = (Number(bestTradeResult.totalHuman) + bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/toToken.price) / Number(executionAmount);
+          }
+        }
+
+        // Check if trigger condition is still valid
+        let shouldTrigger = false;
+        if (order.orderType === 'take_profit') {
+          shouldTrigger = exactExecutionPrice >= order.priceLimit;
+        } else if (order.orderType === 'stop_loss') {
+          shouldTrigger = exactExecutionPrice <= order.priceLimit;
+        } else {
+          shouldTrigger = exactExecutionPrice >= order.priceLimit;
+        }
+
+        const priceDifference = Math.abs(exactExecutionPrice - order.priceLimit) / order.priceLimit;
+        
+        return {
+          valid: shouldTrigger,
+          exactExecutionPrice,
+          currentMarketPrice,
+          priceDifference: priceDifference * 100, // Convert to percentage
+          bestTradeResult, // Return the updated bestTradeResult
+          reason: shouldTrigger ? 'Trigger condition met' : `Price condition not met: ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit}`
+        };
+      } catch (error) {
+        console.error('Error during price re-validation:', error);
+        return { valid: false, reason: `Re-validation error: ${error.message}` };
+      }
+    }
+
     async function executeMultiAddressTrade(order, addressSelection, exactExecutionPrice) {
       let totalExecuted = 0;
       let allExecutionSuccessful = true;
+      let validationFailures = 0;
+      const maxValidationFailures = 2; // Allow up to 2 validation failures before stopping
       
       try {
+        console.log(`Starting multi-address execution for order ${order.id} with ${addressSelection.addresses.length} addresses`);
+        
         // Execute trades sequentially with each address
-        for (const { address, amount } of addressSelection.addresses) {
+        for (let i = 0; i < addressSelection.addresses.length; i++) {
+          const { address, amount } = addressSelection.addresses[i];
+          
           if (totalExecuted >= order.remainingAmount) break;
           
           const executeAmount = Math.min(amount, order.remainingAmount - totalExecuted);
-          console.log(`Executing ${executeAmount} ${order.fromToken.symbol} from address ${address.name}`);
+          
+          // Re-validate trigger conditions before each address execution (except first)
+          if (i > 0) {
+            console.log(`Re-validating trigger conditions before executing with address ${address.name} (${i + 1}/${addressSelection.addresses.length})`);
+            
+            const validation = await revalidateTriggerCondition(order, executeAmount);
+            
+            if (!validation.valid) {
+              console.log(`⚠️ Trigger condition no longer valid for address ${address.name}: ${validation.reason}`);
+              console.log(`Market price: ${validation.currentMarketPrice?.toFixed(9) || 'N/A'}, Execution price: ${validation.exactExecutionPrice?.toFixed(9) || 'N/A'}, Limit: ${order.priceLimit}`);
+              
+              validationFailures++;
+              
+              // Stop execution if too many validation failures
+              if (validationFailures >= maxValidationFailures) {
+                console.log(`❌ Stopping multi-address execution due to ${validationFailures} consecutive validation failures`);
+                allExecutionSuccessful = false;
+                break;
+              }
+              
+              // Skip this address but continue with others
+              continue;
+            } else {
+              console.log(`✅ Trigger condition still valid: ${validation.reason} (difference: ${validation.priceDifference.toFixed(2)}%)`);
+              validationFailures = 0; // Reset failure counter on successful validation
+            }
+          }
+          
+          console.log(`Executing ${executeAmount} ${order.fromToken.symbol} from address ${address.name} (${i + 1}/${addressSelection.addresses.length})`);
           
           const execution = await executeTradeWithAddress(order, { address }, executeAmount);
           
           if (execution.success) {
             totalExecuted += execution.executedAmount;
-            await new Promise(resolve => setTimeout(resolve, 25000)); 
+            console.log(`✅ Successfully executed ${execution.executedAmount} ${order.fromToken.symbol} from ${address.name}. Total executed: ${totalExecuted}/${order.remainingAmount}`);
+            
+            // Add delay before next address (except for last address)
+            if (i < addressSelection.addresses.length - 1 && totalExecuted < order.remainingAmount) {
+              console.log(`⏳ Waiting 25 seconds before next address execution...`);
+              await new Promise(resolve => setTimeout(resolve, 25000)); 
+            }
           } else {
-            console.error(`Failed to execute trade with address ${address.name}: ${execution.error}`);
+            console.error(`❌ Failed to execute trade with address ${address.name}: ${execution.error}`);
             allExecutionSuccessful = false;
-            break;
+            
+            // Check if failure is due to price conditions
+            if (execution.error && execution.error.includes('Price condition no longer valid')) {
+              validationFailures++;
+              console.log(`Price-related failure count: ${validationFailures}/${maxValidationFailures}`);
+              
+              if (validationFailures >= maxValidationFailures) {
+                console.log(`❌ Stopping execution due to repeated price validation failures`);
+                break;
+              }
+            } else {
+              // Non-price related failure, stop execution
+              break;
+            }
           }
         }
         
@@ -2531,7 +2657,36 @@ export default {
           automatic: order.automatic,
         };
         
+        // 🕐 Time the approval process and re-validate if it takes too long
+        const approvalStartTime = Date.now();
         await approveSpending(bestTradeResult.trades);
+        const approvalDuration = (Date.now() - approvalStartTime) / 1000; // Convert to seconds
+        
+        console.log(`Approval completed in ${approvalDuration.toFixed(2)} seconds`);
+        
+        // 🔍 Re-validate and refresh trade data if approval took longer than 5 seconds
+        if (approvalDuration > 5) {
+          console.log(`⚠️ Approval took ${approvalDuration.toFixed(2)}s (>5s), re-validating with fresh trade data...`);
+          
+          const postApprovalValidation = await revalidateTriggerCondition(order, amount);
+          
+          if (!postApprovalValidation.valid) {
+            console.log(`❌ Price condition no longer valid after slow approval: ${postApprovalValidation.reason}`);
+            return { 
+              success: false, 
+              error: `Price condition no longer valid after approval (${approvalDuration.toFixed(2)}s): ${postApprovalValidation.reason}` 
+            };
+          }
+          
+          console.log(`✅ Price condition still valid after slow approval. Updated execution price: ${postApprovalValidation.exactExecutionPrice.toFixed(9)} (difference: ${postApprovalValidation.priceDifference.toFixed(2)}%)`);
+          
+          // Use the refreshed bestTradeResult from revalidation
+          bestTradeResult = postApprovalValidation.bestTradeResult;
+          limitOrderTradeSummary.toAmount = bestTradeResult.toAmount;
+          limitOrderTradeSummary.expectedToAmount = bestTradeResult.toAmount;
+          limitOrderTradeSummary.gasLimit = bestTradeResult.gasLimit;
+        }
+        
         await triggerTrade(bestTradeResult.trades, limitOrderTradeSummary);
         
         return { success: true, executedAmount: amount };
@@ -2769,7 +2924,7 @@ export default {
                 
                 // Execute multi-address trade asynchronously without blocking main loop
                 // TODO: uncomment this when ready
-                // executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
+                executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
                 console.log(`Started multi-address execution for order ${order.id} in background`);
                 
               } else {
@@ -2900,14 +3055,66 @@ export default {
     }
 
     const deleteRow = (i) => {
-      tokensInRow[i] = {
+      // Check if this row actually has content to delete
+      if (!tokensInRow[i]?.token?.address && !tokensInRow[i]?.token?.symbol) {
+        console.log(`Row ${i} is already empty, nothing to delete`);
+        return;
+      }
+      
+      console.log(`Deleting row ${i} and shifting subsequent rows up...`);
+      
+      // Remove the row from the array (this automatically shifts subsequent elements)
+      tokensInRow.splice(i, 1);
+      
+      // Add an empty row at the end to maintain the total count
+      tokensInRow.push({
         token: {
           symbol: null,
-          decimals: null,
-          price: null,
+          address: null,
+          decimals: 18,
+          price: 0,
         },
         columns: []
+      });
+      
+      // 🔄 Update row indices in all automatic orders
+      if (automaticOrders.value && automaticOrders.value.length > 0) {
+        automaticOrders.value.forEach(order => {
+          if (order.sourceLocation && order.sourceLocation.rowIndex > i) {
+            const oldRowIndex = order.sourceLocation.rowIndex;
+            order.sourceLocation.rowIndex = oldRowIndex - 1;
+            console.log(`Updated automatic order ${order.id}: rowIndex ${oldRowIndex} → ${order.sourceLocation.rowIndex}`);
+          }
+        });
       }
+      
+      // 🔄 Update row indices in all pending limit orders
+      if (pendingLimitOrders.value && pendingLimitOrders.value.length > 0) {
+        pendingLimitOrders.value.forEach(order => {
+          if (order.sourceLocation && order.sourceLocation.rowIndex > i) {
+            const oldRowIndex = order.sourceLocation.rowIndex;
+            order.sourceLocation.rowIndex = oldRowIndex - 1;
+            console.log(`Updated pending order ${order.id}: rowIndex ${oldRowIndex} → ${order.sourceLocation.rowIndex}`);
+          }
+        });
+      }
+      
+      // 🔄 Update row indices in any processing orders that might exist
+      // This ensures consistency for orders that are currently being executed
+      const allOrders = [...(automaticOrders.value || []), ...(pendingLimitOrders.value || [])];
+      allOrders.forEach(order => {
+        if (order.automatic && order.sourceLocation && order.sourceLocation.rowIndex > i && 
+            (order.status === 'processing' || order.status === 'partially_filled')) {
+          const oldRowIndex = order.sourceLocation.rowIndex;
+          order.sourceLocation.rowIndex = oldRowIndex - 1;
+          console.log(`Updated processing order ${order.id}: rowIndex ${oldRowIndex} → ${order.sourceLocation.rowIndex}`);
+        }
+      });
+      
+      console.log(`Row deletion complete. ${tokensInRow.length} total rows, updated ${allOrders.filter(o => o.sourceLocation?.rowIndex >= i).length} order references`);
+      
+      // Regenerate orders with updated indices
+      generateOrdersFromLevels();
     }
 
     const addRowToMatrix = () => {

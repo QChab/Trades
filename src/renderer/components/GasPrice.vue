@@ -15,7 +15,7 @@ export default {
   props: {
     pollInterval: {
       type: Number,
-      default: 10000,
+      default: 24000,
     },
     maxGasPrice: {
       type: Number,
