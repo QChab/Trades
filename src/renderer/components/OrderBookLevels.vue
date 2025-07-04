@@ -521,7 +521,6 @@ export default {
   background-color: #fafafa;
   width: 309px;
   flex-shrink: 0;
-  min-height: 250px;
 }
 
 .header {

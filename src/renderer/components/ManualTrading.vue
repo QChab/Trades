@@ -1406,8 +1406,6 @@ export default {
         formattedAmount,
         tokenDecimals
       );
-      
-      console.log({fromAmtRaw});
 
       const [
         bestTrades,
@@ -1436,91 +1434,91 @@ export default {
       ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .10).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 10 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .15).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 15 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .20).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 20 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .25).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 25 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .30).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 30 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .35).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 35 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .40).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 40 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .45).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 45 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .50).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 50 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .55).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 55 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .60).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 60 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .65).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 65 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .70).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 70 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .75).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 75 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .80).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 80 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .85).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 85 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .90).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 90 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .93).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 93 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .95).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 95 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .97).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 97 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .98).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 98 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .99).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 99 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
       ])
@@ -1554,7 +1552,6 @@ export default {
       const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
       const formattedAmountIn = Number(_newAmt).toFixed(decimalsIn);
       const expectedInRawBN = ethers.utils.parseUnits(formattedAmountIn, decimalsIn);
-      console.log({expectedInRawBN})
       
       if (!tradesByPercent[100] || !tradesByPercent[100].validTrades || tradesByPercent[100].validTrades.length === 0) {
         console.log('No valid trades found');
@@ -1570,7 +1567,6 @@ export default {
         BigNumber.from(0)
       );
 
-      console.log({totalInBN});
       if (!totalInBN.eq(expectedInRawBN)) {
         console.log('Outdated input amount, sum of input of trades: ' + totalInBN.toString());
         return 'outdated';
@@ -3981,6 +3977,7 @@ h3 {
   overflow-x: auto;
   display: flex;
   flex-direction: row;
+  background-color: #fafafa;
 }
 .token-symbol {
   font-size: 22px;
