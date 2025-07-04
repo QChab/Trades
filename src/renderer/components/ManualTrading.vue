@@ -1101,6 +1101,8 @@ export default {
         if (!_newSender?.address) {
           swapMessage.value = 'No wallet selected';
           return;
+        } else {
+          swapMessage.value = '';
         }
 
         if (!shouldUseUniswapValue && !shouldUseBalancerValue && !shouldUseUniswapAndBalancerValue) {
@@ -2388,10 +2390,14 @@ export default {
         
         // Apply gas cost adjustment if needed
         if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
-          if (order.orderType === 'take_profit') {
-            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/toToken.price) / Number(executionAmount);
-          } else if (order.orderType === 'stop_loss') {
-            exactExecutionPrice = (Number(bestTradeResult.totalHuman) + bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/toToken.price) / Number(executionAmount);
+          const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toToken.price;
+          
+          if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
+            // For inverted prices (buy levels), gas cost reduces the received amount
+            exactExecutionPrice = Number(executionAmount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
+          } else {
+            // For non-inverted prices (sell levels), gas cost reduces the received amount
+            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(executionAmount);
           }
         }
 
@@ -2523,9 +2529,9 @@ export default {
                 
                 console.log(`Updating level percentage from ${originalPercentage}% to ${newPercentage.toFixed(2)}% due to partial execution`);
                 
-                // Update the level with new percentage and reset status
+                // Update the level with new percentage and set partially filled status
                 levels[levelIndex].balancePercentage = Number(newPercentage.toFixed(2));
-                levels[levelIndex].status = 'active'; // Reset to allow future triggers
+                levels[levelIndex].status = 'partially_filled'; // Mark as partially filled, not active
                 levels[levelIndex].partialExecutionDate = new Date().toISOString();
                 levels[levelIndex].executedAmount = totalExecuted;
                 levels[levelIndex].originalPercentage = originalPercentage;
@@ -2603,22 +2609,24 @@ export default {
 
         
         // Calculate exact execution price for this specific trade
-        let exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(amount);
-        
-        // For buy levels with shouldSwitchTokensForLimit, invert the price to match limit format
-        if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
-          exactExecutionPrice = 1 / exactExecutionPrice;
-        }
+        let exactExecutionPrice;
         
         // Apply gas cost adjustment if needed (same logic as main execution)
         if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
-          if (order.orderType === 'take_profit') {
-            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/toToken.price) / Number(amount);
-          } else if (order.orderType === 'stop_loss') {
-            exactExecutionPrice = (Number(bestTradeResult.totalHuman) + bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/toToken.price) / Number(amount);
-          }
+          const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toToken.price;
           
-          // Apply inversion after gas adjustment for buy levels
+          if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
+            // For inverted prices (buy levels), gas cost reduces the received amount
+            exactExecutionPrice = Number(amount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
+          } else {
+            // For non-inverted prices (sell levels), gas cost reduces the received amount
+            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(amount);
+          }
+        } else {
+          // No gas cost adjustment needed - calculate base price and apply inversion if needed
+          exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(amount);
+          
+          // For buy levels with shouldSwitchTokensForLimit, invert the price to match limit format
           if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
             exactExecutionPrice = 1 / exactExecutionPrice;
           }
@@ -2848,17 +2856,16 @@ export default {
             console.log(props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice))
             if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
               console.warn(`Gas price ${props.gasPrice} is higher than max gas price ${props.maxGasPrice * 1e9}, deducing from execution price`);
-              if (order.orderType === 'take_profit')
-                exactExecutionPrice = (Number(bestTradeResult.totalHuman) - bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/tokensByAddresses.value[order.toToken.address].price) 
-                  / Number(order.fromAmount);
-              else if (order.orderType === 'stop_loss')
-                exactExecutionPrice = (Number(bestTradeResult.totalHuman) + bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/tokensByAddresses.value[order.toToken.address].price) 
-                  / Number(order.fromAmount);
+              const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / tokensByAddresses.value[order.toToken.address].price;
               
-              // Apply inversion after gas adjustment for buy levels
               if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
-                exactExecutionPrice = 1 / exactExecutionPrice;
+                // For inverted prices (buy levels), gas cost reduces the received amount
+                exactExecutionPrice = Number(order.fromAmount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
+              } else {
+                // For non-inverted prices (sell levels), gas cost reduces the received amount
+                exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(order.fromAmount);
               }
+              
               console.log(`Adjusted execution price after gas deduction: ${exactExecutionPrice.toFixed(9)}`);
             }
             console.log({exactExecutionPrice})
@@ -2884,10 +2891,13 @@ export default {
                     : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
                     
                   if (levels[levelIndex] && levels[levelIndex].status === 'processing') {
-                    levels[levelIndex].status = 'active';
-                    // Update the UI
-                    updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
-                    console.log(`Reset level ${levelIndex} status from 'processing' to 'active' for ${levelType} level`);
+                    // Only reset to active if not processed, to preserve completed executions
+                    if (levels[levelIndex].status !== 'processed') {
+                      levels[levelIndex].status = 'active';
+                      // Update the UI
+                      updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                      console.log(`Reset level ${levelIndex} status from 'processing' to 'active' for ${levelType} level`);
+                    }
                   }
                 }
               }
@@ -2898,7 +2908,7 @@ export default {
             console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(10)} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
             
             order.status = 'processing';
-            await window.electronAPI.updatePendingOrder(order);
+            await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
 
             if (order.automatic && order.sourceLocation) {
               const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
@@ -2957,7 +2967,7 @@ export default {
                 
                 // Execute multi-address trade asynchronously without blocking main loop
                 order.status = 'processing';
-                await window.electronAPI.updatePendingOrder(order);
+                await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
                 executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
                 console.log(`Started multi-address execution for order ${order.id} in background`);
                 
@@ -3053,7 +3063,7 @@ export default {
               }
 
               if (!order.automatic) {
-                await window.electronAPI.updatePendingOrder(order);
+                await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
                 // Remove from pending orders list
                 pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
               }
@@ -3075,8 +3085,11 @@ export default {
                     : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
                     
                   if (levels[levelIndex] && levels[levelIndex].status === 'processing') {
-                    levels[levelIndex].status = 'active';
-                    updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                    // Only reset to active if not processed, to preserve completed executions
+                    if (levels[levelIndex].status !== 'processed') {
+                      levels[levelIndex].status = 'active';
+                      updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                    }
                   }
                 }
               }
@@ -3216,9 +3229,13 @@ export default {
             delete cleanedLevel.executionPrice;
             delete cleanedLevel.executionDate;
             delete cleanedLevel.failureReason;
-            // Reset status if it was partially executed before
+            // Reset status if it was partially executed before, but preserve processed status
             if (cleanedLevel.status === 'partially_filled') {
               cleanedLevel.status = 'active';
+            }
+            // Never reset processed status - once processed, always processed
+            if (cleanedLevel.status === 'processed') {
+              // Keep as processed, don't reset
             }
           }
           return cleanedLevel;
@@ -3233,9 +3250,13 @@ export default {
             delete cleanedLevel.executionPrice;
             delete cleanedLevel.executionDate;
             delete cleanedLevel.failureReason;
-            // Reset status if it was partially executed before
+            // Reset status if it was partially executed before, but preserve processed status
             if (cleanedLevel.status === 'partially_filled') {
               cleanedLevel.status = 'active';
+            }
+            // Never reset processed status - once processed, always processed
+            if (cleanedLevel.status === 'processed') {
+              // Keep as processed, don't reset
             }
           }
           return cleanedLevel;
@@ -3436,9 +3457,10 @@ export default {
               sellLevel.status !== 'processing' &&
               !existingOrders.has(orderKey)
             ) {
-              // For a sell, fromToken is row.token, toToken is col
-              const fromToken = row.token;
-              const toToken = col;
+              // For a sell level when ETH >= 190 LINK, we want to sell ETH to get LINK (take profit)
+              // So swap tokens: sell the expensive token (col) to get the cheaper token (row.token)
+              const fromToken = col;
+              const toToken = row.token;
               const fromTokenAddr = fromToken.address?.toLowerCase();
               
               // Check if we have balance for this token

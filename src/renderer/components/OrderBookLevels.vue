@@ -345,8 +345,9 @@ export default {
       if (isPaused.value) return 'Paused';
       
       // Check if level is being processed or has completed
-      if (level.status === 'processing') return 'Processing...';
-      if (level.status === 'processed') return 'Processed ✓';
+      if (level.status === 'processing') return 'Processing';
+      if (level.status === 'processed') return 'Processed';
+      if (level.status === 'partially_filled') return 'Partial';
       if (level.status === 'failed') return 'Failed ✗';
       
       // Check price validity
@@ -372,6 +373,7 @@ export default {
       // Add new status classes
       if (level.status === 'processing') return 'status-processing';
       if (level.status === 'processed') return 'status-processed';
+      if (level.status === 'partially_filled') return 'status-partially-filled';
       if (level.status === 'failed') return 'status-failed';
       
       // Check price validity
@@ -948,9 +950,10 @@ input.percentage-input[type=number] {
 /* Style the percentage input to make spinners more visible */
 input.percentage-input {
   border: 1px solid #eee;
-  width: 35px;
+  width: 25px;
   border-radius: 4px;
   text-align: center;
+  margin-left: 2px;
 }
 .first-part-price {
   width: 38px;
@@ -1009,6 +1012,14 @@ input.percentage-input {
   font-weight: 600;
 }
 
+.status-partially-filled {
+  background-color: #fd7e14;
+  color: white;
+  border: 1px solid #fd7e14;
+  font-weight: 600;
+  animation: pulse-orange 1.5s infinite;
+}
+
 @keyframes pulse-yellow {
   0% {
     box-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
@@ -1018,6 +1029,18 @@ input.percentage-input {
   }
   100% {
     box-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
+  }
+}
+
+@keyframes pulse-orange {
+  0% {
+    box-shadow: 0 0 10px rgba(253, 126, 20, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(253, 126, 20, 0.8);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(253, 126, 20, 0.5);
   }
 }
 
