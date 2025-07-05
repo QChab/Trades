@@ -76,9 +76,9 @@ export function useBalancerV3() {
       swapKind,
     });
 
-    console.log(
-      `Amount: ${swap.outputAmount.amount}`
-    );
+    // console.log(
+    //   `Amount: ${swap.outputAmount.amount}`
+    // );
 
     // console.log(swap)
 

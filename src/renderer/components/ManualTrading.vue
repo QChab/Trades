@@ -849,11 +849,11 @@ export default {
         if (outputU.gt(outputB) && shouldUseUniswapValue) {
           bestOutputLessGas = outputU;
           isUsingUniswap = true;
-          console.log('Using Uniswap')
+          // console.log('Using Uniswap')
         } else if (shouldUseBalancerValue) {
           bestOutputLessGas = outputB;
           isUsingUniswap = false;
-          console.log('Using Balancer')
+          // console.log('Using Balancer')
         }
       }
       if (shouldUseUniswapValue && !shouldUseBalancerValue)
@@ -1377,12 +1377,12 @@ export default {
       let gasLimit = 400000;
       try {
         if (shouldFetchGasLimit) {
-          console.log('before promise.race')
+          // console.log('before promise.race')
           gasLimit = await Promise.race([
             toRaw(props.provider).estimateGas(txData),
             new Promise(r => setTimeout(r, 5000)),
           ])
-          console.log({gasLimit})
+          // console.log({gasLimit})
           if (!gasLimit)
             gasLimit = 400000;
         }
@@ -1390,7 +1390,7 @@ export default {
         console.log('Error in estimateGas');
         console.error(err);
       }
-      console.log(gasLimit);
+      // console.log(gasLimit);
 
       return {
         outputAmount: result.expectedAmountOut,
@@ -1934,6 +1934,8 @@ export default {
           swapMessage.value = 'Warnings: ' + globalWarnings.join(' ; ');
         }
 
+        console.log(currentTradeSummary);
+        
         if (currentTradeSummary.protocol === 'Uniswap & Balancer') {
           currentTradeSummary.txId = globalTxs[0]?.hash || null;
           emit('update:trade', {
@@ -2846,12 +2848,7 @@ export default {
             );
 
             // Calculate exact execution price (output amount per input amount)
-            let exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
-            
-            // For buy levels with shouldSwitchTokensForLimit, invert the price to match limit format
-            if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
-              exactExecutionPrice = 1 / exactExecutionPrice;
-            }
+            let exactExecutionPrice;
             
             console.log(props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice))
             if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
@@ -2867,6 +2864,14 @@ export default {
               }
               
               console.log(`Adjusted execution price after gas deduction: ${exactExecutionPrice.toFixed(9)}`);
+            } else {
+              // No gas cost adjustment - calculate base price and apply inversion if needed
+              exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
+              
+              // For buy levels with shouldSwitchTokensForLimit, invert the price to match limit format
+              if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
+                exactExecutionPrice = 1 / exactExecutionPrice;
+              }
             }
             console.log({exactExecutionPrice})
 
@@ -2890,15 +2895,7 @@ export default {
                     ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
                     : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
                     
-                  if (levels[levelIndex] && levels[levelIndex].status === 'processing') {
-                    // Only reset to active if not processed, to preserve completed executions
-                    if (levels[levelIndex].status !== 'processed') {
-                      levels[levelIndex].status = 'active';
-                      // Update the UI
-                      updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
-                      console.log(`Reset level ${levelIndex} status from 'processing' to 'active' for ${levelType} level`);
-                    }
-                  }
+                  // Status should only be changed when user modifies inputs, not automatically
                 }
               }
               
@@ -2908,7 +2905,6 @@ export default {
             console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(10)} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
             
             order.status = 'processing';
-            await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
 
             if (order.automatic && order.sourceLocation) {
               const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
@@ -2923,6 +2919,8 @@ export default {
                   updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
                 }
               }
+            } else {
+              await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
             }
 
             // Create a trade summary object for this limit order
@@ -2967,7 +2965,7 @@ export default {
                 
                 // Execute multi-address trade asynchronously without blocking main loop
                 order.status = 'processing';
-                await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
+                console.log(`Executing multi-address trade for order ${order.id} with ${addressSelection.addresses.length} addresses`);
                 executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
                 console.log(`Started multi-address execution for order ${order.id} in background`);
                 
@@ -3084,13 +3082,6 @@ export default {
                     ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
                     : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
                     
-                  if (levels[levelIndex] && levels[levelIndex].status === 'processing') {
-                    // Only reset to active if not processed, to preserve completed executions
-                    if (levels[levelIndex].status !== 'processed') {
-                      levels[levelIndex].status = 'active';
-                      updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
-                    }
-                  }
                 }
               }
             }
@@ -3368,6 +3359,10 @@ export default {
             return;
           }
           
+          if (col.details && col.details.isPaused) {
+            return;
+          }
+
           if (!col.details || !col.details.buyLevels || !col.details.sellLevels) {
             console.log(`Skipping column ${j} in row ${i} - missing level details`);
             return;
@@ -3457,10 +3452,9 @@ export default {
               sellLevel.status !== 'processing' &&
               !existingOrders.has(orderKey)
             ) {
-              // For a sell level when ETH >= 190 LINK, we want to sell ETH to get LINK (take profit)
-              // So swap tokens: sell the expensive token (col) to get the cheaper token (row.token)
-              const fromToken = col;
-              const toToken = row.token;
+              // For a sell, fromToken is row.token, toToken is col
+              const fromToken = row.token;
+              const toToken = col;
               const fromTokenAddr = fromToken.address?.toLowerCase();
               
               // Check if we have balance for this token

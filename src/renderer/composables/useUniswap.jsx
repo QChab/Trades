@@ -139,7 +139,7 @@ export function useUniswapV4() {
     // --- 1) Fetch all pools involving tokens and trusted intermediates ---
     const firstAddressAlphabet = tokenIn < tokenOut ? tokenIn : tokenOut;
     const lastAddressAlphabet = tokenIn < tokenOut ? tokenOut : tokenIn;
-    console.log({firstAddressAlphabet, lastAddressAlphabet})
+    // console.log({firstAddressAlphabet, lastAddressAlphabet})
     const poolsInQuery = gql`
       query($a: String!, $b: String!){
         poolsDirect: pools(

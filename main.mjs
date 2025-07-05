@@ -289,6 +289,7 @@ async function sendTransaction(transaction) {
 
     if (transaction.nonce) {
       txData.nonce = transaction.nonce;
+      await new Promise(r => setTimeout(r, 300));
     }
 
     console.log(txData);

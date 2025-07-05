@@ -301,7 +301,18 @@ export default {
       // Add price validity check
       level.priceValid = isPriceValid(type, level.triggerPrice);
       
-      // Update status based on inputs
+      // Update status based on inputs - reset status when user modifies level
+      if (level.triggerPrice && level.balancePercentage) {
+        // Reset status to allow reprocessing when user modifies level
+        if (level.status === 'processing' || level.status === 'failed') {
+          level.status = 'active';
+        } else {
+          level.status = 'waiting';
+        }
+      } else {
+        level.status = 'invalid';
+      }
+      
       updateLevelStatus(type, index);
       
       if (level.priceValid && level.balancePercentage)
@@ -328,6 +339,10 @@ export default {
         return;
       }
       
+      if (level.status === 'processed') {
+        // If already processed, keep processed status (but allow processing to be reset)
+        return;
+      }
       // Check if price conditions are met
       const marketPrice = currentMarketPrice.value;
       
@@ -377,7 +392,7 @@ export default {
       if (level.status === 'failed') return 'status-failed';
       
       // Check price validity
-      if (level.triggerPrice !== null && !isPriceValid(type, level.triggerPrice)) {
+      if (level.triggerPrice !== null) {
         return 'status-invalid';
       }
       
