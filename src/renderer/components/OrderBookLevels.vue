@@ -265,6 +265,12 @@ export default {
       const marketPrice = currentMarketPrice.value;
       if (!marketPrice || marketPrice <= 0) return false;
       
+      if (type === 'sell' && level.triggerPrice < marketPrice) {
+        return true; // Not close to trigger
+      } else if (type === 'buy' && level.triggerPrice > marketPrice) {
+        return true; // Not close to trigger
+      }
+
       const priceDifference = Math.abs(marketPrice - level.triggerPrice) / level.triggerPrice;
       return priceDifference <= props.priceThreshold;
     };
