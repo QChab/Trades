@@ -304,19 +304,27 @@ export default {
       if (level.balancePercentage < 0) level.balancePercentage = 0;
       if (level.balancePercentage > 100) level.balancePercentage = 100;
       
-      // Add price validity check
-      level.priceValid = isPriceValid(type, level.triggerPrice);
+      // Add price validity check (but preserve processed levels)
+      if (level.status !== 'processed') {
+        level.priceValid = isPriceValid(type, level.triggerPrice);
+      }
       
       // Update status based on inputs - reset status when user modifies level
       if (level.triggerPrice && level.balancePercentage) {
         // Reset status to allow reprocessing when user modifies level
-        if (level.status === 'processing' || level.status === 'failed') {
+        // BUT preserve 'processed' status - don't reset processed levels
+        if (level.status === 'processed') {
+          // Keep processed status - do nothing
+        } else if (level.status === 'processing' || level.status === 'failed') {
           level.status = 'active';
         } else {
           level.status = 'waiting';
         }
       } else {
-        level.status = 'invalid';
+        // Even if invalid inputs, preserve processed status
+        if (level.status !== 'processed') {
+          level.status = 'invalid';
+        }
       }
       
       updateLevelStatus(type, index);
@@ -352,12 +360,15 @@ export default {
       // Check if price conditions are met
       const marketPrice = currentMarketPrice.value;
       
-      if (type === 'sell') {
-        // Sell when market price goes below trigger (stop loss) or above trigger (take profit)
-        level.status = 'active';
-      } else {
-        // Buy when market price goes above trigger (momentum) or below trigger (dip buying)
-        level.status = 'active';
+      // Only update status if not already set or if it's in a state that should be updated
+      if (level.status === 'inactive' || level.status === 'waiting' || level.status === undefined) {
+        if (type === 'sell') {
+          // Sell when market price goes below trigger (stop loss) or above trigger (take profit)
+          level.status = 'active';
+        } else {
+          // Buy when market price goes above trigger (momentum) or below trigger (dip buying)
+          level.status = 'active';
+        }
       }
     };
 
@@ -436,6 +447,7 @@ export default {
       level.triggerPrice = null;
       level.balancePercentage = null;
       level.priceValid = true; // Reset price validity
+      level.status = 'inactive'; // Reset status when cleaning
       updateLevelStatus('sell', index);
       updateLevelStatus('buy', index);
       emitOrderUpdate();

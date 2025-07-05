@@ -1863,8 +1863,9 @@ export default {
           const maxPriorityFeePerGas =  ethers.utils.parseUnits(
             (0.02 + Math.random()*0.05 + Number(props.gasPrice)/(40e9)).toFixed(3), 9
           )
-
-          const privateProvider = new ethers.providers.JsonRpcProvider('https://rpc.mevblocker.io/fullprivacy', { chainId: 1, name: 'homestead' });
+          // https://eth.meowrpc.com
+          // https://rpc.mevblocker.io/fullprivacy
+          const privateProvider = new ethers.providers.JsonRpcProvider('https://eth.meowrpc.com', { chainId: 1, name: 'homestead' });
           const nonce = await privateProvider.getTransactionCount(currentTradeSummary.sender.address, 'pending');
 
           const [resultsU, resultsB] = await Promise.all([
@@ -2560,10 +2561,18 @@ export default {
               : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
               
             if (levels[levelIndex]) {
-              levels[levelIndex].status = order.status === 'completed' ? 'processed' : 'pending';
+              // Explicitly set status based on order completion
+              if (order.status === 'completed') {
+                levels[levelIndex].status = 'processed';
+              } else if (order.status === 'partially_filled') {
+                levels[levelIndex].status = 'partially_filled';
+              } else {
+                levels[levelIndex].status = 'failed';
+              }
               levels[levelIndex].executionPrice = exactExecutionPrice;
               levels[levelIndex].executionDate = new Date().toISOString();
               updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+              console.log(`Level ${levelIndex} status updated to: ${levels[levelIndex].status} (order status: ${order.status})`);
             }
           }
         }

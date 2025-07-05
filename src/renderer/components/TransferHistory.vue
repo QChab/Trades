@@ -137,9 +137,16 @@ export default {
     const checkTx = async (trade) => {
       if (trade.isConfirmed) return;
 
+      const providersList = [
+        new ethers.providers.JsonRpcProvider('https://eth1.lava.build', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://mainnet.gateway.tenderly.co', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://eth-pokt.nodies.app', { chainId: 1, name: 'homestead' }),
+      ];
+
+      let i = 0;
       while (!trade.isConfirmed && trade.txId && !trade.hasFailed) {
         await new Promise((r) => setTimeout(r, 3000));
-        const receipt = await toRaw(props.provider).getTransactionReceipt(trade.txId)
+        const receipt = await providersList[i % providersList.length].getTransactionReceipt(trade.txId)
         if (receipt) {
           emit('confirmedTrade', trade);
           if (receipt.status === '1' || receipt.status === 1) {
@@ -155,6 +162,7 @@ export default {
             window.electronAPI.failTrade(trade.txId, trade.gasCost);
           }
         }
+        ++i;
       }
     }
 
