@@ -129,6 +129,7 @@
               <span v-if="level.triggerPrice" class="usd-price">${{ getUsdPrice(level.triggerPrice) }}</span>
             </label>
             <label class="input-group" v-if="level.triggerPrice">
+              {{ level }}
               Sell
               <input
                 v-model.number="level.balancePercentage"
@@ -280,21 +281,6 @@ export default {
       emitOrderUpdate();
     };
     
-    const isPriceValid = (type, price) => {
-      if (price === null) return true; // No price entered yet
-      
-      const marketPrice = currentMarketPrice.value;
-      if (!marketPrice || marketPrice <= 0) return true; // Can't validate without market price
-      
-      if (type === 'buy') {
-        // Buy level price shouldn't be higher than current market price
-        return price <= marketPrice;
-      } else {
-        // Sell level price shouldn't be lower than current market price
-        return price >= marketPrice;
-      }
-    };
-
     const updateLevel = (type, index) => {
       const levels = type === 'sell' ? sellLevels : buyLevels;
       const level = levels[index];
@@ -303,11 +289,6 @@ export default {
       if (level.triggerPrice < 0) level.triggerPrice = 0;
       if (level.balancePercentage < 0) level.balancePercentage = 0;
       if (level.balancePercentage > 100) level.balancePercentage = 100;
-      
-      // Add price validity check (but preserve processed levels)
-      if (level.status !== 'processed') {
-        level.priceValid = isPriceValid(type, level.triggerPrice);
-      }
       
       // Update status based on inputs - reset status when user modifies level
       if (level.triggerPrice && level.balancePercentage) {
@@ -329,7 +310,7 @@ export default {
       
       updateLevelStatus(type, index);
       
-      if (level.priceValid && level.balancePercentage)
+      if (level.triggerPrice && level.balancePercentage)
         emitOrderUpdate();
     };
 
@@ -344,12 +325,6 @@ export default {
       
       if (isPaused.value) {
         level.status = 'paused';
-        return;
-      }
-      
-      // Check if price is valid
-      if (!level.priceValid) {
-        level.status = 'invalid';
         return;
       }
       
@@ -377,19 +352,10 @@ export default {
       if (isPaused.value) return 'Paused';
       
       // Check if level is being processed or has completed
-      if (level.status === 'processing') return 'Processing';
+      if (level.status === 'processing') return 'Processed';
       if (level.status === 'processed') return 'Processed';
       if (level.status === 'partially_filled') return 'Partial';
       if (level.status === 'failed') return 'Failed ✗';
-      
-      // Check price validity
-      if (level.triggerPrice !== null && !isPriceValid(type, level.triggerPrice)) {
-        if (type === 'buy') {
-          return 'lower?';
-        } else {
-          return 'higher?';
-        }
-      }
       
       if (level.status === 'active') return 'Active';
       if (level.status === 'triggered') return 'Triggered';
@@ -428,15 +394,11 @@ export default {
           ...level,
           index,
           type: 'sell',
-          priceValid: isPriceValid('sell', level.triggerPrice),
-          isValid: !!(level.triggerPrice && level.balancePercentage && isPriceValid('sell', level.triggerPrice))
         })),
         buyLevels: buyLevels.map((level, index) => ({
           ...level,
           index,
           type: 'buy',
-          priceValid: isPriceValid('buy', level.triggerPrice),
-          isValid: !!(level.triggerPrice && level.balancePercentage && isPriceValid('buy', level.triggerPrice))
         })),
       };
       
@@ -446,7 +408,6 @@ export default {
     const cleanLevel = (level, index) => {
       level.triggerPrice = null;
       level.balancePercentage = null;
-      level.priceValid = true; // Reset price validity
       level.status = 'inactive'; // Reset status when cleaning
       updateLevelStatus('sell', index);
       updateLevelStatus('buy', index);
@@ -486,13 +447,11 @@ export default {
         if (props.details.sellLevels) {
           for (let i = 0; i < props.details.sellLevels.length; i++) {
             sellLevels[i] = props.details.sellLevels[i];
-            sellLevels[i].priceValid = isPriceValid('sell', sellLevels[i].triggerPrice);
           }
         }
         if (props.details.buyLevels) {
           for (let i = 0; i < props.details.buyLevels.length; i++) {
             buyLevels[i] = props.details.buyLevels[i];
-            buyLevels[i].priceValid = isPriceValid('buy', buyLevels[i].triggerPrice);
           }
         }
         if (props.details.isPaused)
@@ -514,11 +473,9 @@ export default {
       () => {
         // Update all price validations when market price changes
         sellLevels.forEach((level, index) => {
-          level.priceValid = isPriceValid('sell', level.triggerPrice);
           updateLevelStatus('sell', index);
         });
         buyLevels.forEach((level, index) => {
-          level.priceValid = isPriceValid('buy', level.triggerPrice);
           updateLevelStatus('buy', index);
         });
       }
@@ -1024,11 +981,10 @@ input.percentage-input {
 }
 
 .status-processing {
-  background-color: #ffc107;
+  background-color: #8bff07;
   color: #212529;
-  border: 1px solid #ffc107;
+  border: 1px solid #07ff5a;
   font-weight: 600;
-  animation: pulse-yellow 1.5s infinite;
 }
 
 .status-processed {
