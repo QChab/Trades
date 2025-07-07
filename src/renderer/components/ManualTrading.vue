@@ -114,7 +114,11 @@
           <p class="details-message">{{ priceFetchingMessage }}</p>
           
           <!-- Effective Price Display -->
-          <div v-if="effectivePrice" class="effective-price" style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 14px; color: #111; text-align: center;">
+          <div
+            v-if="effectivePrice && tabOrder !== 'limit'"
+            class="effective-price"
+            style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 14px; color: #111; text-align: center;"
+          >
             <div>1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.usdValue }}</div>
             <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{ effectivePrice.usdValueInverse }}</div>
           </div>
@@ -355,28 +359,21 @@
               <div class="order-details">
                 <div class="trade-info">
                   <span class="left">
-                    <span class="order-type" :class="order.orderType">
-                      {{ order.orderType === 'take_profit' ? '📈 Take Profit' : '📉 Stop Loss' }}
-                    </span>
-                    {{ order.fromAmount }} {{ order.fromToken.symbol }} → 
-                    <span v-if="order.toAmount">{{ order.toAmount }} {{ order.toToken.symbol }}</span>
-                    <span v-else>{{ order.toToken.symbol }}</span>
-                  </span>
-                  <span class="right">
-                    Trigger {{ order.priceLimit }}
+                    If 1 
                     <span v-if="!order.shouldSwitchTokensForLimit">
-                      {{ order.toToken.symbol }} / {{ order.fromToken.symbol }}
+                      {{ order.fromToken.symbol }} {{ order.orderType === 'take_profit' ? '≥' : '≤' }} {{ order.priceLimit }} {{ order.toToken.symbol }}
                     </span>
                     <span v-else>
-                      {{ order.fromToken.symbol }} / {{ order.toToken.symbol }}
+                      {{ order.toToken.symbol }} {{ order.orderType === 'take_profit' ? '≤' : '≥' }} {{ order.priceLimit }} {{ order.fromToken.symbol }}
                     </span>
+                    → Buy {{ order.toAmount || '' }} {{ order.toToken.symbol }}  Sell {{ order.fromAmount }} {{ order.fromToken.symbol }}
                   </span>
                 </div>
                 <div class="order-meta">
                   <span>
                     {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
                     <span v-if="order.currentMarketPrice">
-                      at ${{ order.currentMarketPrice.toFixed(5) }}
+                      at {{ order.currentMarketPrice.toFixed(5) }}
                     </span>
                   </span>
                   <span class="right">
@@ -836,30 +833,61 @@ export default {
       }
 
       let uniswapGasLimit = 0
-      let offsetUniswap, outputUniswap;
+      let offsetUniswap, outputUniswap, negativeOutputUniswap;
       if (validTrades && validTrades.length && toToken.price && props.gasPrice && props.ethPrice) {
         uniswapGasLimit = 120000 + 60000 * validTrades.length;
         offsetUniswap = BigNumber.from(Math.ceil((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, toToken.decimals) / toToken.price).toPrecision(50).split('.')[0])
-        outputUniswap = totalBig.sub(offsetUniswap)
+        if (totalBig.gte(offsetUniswap)) {
+          outputUniswap = totalBig.sub(offsetUniswap)
+        } else {
+          // Store negative value as positive BigNumber for later comparison
+          negativeOutputUniswap = offsetUniswap.sub(totalBig)
+          outputUniswap = BigNumber.from('0')
+        }
       }
-      let offsetBalancer, outputBalancer;
+      let offsetBalancer, outputBalancer, negativeOutputBalancer;
       if (gasLimit && props.gasPrice && props.ethPrice && toToken.price && outputAmount) { // Add outputAmount check
         offsetBalancer = BigNumber.from(Math.ceil((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, toToken.decimals) / toToken.price).toPrecision(50).split('.')[0])
-        outputBalancer = BigNumber.from(outputAmount).sub(offsetBalancer)
+        const outputAmountBN = BigNumber.from(outputAmount)
+        if (outputAmountBN.gte(offsetBalancer)) {
+          outputBalancer = outputAmountBN.sub(offsetBalancer)
+        } else {
+          // Store negative value as positive BigNumber for later comparison
+          negativeOutputBalancer = offsetBalancer.sub(outputAmountBN)
+          outputBalancer = BigNumber.from('0')
+        }
       }
       let outputU = outputUniswap || totalBig || BigNumber.from('0'); // Changed default
       let outputB = outputBalancer || BigNumber.from('0'); // Changed default and removed undefined check
 
       let bestOutputLessGas = 0;
-      if (outputU && outputB && outputB.gt(0)) { // Add check for outputB > 0
-        if (outputU.gt(outputB) && shouldUseUniswapValue) {
-          bestOutputLessGas = outputU;
-          isUsingUniswap = true;
-          // console.log('Using Uniswap')
-        } else if (shouldUseBalancerValue) {
-          bestOutputLessGas = outputB;
-          isUsingUniswap = false;
-          // console.log('Using Balancer')
+      let bestNegativeOutput = null; // Track best negative output for comparison with mixed trades
+      if (outputU && outputB) { // Allow negative values for comparison
+        // Check if both outputs are zero (unprofitable trades)
+        if (outputU.eq(0) && outputB.eq(0) && negativeOutputUniswap && negativeOutputBalancer) {
+          // Both trades are unprofitable - choose the less negative one
+          if (negativeOutputUniswap.lt(negativeOutputBalancer) && shouldUseUniswapValue) {
+            bestOutputLessGas = outputU; // Will be 0
+            bestNegativeOutput = negativeOutputUniswap;
+            isUsingUniswap = true;
+            console.log('Both trades unprofitable - choosing Uniswap as less negative')
+          } else if (shouldUseBalancerValue) {
+            bestOutputLessGas = outputB; // Will be 0
+            bestNegativeOutput = negativeOutputBalancer;
+            isUsingUniswap = false;
+            console.log('Both trades unprofitable - choosing Balancer')
+          }
+        } else {
+          // Normal comparison when at least one is profitable
+          if (outputU.gt(outputB) && shouldUseUniswapValue) {
+            bestOutputLessGas = outputU;
+            isUsingUniswap = true;
+            // console.log('Using Uniswap')
+          } else if (shouldUseBalancerValue) {
+            bestOutputLessGas = outputB;
+            isUsingUniswap = false;
+            // console.log('Using Balancer')
+          }
         }
       }
       if (shouldUseUniswapValue && !shouldUseBalancerValue)
@@ -902,9 +930,27 @@ export default {
           mixedOptions.push({ trade: best90U, fraction: 90 })
 
         mixedOptions.sort((a, b) => {
-          if (b.trade.outputAmount.gt(a.trade.outputAmount)) return 1;
-          if (a.trade.outputAmount.gt(b.trade.outputAmount)) return -1;
-          return 0;
+          // Handle sorting when trades have negative outputs
+          const aIsNegative = a.trade.outputAmount.eq(0) && a.trade.negativeOutput;
+          const bIsNegative = b.trade.outputAmount.eq(0) && b.trade.negativeOutput;
+          
+          if (aIsNegative && bIsNegative) {
+            // Both negative - sort by less negative (smaller absolute loss)
+            if (a.trade.negativeOutput.lt(b.trade.negativeOutput)) return -1;
+            if (b.trade.negativeOutput.lt(a.trade.negativeOutput)) return 1;
+            return 0;
+          } else if (aIsNegative) {
+            // a is negative, b is positive - b is better
+            return 1;
+          } else if (bIsNegative) {
+            // b is negative, a is positive - a is better
+            return -1;
+          } else {
+            // Both positive - normal comparison (higher output is better)
+            if (b.trade.outputAmount.gt(a.trade.outputAmount)) return 1;
+            if (a.trade.outputAmount.gt(b.trade.outputAmount)) return -1;
+            return 0;
+          }
         });
 
         let bestMixedOption = mixedOptions[0];
@@ -924,9 +970,8 @@ export default {
             if (res && res.status === 'fulfilled' && res.value) {
               const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
               console.log(trade)
-              if (trade.outputAmount.gt(0)) {
-                mixedOptions.push({ trade, fraction: fraction });
-              }
+              // Include all trades, even negative (to find least bad option)
+              mixedOptions.push({ trade, fraction: fraction });
             }
           }
         }
@@ -944,9 +989,8 @@ export default {
             const fraction = [60, 40, 55, 45][i]
             if (res && res.status === 'fulfilled' && res.value) {
               const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              if (trade.outputAmount.gt(0)) {
-                mixedOptions.push({ trade, fraction: fraction });
-              }
+              // Include all trades, even negative (to find least bad option)
+              mixedOptions.push({ trade, fraction: fraction });
             }
           }
         }
@@ -964,9 +1008,8 @@ export default {
             const fraction = [70, 80, 65, 85][i]
             if (res && res.status === 'fulfilled' && res.value) {
               const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              if (trade.outputAmount.gt(0)) {
-                mixedOptions.push({ trade, fraction: fraction });
-              }
+              // Include all trades, even negative (to find least bad option)
+              mixedOptions.push({ trade, fraction: fraction });
             }
           }
         }
@@ -985,18 +1028,35 @@ export default {
             const fraction = [20, 30, 15, 10, 35][i]
             if (res && res.status === 'fulfilled' && res.value) {
               const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              if (trade.outputAmount.gt(0)) {
-                mixedOptions.push({ trade, fraction: fraction });
-              }
+              // Include all trades, even negative (to find least bad option)
+              mixedOptions.push({ trade, fraction: fraction });
             }
           }
         }
         console.log('Mixed options:', mixedOptions);
         // Sort by output amount (highest first)
         mixedOptions.sort((a, b) => {
-          if (b.trade.outputAmount.gt(a.trade.outputAmount)) return 1;
-          if (a.trade.outputAmount.gt(b.trade.outputAmount)) return -1;
-          return 0;
+          // Handle sorting when trades have negative outputs
+          const aIsNegative = a.trade.outputAmount.eq(0) && a.trade.negativeOutput;
+          const bIsNegative = b.trade.outputAmount.eq(0) && b.trade.negativeOutput;
+          
+          if (aIsNegative && bIsNegative) {
+            // Both negative - sort by less negative (smaller absolute loss)
+            if (a.trade.negativeOutput.lt(b.trade.negativeOutput)) return -1;
+            if (b.trade.negativeOutput.lt(a.trade.negativeOutput)) return 1;
+            return 0;
+          } else if (aIsNegative) {
+            // a is negative, b is positive - b is better
+            return 1;
+          } else if (bIsNegative) {
+            // b is negative, a is positive - a is better
+            return -1;
+          } else {
+            // Both positive - normal comparison (higher output is better)
+            if (b.trade.outputAmount.gt(a.trade.outputAmount)) return 1;
+            if (a.trade.outputAmount.gt(b.trade.outputAmount)) return -1;
+            return 0;
+          }
         });
 
         bestMixedOption = mixedOptions[0];
@@ -1007,10 +1067,22 @@ export default {
           fractionMixed = bestMixedOption.fraction;
         } else {
           if (bestMixedOption && bestMixedOption.trade) {
-            const hasBetterOutput = !bestOutputLessGas || 
-              (bestMixedOption.trade.outputAmount && 
-                typeof bestMixedOption.trade.outputAmount.gte === 'function' && 
-                bestMixedOption.trade.outputAmount.gte(bestOutputLessGas));
+            let hasBetterOutput = false;
+            
+            // If both single protocols and mixed trade are unprofitable, compare negative values
+            if (bestOutputLessGas && bestOutputLessGas.eq && bestOutputLessGas.eq(0) && 
+                bestMixedOption.trade.outputAmount.eq(0) && 
+                bestNegativeOutput && bestMixedOption.trade.negativeOutput) {
+              // Both are negative - choose the less negative (smaller absolute loss)
+              hasBetterOutput = bestMixedOption.trade.negativeOutput.lt(bestNegativeOutput);
+              console.log('Comparing negative outputs - mixed vs single protocol');
+            } else {
+              // Normal comparison when at least one is profitable
+              hasBetterOutput = !bestOutputLessGas || 
+                (bestMixedOption.trade.outputAmount && 
+                  typeof bestMixedOption.trade.outputAmount.gte === 'function' && 
+                  bestMixedOption.trade.outputAmount.gte(bestOutputLessGas));
+            }
             
             if (hasBetterOutput) {
               bestMixed = bestMixedOption.trade;
@@ -1025,7 +1097,7 @@ export default {
       
       if (bestMixed) {
         console.log(bestMixed)
-        totalHuman = ethers.utils.formatUnits(bestMixed.tradesU.totalBig.add(bestMixed.tradesB.outputAmount), toToken.decimals);
+        totalHuman = ethers.utils.formatUnits(bestMixed.outputAmount, toToken.decimals);
         finalTrades = [
           ...bestMixed.tradesU.validTrades,
           bestMixed.tradesB,
@@ -1337,30 +1409,61 @@ export default {
       }
 
       let uniswapGasLimit = 0
-      let offsetUniswap, outputUniswap;
+      let offsetUniswap, outputUniswap, negativeOutputUniswap;
       if (validTrades && validTrades.length && tokensByAddresses.value[toTokenAddress].price && props.gasPrice && props.ethPrice) {
         uniswapGasLimit = 120000 + 60000 * validTrades.length; // Fixed reference
         offsetUniswap = BigNumber.from(Math.ceil((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[toTokenAddress].decimals) / tokensByAddresses.value[toTokenAddress].price).toPrecision(50).split('.')[0])
-        outputUniswap = totalBig.sub(offsetUniswap)
+        if (totalBig.gte(offsetUniswap)) {
+          outputUniswap = totalBig.sub(offsetUniswap)
+        } else {
+          // Store negative value as positive BigNumber for later comparison
+          negativeOutputUniswap = offsetUniswap.sub(totalBig)
+          outputUniswap = BigNumber.from('0')
+        }
       }
-      let offsetBalancer, outputBalancer;
+      let offsetBalancer, outputBalancer, negativeOutputBalancer;
       if (gasLimitBalancer && props.gasPrice && props.ethPrice && tokensByAddresses.value[toTokenAddress].price && outputAmount) { // Add outputAmount check
         offsetBalancer = BigNumber.from(Math.ceil((gasLimitBalancer * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, tokensByAddresses.value[toTokenAddress].decimals) / tokensByAddresses.value[toTokenAddress].price).toPrecision(50).split('.')[0])
-        outputBalancer = outputAmount.sub(offsetBalancer)
+        if (outputAmount.gte(offsetBalancer)) {
+          outputBalancer = outputAmount.sub(offsetBalancer)
+        } else {
+          // Store negative value as positive BigNumber for later comparison
+          negativeOutputBalancer = offsetBalancer.sub(outputAmount)
+          outputBalancer = BigNumber.from('0')
+        }
       }
       let outputU = outputUniswap || totalBig || BigNumber.from('0'); // Changed default to '0'
       let outputB = outputBalancer || outputAmount || BigNumber.from('0'); // Changed default to '0' and removed undefined outputAmount
 
+      // Calculate total output and check for various negative scenarios
+      const totalOutput = outputB.add(outputU);
+      let totalNegativeOutput = null;
+      
+      // Scenario 1: Both trades are unprofitable
+      if (outputU.eq(0) && outputB.eq(0) && negativeOutputUniswap && negativeOutputBalancer) {
+        totalNegativeOutput = negativeOutputUniswap.add(negativeOutputBalancer);
+      }
+      // Scenario 2: One trade is profitable, but the other's loss exceeds the profit
+      else if (negativeOutputUniswap && outputB.gt(0) && negativeOutputUniswap.gt(outputB)) {
+        totalNegativeOutput = negativeOutputUniswap.sub(outputB);
+      }
+      else if (negativeOutputBalancer && outputU.gt(0) && negativeOutputBalancer.gt(outputU)) {
+        totalNegativeOutput = negativeOutputBalancer.sub(outputU);
+      }
+
       return {
-        outputAmount: outputB.add(outputU),
+        outputAmount: totalOutput,
+        negativeOutput: totalNegativeOutput, // For comparison when mixed trade is unprofitable
         tradesU: {
           validTrades: validTrades || [],
           totalHuman: totalHuman || '0',
           totalBig: totalBig || BigNumber.from('0'),
+          outputAfterGas: outputU,
         },
         tradesB: {
           callData: callData || null,
           outputAmount: outputAmount || BigNumber.from('0'),
+          outputAfterGas: outputB,
           value: value || '0',
           gasLimit: gasLimitBalancer || 400000, // Default gas limit
           contractAddress: contractAddress || BALANCER_VAULT_ADDRESS,
@@ -2870,11 +2973,11 @@ export default {
               console.warn(`Gas price ${props.gasPrice} is higher than max gas price ${props.maxGasPrice * 1e9}, deducing from execution price`);
               const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / tokensByAddresses.value[order.toToken.address].price;
               
-              if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
-                // For inverted prices (buy levels), gas cost reduces the received amount
+              if (order.shouldSwitchTokensForLimit) {
+                // For inverted prices, gas cost reduces the received amount
                 exactExecutionPrice = Number(order.fromAmount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
               } else {
-                // For non-inverted prices (sell levels), gas cost reduces the received amount
+                // For non-inverted prices, gas cost reduces the received amount
                 exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(order.fromAmount);
               }
               
