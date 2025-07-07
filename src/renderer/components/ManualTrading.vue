@@ -115,7 +115,8 @@
           
           <!-- Effective Price Display -->
           <div v-if="effectivePrice" class="effective-price" style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 14px; color: #111; text-align: center;">
-            1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.usdValue }}
+            <div>1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.usdValue }}</div>
+            <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{ effectivePrice.usdValueInverse }}</div>
           </div>
           
           <div class="address-form">
@@ -631,17 +632,22 @@ export default {
       
       // Calculate price per unit of output token
       const pricePerOutputToken = fromAmount / toAmount;
+      const pricePerInputToken = toAmount / fromAmount;
       
       // Get USD price of the output token
       const fromTokenPrice = tokensByAddresses.value[fromTokenAddress.value]?.price || 0;
+      const toTokenPrice = tokensByAddresses.value[toTokenAddress.value]?.price || 0;
       console.log(pricePerOutputToken, fromAmount, toAmount);
       const usdValue = fromTokenPrice > 0 ? (pricePerOutputToken * fromTokenPrice).toFixed(2) : '0.00';
+      const usdValueInverse = toTokenPrice > 0 ? (pricePerInputToken * toTokenPrice).toFixed(2) : '0.00';
       
       return {
         pricePerToken: pricePerOutputToken.toFixed(6),
+        inversedPricePerToken: (1 / pricePerOutputToken).toFixed(6),
         fromSymbol: tradeSummary.fromTokenSymbol,
         toSymbol: tradeSummary.toTokenSymbol,
-        usdValue: usdValue
+        usdValue: usdValue,
+        usdValueInverse,
       };
     });
 

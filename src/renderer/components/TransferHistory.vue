@@ -17,7 +17,11 @@
       Type
     </span>
     <transition-group name="transfer" tag="ul">
-      <li v-for="(t, index) in trades" :key="t.timestamp + t.txId">
+      <li 
+        v-for="(t, index) in trades"
+        :key="t.timestamp + t.txId" 
+        :class="{ 'is-manual': t.type === 'manual', 'is-auto': t.type === 'automatic', 'is-limit': t.type === 'limit' }"
+      >
         {{ t.hasFailed ? '❌' : (t.isConfirmed ? '✅' : '⏳') }}
         <span class="bold">
           {{ t.fromAmount }} {{ t.fromTokenSymbol || t.fromToken?.symbol }} -> 
@@ -200,7 +204,7 @@ ul {
 }
 
 li {
-  padding: 5px 0;
+  padding: 3px 0 2px 4px;
   border-bottom: 1px solid #eee;
   position: relative;
 }
@@ -274,5 +278,17 @@ li:hover .delete, li:hover .view {
   margin-left: auto;
   display: block;
   margin-top: 10px;
+}
+
+.is-manual {
+  background-color: #eee;
+}
+
+.is-limit {
+  background-color: #fcffe4;
+}
+
+.is-auto {
+  background-color: #dbf1ff;
 }
 </style>
