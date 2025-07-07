@@ -68,6 +68,12 @@ function initDatabase() {
           console.error('Failed to create trades table:', tableErr);
         } else {
           console.log('trades table ready or already exists.');
+
+          db.run(`ALTER TABLE trades ADD COLUMN type TEXT`, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+              console.error('Error adding type column:', err);
+            }
+          });
         }
       });
 
@@ -137,8 +143,8 @@ function initDatabase() {
 async function saveTradeInDB(trade) {
   try {
     const sql = `
-      INSERT INTO trades (fromAddress, fromTokenSymbol, fromTokenAddress, toTokenSymbol, toTokenAddress, fromAmount, expectedToAmount, txId, protocol, senderName)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO trades (fromAddress, fromTokenSymbol, fromTokenAddress, toTokenSymbol, toTokenAddress, fromAmount, expectedToAmount, txId, protocol, senderName, type)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     db.run(sql, [
@@ -152,6 +158,7 @@ async function saveTradeInDB(trade) {
       trade.txId,
       trade.protocol,
       trade.sender?.name,
+      trade.type,
     ], function (err) {
       if (err) {
         console.error('Failed to insert trade:', err);
@@ -252,13 +259,15 @@ function refreshProviders () {
     new ethers.providers.JsonRpcProvider(url,{ chainId: 1, name: 'homestead' })
   );
   provider = new ethers.providers.FallbackProvider(providersList, 1);
+
+  (async () => console.log(await provider.getTransactionCount('0x30c4b0ff44fc27d58fbbcf0405799c36d12da62e', 'pending')))()
 }
 
 async function sendTransaction(transaction) {
   const warnings = [];
 
   try {
-    const wallet = getWallet(transaction.from);
+    const wallet = getWallet(transaction.from, true);
 
     const balance = await provider.getBalance(wallet.address);
     const balanceEth = Number(ethers.utils.formatEther(balance));
@@ -280,6 +289,7 @@ async function sendTransaction(transaction) {
 
     if (transaction.nonce) {
       txData.nonce = transaction.nonce;
+      await new Promise(r => setTimeout(r, 800));
     }
 
     console.log(txData);
@@ -295,7 +305,7 @@ async function sendTransaction(transaction) {
   }
 }
 
-  const getWallet = (address) => {
+  const getWallet = (address, isPrivate) => {
     if (!privateKeys || !privateKeys.length) 
       throw new Error('No private keys found');
 
@@ -303,7 +313,9 @@ async function sendTransaction(transaction) {
     const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from);
     const PRIVATE_KEY = pk.pk;
     
-    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+    const wallet = new ethers.Wallet(PRIVATE_KEY, isPrivate ? 
+      new ethers.providers.JsonRpcProvider('https://rpc.mevblocker.io', { chainId: 1, name: 'homestead' }) : provider);
+
     if (!wallet || !wallet.address || wallet.address.toLowerCase() !== from) {
       throw new Error(`Incorrect private key for address ${transfer.from}`)
     }
@@ -322,7 +334,7 @@ async function approveSpender({ from, contractAddress, spender, permit2Spender }
     const wallet = getWallet(from);
     const balance = await provider.getBalance(wallet.address);
     const balanceEth = Number(ethers.utils.formatEther(balance));
-    if (balanceEth < 0.0005)
+    if (balanceEth < 0.0004)
       throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.0005)`)
     else if (balanceEth < 0.01)
       warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`);
@@ -339,6 +351,7 @@ async function approveSpender({ from, contractAddress, spender, permit2Spender }
       const tx = await erc20.approve(spender, '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', overrides);
       await tx.wait();
     }
+    console.log('Allowance approved for', contractAddress, 'to', spender);
 
     // 2. If spender is Permit2 and permit2Spender is provided, approve Permit2 for that spender
     if (spender.toLowerCase() === PERMIT2_ADDRESS.toLowerCase() && permit2Spender) {
@@ -373,7 +386,7 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
   console.log(tradeSummary);
   
   try {
-    const wallet = getWallet(tradeSummary.sender?.address?.toLowerCase());
+    const wallet = getWallet(tradeSummary.sender?.address?.toLowerCase(), true);
 
     if (!tradeSummary.fromToken?.address) throw new Error('Missing from token address in trade details')
     if (!tradeSummary.toToken?.address) throw new Error('Missing to token address in trade details')

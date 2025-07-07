@@ -2,12 +2,25 @@
   <div class="manual-trading">
     <!-- Token selection list -->
     <div class="form-group">
-      <h3>Manual trade</h3>
+      <div class="top-nav-bar">
+        <div 
+          @click="currentMode='manual'"
+          :class="{'active-tab': currentMode === 'manual'}"
+        > 
+          <h3> Manual trade </h3>
+        </div>
+        <div 
+          @click="currentMode='automatic'"
+          :class="{'active-tab': currentMode === 'automatic'}"
+        >
+          <h3> Automatic trade</h3>
+        </div>
+      </div>
       <button @click="isEditingTokens = !isEditingTokens" class="edit-button">
         {{ isEditingTokens ? 'Stop editing' : 'Edit tokens' }}
       </button>
       <div>
-        <div v-if="!isEditingTokens">
+        <div v-if="!isEditingTokens && currentMode === 'manual'">
           <div class="price-form">
             <div class="tabs-price">
               <div :class="{active: tabOrder === 'market'}" @click="tabOrder = 'market'">Market order</div>
@@ -60,7 +73,7 @@
                 </option>
               </select>
               <span class="right-price">
-                @ ${{ spaceThousands(tokensByAddresses[fromTokenAddress]?.price.toFixed(5)) }}
+                @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[fromTokenAddress]?.price)) }}
               </span>
             </div>
             <span v-if="fromAmount" class="usd-amount">
@@ -94,7 +107,7 @@
               </span>
             </span>
             <p class="right-price">
-              @ ${{ spaceThousands(tokensByAddresses[toTokenAddress]?.price.toFixed(5)) }}
+              @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[toTokenAddress]?.price)) }}
             </p>
           </div>
 
@@ -169,8 +182,116 @@
           </div>
         </div>
 
+        <div
+          v-else-if="currentMode === 'automatic' && !isEditingTokens"
+          class="automatic-mode"
+          :class="{'no-addresses-unlocked': !addresses.length}"
+        >
+          <div class="automatic-header">
+            <button 
+              @click="toggleGlobalPause" 
+              class="global-pause-btn"
+              :class="{ 'paused': isGloballyPaused }"
+              :title="isGloballyPaused ? 'Unpause' : 'Pause'"
+            >
+              {{ isGloballyPaused ? '▶️ Unpause' : '⏸️ Pause' }}
+            </button>
+            <div class="automatic-info">
+              <h3 v-if="isInitialBalanceFetchDone">{{ automaticOrders.length }} buy/sell levels</h3>
+              <h3 v-else>Initializing balances...</h3>
+              <p>{{ automaticMessage }}</p>
+            </div>
+          </div>
+          <div class="matrix">
+            <div v-for="(tokenInRow, i) in tokensInRow" class="token-row">
+              <div
+                class="token-details"
+                v-if="tokenInRow?.token?.symbol"
+              >
+                <p class="token-symbol">{{ tokenInRow.token.symbol || 'Select Token' }}</p>
+                <p class="token-price">
+                  ${{ spaceThousands(removeTrailingZeros(tokenInRow.token.price)) }}
+                </p>
+                <img :src="deleteImage" class="delete-row" @click="deleteRow(i)" />
+              </div>
+              <div 
+                class="horizontal-scroll"
+                v-if="tokenInRow?.token?.symbol"
+              >
+                <div
+                  v-for="(token, j) in tokenInRow.columns"
+                  :key="token?.address + j + '-' + cell"
+                >
+                  <OrderBookLevels
+                    v-if="token?.address && token.decimals"
+                    :tokenA="tokenInRow.token"
+                    :tokenB="token"
+                    :tokensByAddresses="tokensByAddresses"
+                    :balances="computedBalancesByAddress"
+                    :price-threshold="0.01"
+                    :details="token.details"
+                    @orderUpdate="(details) => updateDetailsOrder(i, j, details)"
+                    @delete="deleteColumn(i, j)"
+                  />
+                </div>
+                <div 
+                  v-if="tokenInRow?.token?.address && !shouldSelectTokenInCell"
+                  class="token-details new-cell-details"
+                  @click="shouldSelectTokenInCell = true"
+                >
+                  +
+                </div>
+                <div
+                  v-if="tokenInRow?.token?.address && shouldSelectTokenInCell"
+                  class="token-details new-cell-details"
+                >
+                  <select
+                    id="new-token-cell"
+                    v-model="newCellTokenAddress"
+                    @change="addCellToRow(i)"
+                  >
+                    <option 
+                      v-for="(token, index) in filteredTokens.filter(t => t.address !== tokenInRow.token.address)" 
+                      :key="'new-token-cell-' + index + token?.address" 
+                      :value="token.address"
+                    >
+                      {{ token.symbol }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div 
+              v-if="tokensInRow.filter(t => t?.symbol?.address).length < 12"
+              class="token-details new-token-details"
+            >
+              <div
+                v-if="!shouldSelectTokenInRow"
+                class="token-symbol"
+                @click="shouldSelectTokenInRow = true"
+              >
+                +
+              </div>
+              <select
+                id="new-token"
+                v-model="newTokenAddress"
+                v-if="shouldSelectTokenInRow"
+                @change="addRowToMatrix"
+              >
+                <option 
+                  v-for="(token, index) in filteredTokens" 
+                  :key="'fromToken-' + index" 
+                  :value="token.address"
+                >
+                  {{ token.symbol }}
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         <!-- EDITING TOKENS -->
-        <div v-else>
+        <div v-else class="editing-tokens">
           <p class="text-center">Editing Tokens</p>
           <ul class="two-column-list">
             <li v-for="(token, index) in tokens" :key="index">
@@ -220,7 +341,7 @@
         {{ (new Date(tradeSummary.sentDate)).toLocaleString() }} …
       </p>
       
-      <div v-if="pendingLimitOrders.length">
+      <div v-if="pendingLimitOrders.length" class="pending-orders">
         <h4>Pending Limit Orders</h4>
         <ul>
           <li 
@@ -281,9 +402,13 @@ import deleteImage from '@/../assets/delete.svg';
 import { useUniswapV4 } from '../composables/useUniswap';
 import { useBalancerV3 } from '../composables/useBalancer';
 import spaceThousands from '../composables/spaceThousands';
+import OrderBookLevels from './OrderBookLevels.vue';
 
 export default {
   name: 'ManualTrading',
+  components: {
+    OrderBookLevels,
+  },
   props: {
     addresses: { type: Array, default: () => ([]) },
     gasPrice:   { type: Number, default: 2000000000 },
@@ -291,6 +416,7 @@ export default {
     ethPrice:   { type: Number },
     provider:   { type: Object },
     confirmedTrade: { type: Object },
+    isInitialBalanceFetchDone: {type: Boolean, default: false},
   },
   emits: ['update:settings', 'update:trade', 'refreshBalance'],
   setup(props, { emit }) {
@@ -332,7 +458,7 @@ export default {
     const shouldUseUniswapAndBalancer = ref(true);
     const priceLimit = ref(null);
 
-    const tokens = reactive([
+    const tokens = ref([
       { price: 0, address: ethers.constants.AddressZero, symbol: 'ETH', decimals: 18 },
       { price: 0, address: '0xdac17f958d2ee523a2206206994597c13d831ec7', symbol: 'USDT', decimals: 6 },
       { price: 0, address: '0x514910771af9ca656af840dff83e8264ecf986ca', symbol: 'LINK', decimals: 18 },
@@ -354,6 +480,71 @@ export default {
       { price: 0, address: '', symbol: '', decimals: null},
       { price: 0, address: '', symbol: '', decimals: null},
     ]);
+
+    const computedEthPrice = computed(() => {
+      return props.ethPrice || 0;
+    });
+
+    const tokensInRow = reactive([
+      {
+        token: {symbol: 'ETH', address: ethers.constants.AddressZero, decimals: 18, price: props.ethPrice},
+        columns: [
+        ]
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+      {
+        token: {symbol: null, address: null, decimals: 18, price: 0},
+        columns: []
+      },
+    ])
+
+    const automaticOrders = ref([]);
+    const automaticMessage= ref(null);
+    const isGloballyPaused = ref(false);
+
+    const shouldSelectTokenInRow = ref(false);
+    const newTokenAddress = ref(null);
+    const shouldSelectTokenInCell = ref(false);
+    const newCellTokenAddress = ref(null);
 
     // Map of tokenAddress → { price, symbol, decimals }
     const tokensByAddresses = ref({});
@@ -393,11 +584,13 @@ export default {
     const isInsufficientEthError = ref(false);
     const ethBalanceCheckInterval = ref(null);
 
+    const currentMode = ref('automatic'); // 'manual' or 'automatic'
+
     // ─── Computed Helpers ────────────────────────────────────────────────────
 
     // Filter out tokens without valid symbol/address
     const filteredTokens = computed(() =>
-      tokens.filter(t => t.symbol && t.address && t.decimals != null && t.symbol !== '' && t.address !== '')
+      tokens.value.filter(t => t.symbol && t.address && t.decimals != null && t.symbol !== '' && t.address !== '')
     );
 
     // Build a nested map: { [userAddress]: { [tokenAddress]: availableBalance } }
@@ -656,11 +849,11 @@ export default {
         if (outputU.gt(outputB) && shouldUseUniswapValue) {
           bestOutputLessGas = outputU;
           isUsingUniswap = true;
-          console.log('Using Uniswap')
+          // console.log('Using Uniswap')
         } else if (shouldUseBalancerValue) {
           bestOutputLessGas = outputB;
           isUsingUniswap = false;
-          console.log('Using Balancer')
+          // console.log('Using Balancer')
         }
       }
       if (shouldUseUniswapValue && !shouldUseBalancerValue)
@@ -887,13 +1080,20 @@ export default {
         () => shouldUseUniswap.value,
         () => shouldUseBalancer.value,
         () => shouldUseUniswapAndBalancer.value,
+        () => tabOrder.value,
+        () => currentMode.value,
       ],
       async (
-        [_newFrom, _newTo, _newAmt, _newSender, shouldUseUniswapValue, shouldUseBalancerValue, shouldUseUniswapAndBalancerValue],
+        [_newFrom, _newTo, _newAmt, _newSender, shouldUseUniswapValue, shouldUseBalancerValue, shouldUseUniswapAndBalancerValue, tabOrderValue, currentModeValue],
         [_oldFrom, _oldTo]
       ) => {
-        if (tabOrder.value === 'limit') {
+        if (tabOrderValue === 'limit') {
           console.log('Skipping re-quoting for Limit Order tab');
+          if (debounceTimer) clearTimeout(debounceTimer);
+          return;
+        }
+        if (currentModeValue === 'automatic') {
+          console.log('Skipping re-quoting for automatic tab');
           if (debounceTimer) clearTimeout(debounceTimer);
           return;
         }
@@ -901,6 +1101,8 @@ export default {
         if (!_newSender?.address) {
           swapMessage.value = 'No wallet selected';
           return;
+        } else {
+          swapMessage.value = '';
         }
 
         if (!shouldUseUniswapValue && !shouldUseBalancerValue && !shouldUseUniswapAndBalancerValue) {
@@ -1175,12 +1377,12 @@ export default {
       let gasLimit = 400000;
       try {
         if (shouldFetchGasLimit) {
-          console.log('before promise.race')
+          // console.log('before promise.race')
           gasLimit = await Promise.race([
             toRaw(props.provider).estimateGas(txData),
             new Promise(r => setTimeout(r, 5000)),
           ])
-          console.log({gasLimit})
+          // console.log({gasLimit})
           if (!gasLimit)
             gasLimit = 400000;
         }
@@ -1188,7 +1390,7 @@ export default {
         console.log('Error in estimateGas');
         console.error(err);
       }
-      console.log(gasLimit);
+      // console.log(gasLimit);
 
       return {
         outputAmount: result.expectedAmountOut,
@@ -1203,10 +1405,13 @@ export default {
       const pools = await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo]);
       
       // FINDING TRADES
+      const tokenDecimals = tokensByAddresses.value[_newFrom].decimals;
+      const formattedAmount = Number(_newAmt).toFixed(tokenDecimals);
       const fromAmtRaw = ethers.utils.parseUnits(
-        _newAmt.toString(),
-        tokensByAddresses.value[_newFrom].decimals
+        formattedAmount,
+        tokenDecimals
       );
+
       const [
         bestTrades,
         bestTrades10,
@@ -1234,91 +1439,91 @@ export default {
       ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .10).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 10 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .15).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 15 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .20).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 20 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .25).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 25 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .30).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 30 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .35).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 35 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .40).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 40 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .45).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 45 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .50).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 50 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .55).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 55 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .60).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 60 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .65).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 65 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .70).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 70 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .75).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 75 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .80).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 80 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .85).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 85 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .90).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 90 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .93).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 93 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .95).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 95 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .97).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 97 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .98).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 98 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          (_newAmt * .99).toFixed(tokensByAddresses.value[_newFrom].decimals),
+          ((_newAmt * 99 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
           tokensByAddresses.value[_newFrom].decimals
         )),
       ])
@@ -1350,7 +1555,8 @@ export default {
       }
 
       const decimalsIn = tokensByAddresses.value[_newFrom].decimals; // e.g. 18 for WETH, 6 for USDT
-      const expectedInRawBN = ethers.utils.parseUnits(_newAmt + '', decimalsIn);
+      const formattedAmountIn = Number(_newAmt).toFixed(decimalsIn);
+      const expectedInRawBN = ethers.utils.parseUnits(formattedAmountIn, decimalsIn);
       
       if (!tradesByPercent[100] || !tradesByPercent[100].validTrades || tradesByPercent[100].validTrades.length === 0) {
         console.log('No valid trades found');
@@ -1465,108 +1671,63 @@ export default {
 
     const setTokenPrices = async (tokenArray) => {
       const tokenPrices = await tokensUsd(tokenArray, props.ethPrice);
+      
+      // Create a copy of the entire array
+      const updatedTokens = [...tokenArray];
+      
+      // Update prices in the copy
       for (const tokenAddress in tokenPrices) {
-        let index = tokenArray.findIndex((t) => t.address.toLowerCase() === tokenAddress)
-        tokenArray[index].price = tokenPrices[tokenAddress]
-      }
-    };
-    watch(() => props.ethPrice, () => setTokenPrices(tokens), { immediate: true });
-    const priceUpdateInterval = setInterval(() => {
-      if (!pendingLimitOrders.value.length) setTokenPrices(tokens);
-    }, 12_000);
-
-    // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
-    watch(
-      () => tokens,
-      (newTokens) => {
-        const map = {};
-        for (const t of newTokens) {
-          if (t.address && t.symbol && t.decimals != null) {
-            map[t.address] = t;
-          }
-        }
-        tokensByAddresses.value = map;
-
-        // Initialize default selection if not set
-        if (!fromTokenAddress.value && filteredTokens.value.length > 0) {
-          fromTokenAddress.value = filteredTokens.value[0].address;
-        }
-        if (!toTokenAddress.value && filteredTokens.value.length > 1) {
-          toTokenAddress.value = filteredTokens.value[1].address;
-        }
-      },
-      { immediate: true, deep: true }
-    );
-
-    // Persist tokens configuration on mount
-    onMounted(async () => {
-      const settings = await window.electronAPI.loadSettings();
-      if (settings?.tokens) {
-        for (let i = 0; i < settings.tokens.length; i++) {
-          if (settings.tokens[i]?.address && settings.tokens[i]?.symbol) {
-            tokens[i] = settings.tokens[i];
+        let index = updatedTokens.findIndex((t) => t.address?.toLowerCase() === tokenAddress);
+        if (index >= 0) {
+          // Create new token object with updated price
+          updatedTokens[index] = { 
+            ...updatedTokens[index], 
+            price: tokenPrices[tokenAddress] 
+          };
+          
+          // Also update tokensByAddresses
+          if (tokensByAddresses.value[tokenAddress]) {
+            tokensByAddresses.value[tokenAddress] = {
+              ...tokensByAddresses.value[tokenAddress],
+              price: tokenPrices[tokenAddress]
+            };
           }
         }
       }
-
-      const dbOrders = await window.electronAPI.getPendingOrders();
-      if (dbOrders && Array.isArray(dbOrders)) {
-        pendingLimitOrders.value = dbOrders.map(o => ({
-          id: o.id,
-          fromAmount: o.fromAmount,
-          toAmount: o.toAmount, // Make sure to map this field
-          fromToken: { 
-            address: o.fromTokenAddress, 
-            symbol: o.fromTokenSymbol 
-          },
-          toToken: { 
-            address: o.toTokenAddress, 
-            symbol: o.toTokenSymbol 
-          },
-          priceLimit: parseFloat(o.priceLimit),
-          currentMarketPrice: o.currentMarketPrice ? parseFloat(o.currentMarketPrice) : null,
-          orderType: o.orderType || 'take_profit',
-          shouldSwitchTokensForLimit: Boolean(o.shouldSwitchTokensForLimit),
-          sender: { 
-            address: o.senderAddress, 
-            name: o.senderName 
-          },
-          status: o.status || 'pending',
-          createdAt: o.createdAt || null,
-          completedAt: o.completedAt || null,
-          executionPrice: o.executionPrice ? parseFloat(o.executionPrice) : null
-        })).sort((a, b) => {
-          const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
-          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
-          return dateB.getTime() - dateA.getTime();
+      
+      // Replace the entire tokens array to trigger reactivity
+      tokens.value = updatedTokens;
+      
+      // Also update tokensInRow with new references
+      tokensInRow.forEach((row, i) => {
+        if (row.token?.address) {
+          const tokenAddress = row.token.address.toLowerCase();
+          if (tokenPrices[tokenAddress]) {
+            // Create a new object to trigger reactivity
+            tokensInRow[i] = {
+              ...tokensInRow[i],
+              token: {
+                ...row.token,
+                price: tokenPrices[tokenAddress]
+              }
+            };
+          }
+        }
+        
+        // Update prices for columns
+        row.columns.forEach((col, j) => {
+          if (col.address) {
+            const colAddress = col.address.toLowerCase();
+            if (tokenPrices[colAddress]) {
+              tokensInRow[i].columns[j] = {
+                ...col,
+                price: tokenPrices[colAddress]
+              };
+            }
+          }
         });
-      }
-    });
-    watch(() => tokens, () => emit('update:settings', { tokens: [...tokens] }), { deep: true });
-
-    // Keep senderDetails in sync
-    watch(
-      () => props.addresses,
-      (addrs) => {
-        if (addrs && addrs[0]) {
-          senderDetails.value = addrs[0];
-        }
-      },
-      { immediate: true }
-    );
-    watch(
-      () => senderDetails.value,
-      (val) => {
-        if (!val) {
-          isSwapButtonDisabled.value = true;
-        } else {
-          needsToApprove.value = false;
-        }
-      },
-      { immediate: true }
-    );
-
-    // ─── Methods ─────────────────────────────────────────────────────────────
+      });
+    }
 
     async function getTokenSymbol(contractAddress) {
       const c = new ethers.Contract(contractAddress, ERC20_ABI, toRaw(props.provider));
@@ -1580,26 +1741,38 @@ export default {
     async function findSymbol(index, contractAddress) {
       try {
         if (contractAddress === ethers.constants.AddressZero) {
-          tokens[index].decimals = 18;
-          tokens[index].symbol = 'ETH';
-          tokens[index].price = props.ethPrice;
+          tokens.value[index].decimals = 18;
+          tokens.value[index].symbol = 'ETH';
+          tokens.value[index].price = props.ethPrice;
         } else if (ethers.utils.isAddress(contractAddress)) {
-          tokens[index].decimals = await getTokenDecimals(contractAddress);
-          tokens[index].symbol   = await getTokenSymbol(contractAddress);
-          tokens[index].price    = await tokenUsd(contractAddress, props.ethPrice);
+          tokens.value[index].decimals = await getTokenDecimals(contractAddress);
+          tokens.value[index].symbol   = await getTokenSymbol(contractAddress);
+          tokens.value[index].price    = await tokenUsd(contractAddress, props.ethPrice);
         } else {
-          tokens[index].symbol = null;
+          tokens.value[index].symbol = null;
         }
-        tokens[index].address = tokens[index].address.toLowerCase();
+        tokens.value[index].address = tokens.value[index].address.toLowerCase();
       } catch {
-        tokens[index].symbol = null;
+        tokens.value[index].symbol = null;
       }
     }
+
     function deleteToken(index) {
-      tokens[index].address = '';
-      tokens[index].symbol = '';
-      tokens[index].decimals = null;
-      tokens[index].price = 0;
+      const tokenToDelete = tokens.value[index];
+      tokens.value[index] = {address: '', symbol: '', decimals: null, price: 0};
+      
+      // Clean up tokensInRow references to this deleted token
+      tokensInRow.forEach((row, rowIndex) => {
+        // Check main token
+        if (row.token?.address === tokenToDelete.address) {
+          tokensInRow[rowIndex] = {
+            token: { symbol: null, address: null, decimals: 18, price: null },
+            columns: []
+          }
+        }
+        // Remove from columns
+        row.columns = row.columns.filter(col => col.address !== tokenToDelete.address);
+      });
     }
 
     function switchTokens() {
@@ -1626,12 +1799,26 @@ export default {
         currentTradeSummary.txId = 'pending';
         currentTradeSummary.sentDate = new Date();
         currentTradeSummary.isConfirmed = false;
+        
+        // Determine trade type based on order context
+        if (providedTradeSummary && providedTradeSummary.orderType) {
+          // Check if this is an automatic order execution
+          if (providedTradeSummary.automatic) {
+            currentTradeSummary.type = 'automatic';
+          } else {
+            // This is a manual limit order execution
+            currentTradeSummary.type = 'limit';
+          }
+        } else {
+          // This is a manual trade
+          currentTradeSummary.type = 'manual';
+        }
 
         // Basic balance check for ETH → gas
         if (currentTradeSummary.fromToken.address === ethers.constants.AddressZero) {
           const addr = currentTradeSummary.sender.address.toLowerCase();
           const bal = computedBalancesByAddress.value[addr]?.[currentTradeSummary.fromToken.address.toLowerCase()] || 0;
-          if (bal - Number(currentTradeSummary.fromAmount) < 0.003) {
+          if (bal - Number(currentTradeSummary.fromAmount) < calculateGasReserve()) {
             throw new Error('Insufficient ETH for gas on ' + addr);
           }
         }
@@ -1674,9 +1861,12 @@ export default {
             (Number(props.gasPrice) * 1.85 / 1e9).toFixed(3), 9
           )
           const maxPriorityFeePerGas =  ethers.utils.parseUnits(
-            (0.02 + Math.random()*0.05 + Number(props.gasPrice)/(40e9)).toFixed(3), 9
+            (0.02 + Math.random()*0.05 + Number(props.gasPrice)/(40e9)).toFixed(9), 9
           )
-          const nonce = await toRaw(props.provider).getTransactionCount(currentTradeSummary.sender.address, 'pending');
+          // https://eth.meowrpc.com
+          // https://rpc.mevblocker.io
+          const privateProvider = new ethers.providers.JsonRpcProvider('https://rpc.mevblocker.io', { chainId: 1, name: 'homestead' });
+          const nonce = await privateProvider.getTransactionCount(currentTradeSummary.sender.address, 'pending');
 
           const [resultsU, resultsB] = await Promise.all([
             executeMixedSwaps(
@@ -1745,8 +1935,10 @@ export default {
           swapMessage.value = 'Warnings: ' + globalWarnings.join(' ; ');
         }
 
+        console.log(currentTradeSummary);
+        
         if (currentTradeSummary.protocol === 'Uniswap & Balancer') {
-          currentTradeSummary.txId = globalTxs[0].hash;
+          currentTradeSummary.txId = globalTxs[0]?.hash || null;
           emit('update:trade', {
              ...currentTradeSummary,
             fromAmount: currentTradeSummary.fromAmountU,
@@ -1754,7 +1946,7 @@ export default {
             toAmount: currentTradeSummary.toAmountU,
             protocol: 'Uniswap'
           });
-          currentTradeSummary.txId = globalTxs[1].hash;
+          currentTradeSummary.txId = globalTxs[1]?.hash || null;
           emit('update:trade', {
             ...currentTradeSummary,
             fromAmount: currentTradeSummary.fromAmountB,
@@ -1763,7 +1955,7 @@ export default {
             protocol: 'Balancer'
           });
         } else {
-          currentTradeSummary.txId = globalTxs[0].hash;
+          currentTradeSummary.txId = globalTxs[0]?.hash || null;
           emit('update:trade', { ...currentTradeSummary });
         }
       } catch (error) {
@@ -1857,7 +2049,7 @@ export default {
 
     // Emit when tokens scaffold changes
     const emitSettings = () => {
-      const cleaned = tokens.filter(t =>
+      const cleaned = tokens.value.filter(t =>
         t.symbol &&
         t.address &&
         (ethers.utils.isAddress(t.address) || t.address === ethers.constants.AddressZero)
@@ -1865,7 +2057,7 @@ export default {
       emit('update:settings', { tokens: cleaned });
     };
 
-    watch(() => tokens, () => emitSettings(), { deep: true });
+    watch(() => tokens.value, () => emitSettings(), { deep: true });
 
     watch(
       [() => priceLimit.value, () => fromAmount.value, () => fromTokenAddress.value, () => toTokenAddress.value],
@@ -1981,10 +2173,10 @@ export default {
       }
 
       if (!computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()]?.[fromTokenAddress.value.toLowerCase()]) {
-        swapMessage.value = 'No balances found for the selected address and from token';
+        swapMessage.value = 'No balances found for the selected address on ' + tokensByAddresses.value[fromTokenAddress.value].symbol;
         return;
       } else if (computedBalancesByAddress.value[senderDetails.value.address.toLowerCase()][fromTokenAddress.value.toLowerCase()] < fromAmount.value) {
-        swapMessage.value = 'Insufficient balance for the selected from token';
+        swapMessage.value = 'Insufficient balance of ' + tokensByAddresses.value[fromTokenAddress.value].symbol;
         return;
       }
 
@@ -2047,126 +2239,699 @@ export default {
       swapMessage.value = `Limit order placed`;
     }
 
+    // Helper function to find addresses with highest balances for a token
+    function getAddressesWithHighestBalances(tokenAddress, requiredAmount, order = null) {
+      const tokenAddr = tokenAddress.toLowerCase();
+      const isETH = tokenAddr === '0x0000000000000000000000000000000000000000' || tokenAddr === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+      
+      // Calculate gas reserve for ETH trades (use gas price to estimate)
+      const gasReserve = isETH ? calculateGasReserve() : 0;
+      
+      // Get minimum amount and random mode settings from order if available
+      let minimumAmount = 0;
+      let isRandomMode = false;
+      
+      if (order && order.automatic && order.sourceLocation) {
+        const { rowIndex, colIndex } = order.sourceLocation;
+        const tradingPairConfig = tokensInRow.value?.[rowIndex]?.columns?.[colIndex];
+        minimumAmount = tradingPairConfig?.details?.minimumAmount || 0;
+        isRandomMode = tradingPairConfig?.details?.isRandomMode || false;
+      }
+      
+      const availableAddresses = props.addresses
+        .map(address => ({
+          ...address,
+          balance: address.balances?.[tokenAddr] || 0
+        }))
+        .filter(address => {
+          const balance = address.balance;
+          const hasPositiveBalance = balance > 0 && (isETH ? balance > gasReserve : true);
+          
+          // Add minimum amount check
+          if (hasPositiveBalance && minimumAmount > 0) {
+            // For ETH, check if balance minus gas reserve meets minimum
+            const effectiveBalance = isETH ? balance - gasReserve : balance;
+            
+            if (order && order.sourceLocation) {
+              if (order.sourceLocation.levelType === 'buy') {
+                // For buy orders: check if expected output meets minimum
+                const expectedOutputAmount = effectiveBalance * order.priceLimit;
+                return expectedOutputAmount >= minimumAmount;
+              } else if (order.sourceLocation.levelType === 'sell') {
+                // For sell orders: check if input amount meets minimum
+                return effectiveBalance >= minimumAmount;
+              }
+            }
+            
+            // Default check for non-automatic orders
+            return effectiveBalance >= minimumAmount;
+          }
+          
+          return hasPositiveBalance;
+        });
+      
+      // Apply sorting based on mode
+      let sortedAddresses;
+      if (isRandomMode) {
+        // Random mode: shuffle the array
+        sortedAddresses = [...availableAddresses].sort(() => Math.random() - 0.5);
+      } else {
+        // Highest balance mode: sort by balance descending
+        sortedAddresses = availableAddresses.sort((a, b) => b.balance - a.balance);
+      }
+      
+      const selectedAddresses = [];
+      let totalAmount = 0;
+      
+      for (const address of sortedAddresses) {
+        if (totalAmount >= requiredAmount) break;
+        
+        // For ETH, subtract gas reserve from available balance
+        const maxAvailable = isETH ? address.balance - gasReserve : address.balance;
+        let availableFromAddress = Math.min(maxAvailable, requiredAmount - totalAmount);
+        
+        // Additional minimum amount check per address
+        if (minimumAmount > 0 && order && order.sourceLocation) {
+          if (order.sourceLocation.levelType === 'buy') {
+            // For buy orders: ensure this address's contribution results in minimum output
+            const expectedOutputFromAddress = availableFromAddress * order.priceLimit;
+            if (expectedOutputFromAddress < minimumAmount && selectedAddresses.length > 0) {
+              // If we already have other addresses and this one doesn't meet minimum, skip it
+              continue;
+            }
+          } else if (order.sourceLocation.levelType === 'sell') {
+            // For sell orders: ensure this address's contribution meets minimum
+            if (availableFromAddress < minimumAmount && selectedAddresses.length > 0) {
+              // If we already have other addresses and this one doesn't meet minimum, skip it
+              continue;
+            }
+          }
+        }
+        
+        if (availableFromAddress > 0) {
+          selectedAddresses.push({
+            address,
+            amount: availableFromAddress
+          });
+          totalAmount += availableFromAddress;
+        }
+      }
+      
+      return { addresses: selectedAddresses, totalAvailable: totalAmount };
+    }
+
+    // Calculate gas reserve based on current gas price
+    function calculateGasReserve() {
+      const gasLimit = 300000; // Estimated gas limit for swaps
+      const gasPrice = props.gasPrice || '20000000000'; // 20 Gwei default
+      const gasCostWei = BigInt(gasLimit) * BigInt(gasPrice);
+      const gasCostEth = Number(gasCostWei) / 1e18;
+      
+      // Use minimum of 0.003 ETH or calculated gas cost + 50% safety margin
+      const calculatedReserve = gasCostEth * 1.5;
+      return Math.max(0.003, calculatedReserve);
+    }
+
+    // Async function to handle multi-address execution without blocking main loop
+    // Helper function to re-validate trigger conditions
+    async function revalidateTriggerCondition(order, executionAmount) {
+      try {
+        // Get current token prices
+        const fromToken = tokensByAddresses.value[order.fromToken.address];
+        const toToken = tokensByAddresses.value[order.toToken.address];
+        
+        if (!fromToken?.price || !toToken?.price) {
+          console.log(`Missing price data for re-validation: fromToken=${fromToken?.symbol}, toToken=${toToken?.symbol}`);
+          return { valid: false, reason: 'Missing price data' };
+        }
+
+        // Calculate current market price
+        let currentMarketPrice;
+        if (!order.shouldSwitchTokensForLimit) {
+          currentMarketPrice = fromToken.price / toToken.price;
+        } else {
+          currentMarketPrice = toToken.price / fromToken.price;
+        }
+
+        // Get exact execution price from DEX
+        const bestTradeResult = await getBestTrades(
+          order.fromToken.address,
+          order.toToken.address,
+          executionAmount,
+          order?.sender?.address || senderDetails.value.address,
+          true,
+          true,
+          fromToken.price * Number(executionAmount) >= 100,
+        );
+
+        if (!bestTradeResult || !bestTradeResult.totalHuman) {
+          return { valid: false, reason: 'Unable to get execution quote' };
+        }
+
+        // Calculate exact execution price
+        let exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(executionAmount);
+        
+        // Apply gas cost adjustment if needed
+        if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
+          const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toToken.price;
+          
+          if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
+            // For inverted prices (buy levels), gas cost reduces the received amount
+            exactExecutionPrice = Number(executionAmount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
+          } else {
+            // For non-inverted prices (sell levels), gas cost reduces the received amount
+            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(executionAmount);
+          }
+        }
+
+        // Check if trigger condition is still valid
+        let shouldTrigger = false;
+        if (order.orderType === 'take_profit') {
+          shouldTrigger = exactExecutionPrice >= order.priceLimit;
+        } else if (order.orderType === 'stop_loss') {
+          shouldTrigger = exactExecutionPrice <= order.priceLimit;
+        } else {
+          shouldTrigger = exactExecutionPrice >= order.priceLimit;
+        }
+
+        const priceDifference = Math.abs(exactExecutionPrice - order.priceLimit) / order.priceLimit;
+        
+        return {
+          valid: shouldTrigger,
+          exactExecutionPrice,
+          currentMarketPrice,
+          priceDifference: priceDifference * 100, // Convert to percentage
+          bestTradeResult, // Return the updated bestTradeResult
+          reason: shouldTrigger ? 'Trigger condition met' : `Price condition not met: ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit}`
+        };
+      } catch (error) {
+        console.error('Error during price re-validation:', error);
+        return { valid: false, reason: `Re-validation error: ${error.message}` };
+      }
+    }
+
+    async function executeMultiAddressTrade(order, addressSelection, exactExecutionPrice) {
+      let totalExecuted = 0;
+      let allExecutionSuccessful = true;
+      let validationFailures = 0;
+      const maxValidationFailures = 2; // Allow up to 2 validation failures before stopping
+      
+      try {
+        console.log(`Starting multi-address execution for order ${order.id} with ${addressSelection.addresses.length} addresses`);
+        
+        // Execute trades sequentially with each address
+        for (let i = 0; i < addressSelection.addresses.length; i++) {
+          const { address, amount } = addressSelection.addresses[i];
+          
+          if (totalExecuted >= order.remainingAmount) break;
+          
+          const executeAmount = Math.min(amount, order.remainingAmount - totalExecuted);
+          
+          // Re-validate trigger conditions before each address execution (except first)
+          if (i > 0) {
+            console.log(`Re-validating trigger conditions before executing with address ${address.name} (${i + 1}/${addressSelection.addresses.length})`);
+            
+            const validation = await revalidateTriggerCondition(order, executeAmount);
+            
+            if (!validation.valid) {
+              console.log(`⚠️ Trigger condition no longer valid for address ${address.name}: ${validation.reason}`);
+              console.log(`Market price: ${validation.currentMarketPrice?.toFixed(9) || 'N/A'}, Execution price: ${validation.exactExecutionPrice?.toFixed(9) || 'N/A'}, Limit: ${order.priceLimit}`);
+              
+              validationFailures++;
+              
+              // Stop execution if too many validation failures
+              if (validationFailures >= maxValidationFailures) {
+                console.log(`❌ Stopping multi-address execution due to ${validationFailures} consecutive validation failures`);
+                allExecutionSuccessful = false;
+                break;
+              }
+              
+              // Skip this address but continue with others
+              continue;
+            } else {
+              console.log(`✅ Trigger condition still valid: ${validation.reason} (difference: ${validation.priceDifference.toFixed(2)}%)`);
+              validationFailures = 0; // Reset failure counter on successful validation
+            }
+          }
+          
+          console.log(`Executing ${executeAmount} ${order.fromToken.symbol} from address ${address.name} (${i + 1}/${addressSelection.addresses.length})`);
+          
+          const execution = await executeTradeWithAddress(order, { address }, executeAmount);
+          
+          if (execution.success) {
+            totalExecuted += execution.executedAmount;
+            console.log(`✅ Successfully executed ${execution.executedAmount} ${order.fromToken.symbol} from ${address.name}. Total executed: ${totalExecuted}/${order.remainingAmount}`);
+            
+            // Add delay before next address (except for last address)
+            if (i < addressSelection.addresses.length - 1 && totalExecuted < order.remainingAmount) {
+              console.log(`⏳ Waiting 25 seconds before next address execution...`);
+              await new Promise(resolve => setTimeout(resolve, 25000)); 
+            }
+          } else {
+            console.error(`❌ Failed to execute trade with address ${address.name}: ${execution.error}`);
+            allExecutionSuccessful = false;
+            
+            // Check if failure is due to price conditions
+            if (execution.error && execution.error.includes('Price condition no longer valid')) {
+              validationFailures++;
+              console.log(`Price-related failure count: ${validationFailures}/${maxValidationFailures}`);
+              
+              if (validationFailures >= maxValidationFailures) {
+                console.log(`❌ Stopping execution due to repeated price validation failures`);
+                break;
+              }
+            } else {
+              // Non-price related failure, stop execution
+              break;
+            }
+          }
+        }
+        
+        // Update order status based on execution results
+        if (allExecutionSuccessful && totalExecuted >= order.remainingAmount) {
+          order.status = 'completed';
+          order.remainingAmount = 0;
+        } else {
+          order.remainingAmount = Math.max(0, order.remainingAmount - totalExecuted);
+          order.status = totalExecuted > 0 ? 'partially_filled' : 'failed';
+          
+          // If partial execution due to price conditions, update level percentage
+          if (totalExecuted > 0 && !allExecutionSuccessful && order.automatic && order.sourceLocation) {
+            const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+            if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+              const levels = levelType === 'sell' 
+                ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                
+              if (levels[levelIndex]) {
+                // Calculate new percentage based on remaining amount
+                const originalPercentage = levels[levelIndex].balancePercentage;
+                const executedRatio = totalExecuted / order.originalAmount;
+                const remainingRatio = 1 - executedRatio;
+                const newPercentage = originalPercentage * remainingRatio;
+                
+                console.log(`Updating level percentage from ${originalPercentage}% to ${newPercentage.toFixed(2)}% due to partial execution`);
+                
+                // Update the level with new percentage and set partially filled status
+                levels[levelIndex].balancePercentage = Number(newPercentage.toFixed(2));
+                levels[levelIndex].status = 'partially_filled'; // Mark as partially filled, not active
+                levels[levelIndex].partialExecutionDate = new Date().toISOString();
+                levels[levelIndex].executedAmount = totalExecuted;
+                levels[levelIndex].originalPercentage = originalPercentage;
+                
+                updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+              }
+            }
+            
+            // Exit the function early to leave remaining amount for future execution
+            console.log(`Partial execution completed. Remaining: ${order.remainingAmount}, will retry later`);
+            return;
+          }
+        }
+        
+        order.completedAt = new Date().toISOString();
+        order.executionPrice = exactExecutionPrice;
+        
+        // Update UI for automatic orders
+        if (order.automatic && order.sourceLocation) {
+          const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+          if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+            const levels = levelType === 'sell' 
+              ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+              : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+              
+            if (levels[levelIndex]) {
+              // Explicitly set status based on order completion
+              if (order.status === 'completed') {
+                levels[levelIndex].status = 'processed';
+              } else if (order.status === 'partially_filled') {
+                levels[levelIndex].status = 'partially_filled';
+              } else {
+                levels[levelIndex].status = 'failed';
+              }
+              levels[levelIndex].executionPrice = exactExecutionPrice;
+              levels[levelIndex].executionDate = new Date().toISOString();
+              updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+              console.log(`Level ${levelIndex} status updated to: ${levels[levelIndex].status} (order status: ${order.status})`);
+            }
+          }
+        }
+        
+        console.log(`Multi-address execution completed. Order ${order.id}: ${order.status}, executed: ${totalExecuted}/${order.originalAmount}`);
+        
+      } catch (error) {
+        console.error('Multi-address execution failed:', error);
+        order.status = 'failed';
+        order.completedAt = new Date().toISOString();
+      }
+    }
+
+    // Helper function to execute trade with specific address and amount
+    async function executeTradeWithAddress(order, addressInfo, amount) {
+      try {
+        const modifiedOrder = {
+          ...order,
+          fromAmount: amount,
+          sender: addressInfo.address
+        };
+        
+        // Execute the trade logic here
+        const fromToken = tokensByAddresses.value[order.fromToken.address];
+        const toToken = tokensByAddresses.value[order.toToken.address];
+                // Get current market price for validation
+        if (!fromToken?.price || !toToken?.price) {
+          throw new Error('Missing current price data for validation');
+        }
+        
+        
+        const bestTradeResult = await getBestTrades(
+          fromToken.address,
+          toToken.address,
+          amount,
+          modifiedOrder?.sender?.address,
+          true,
+          true,
+          true
+        );
+        
+        if (!bestTradeResult) {
+          throw new Error('No trade routes found');
+        }
+
+        
+        // Calculate exact execution price for this specific trade
+        let exactExecutionPrice;
+        
+        // Apply gas cost adjustment if needed (same logic as main execution)
+        if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
+          const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toToken.price;
+          
+          if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
+            // For inverted prices (buy levels), gas cost reduces the received amount
+            exactExecutionPrice = Number(amount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
+          } else {
+            // For non-inverted prices (sell levels), gas cost reduces the received amount
+            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(amount);
+          }
+        } else {
+          // No gas cost adjustment needed - calculate base price and apply inversion if needed
+          exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(amount);
+          
+          // For buy levels with shouldSwitchTokensForLimit, invert the price to match limit format
+          if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
+            exactExecutionPrice = 1 / exactExecutionPrice;
+          }
+        }
+        
+        // Validate price condition still holds after first trade impact
+        let shouldExecute = false;
+        if (order.orderType === 'take_profit') {
+          shouldExecute = exactExecutionPrice >= order.priceLimit;
+        } else if (order.orderType === 'stop_loss') {
+          shouldExecute = exactExecutionPrice <= order.priceLimit;
+        } else {
+          shouldExecute = exactExecutionPrice >= order.priceLimit;
+        }
+        
+        if (!shouldExecute) {
+          console.log(`Price condition no longer valid for ${order.orderType} order. Execution price: ${exactExecutionPrice.toFixed(9)} vs limit: ${order.priceLimit}`);
+          return { success: false, error: 'Price condition no longer valid after market impact' };
+        }
+        
+        console.log(`Price validation passed for ${order.orderType} order. Execution price: ${exactExecutionPrice.toFixed(9)} vs limit: ${order.priceLimit}`);
+        
+        
+        const limitOrderTradeSummary = {
+          protocol: bestTradeResult.protocol,
+          sender: modifiedOrder.sender,
+          fromAmount: amount.toString(),
+          toAmount: bestTradeResult.totalHuman,
+          expectedToAmount: bestTradeResult.totalHuman,
+          fromTokenSymbol: fromToken.symbol,
+          toTokenSymbol: toToken.symbol,
+          fromAddressName: modifiedOrder.sender.name,
+          fromToken: fromToken,
+          fromTokenAddress: fromToken.address,
+          toToken: toToken,
+          toTokenAddress: toToken.address,
+          gasLimit: bestTradeResult.gasLimit,
+          orderType: order.orderType,
+          automatic: order.automatic,
+        };
+        
+        // 🕐 Time the approval process and re-validate if it takes too long
+        const approvalStartTime = Date.now();
+        await approveSpending(bestTradeResult.trades);
+        const approvalDuration = (Date.now() - approvalStartTime) / 1000; // Convert to seconds
+        
+        console.log(`Approval completed in ${approvalDuration.toFixed(2)} seconds`);
+        
+        // 🔍 Re-validate and refresh trade data if approval took longer than 5 seconds
+        if (approvalDuration > 5) {
+          console.log(`⚠️ Approval took ${approvalDuration.toFixed(2)}s (>5s), re-validating with fresh trade data...`);
+          
+          const postApprovalValidation = await revalidateTriggerCondition(order, amount);
+          
+          if (!postApprovalValidation.valid) {
+            console.log(`❌ Price condition no longer valid after slow approval: ${postApprovalValidation.reason}`);
+            return { 
+              success: false, 
+              error: `Price condition no longer valid after approval (${approvalDuration.toFixed(2)}s): ${postApprovalValidation.reason}` 
+            };
+          }
+          
+          console.log(`✅ Price condition still valid after slow approval. Updated execution price: ${postApprovalValidation.exactExecutionPrice.toFixed(9)} (difference: ${postApprovalValidation.priceDifference.toFixed(2)}%)`);
+          
+          // Use the refreshed bestTradeResult from revalidation
+          bestTradeResult = postApprovalValidation.bestTradeResult;
+          limitOrderTradeSummary.toAmount = bestTradeResult.totalHuman;
+          limitOrderTradeSummary.expectedToAmount = bestTradeResult.totalHuman;
+          limitOrderTradeSummary.gasLimit = bestTradeResult.gasLimit;
+        }
+        
+        await triggerTrade(bestTradeResult.trades, limitOrderTradeSummary);
+        
+        return { success: true, executedAmount: amount };
+      } catch (error) {
+        console.error('Trade execution failed:', error);
+        return { success: false, error: error.message };
+      }
+    }
+
     let isCheckingPendingOrders = false;
     async function checkPendingOrdersToTrigger() {
-      if (isCheckingPendingOrders) return;
-      isCheckingPendingOrders = true;
-
-      if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
-      if (!pendingLimitOrders.value || !pendingLimitOrders.value.length) return;
-
+      // Check global pause state first
+      
+      automaticMessage.value = null;
       try {
-        await setTokenPrices(tokens);
+        await setTokenPrices(tokens.value);
       } catch (error) {
         console.error('Error updating token prices:', error);
       }
 
-      for (const order of pendingLimitOrders.value) {
-        // Skip if order is not pending
-        if (!order || !order.status || order.status !== 'pending') continue;
+      if (!props.isInitialBalanceFetchDone) return;
+
+      if (isCheckingPendingOrders) return;
+      isCheckingPendingOrders = true;
+
+      try {
+
+        let allOrders = pendingLimitOrders.value;
         
-        try {
-          // Get current token prices from our updated token list
-          const fromToken = tokensByAddresses.value[order.fromToken.address];
-          const senderD = props.addresses.find((a) => a.address.toLowerCase() === order.sender.address.toLowerCase());
+        if (!isGloballyPaused.value) {
+          generateOrdersFromLevels();
+          allOrders = allOrders.concat(automaticOrders.value);
+        }
 
-          if (senderD?.balances == null || !fromToken) {
-            console.log(`Skipping order ${order.id} due to missing token or sender data`);
-            continue;
-          }
+        if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
+        if (!allOrders || !allOrders.length) return;
 
-          if (Number(order.fromAmount) > senderD.balances[fromToken.address.toLowerCase()]) {
-            order.isWaitingBalance = true;
-            continue;
-          } else if (order.isWaitingBalance) {
-            order.isWaitingBalance = false;
-          }
+        for (const order of allOrders) {
+          // Skip if order is not pending or already being processed
+          if (!order || !order.status || (order.status !== 'pending')) continue;
 
-          const toToken = tokensByAddresses.value[order.toToken.address];
+          try {
+            // Get current token prices from our updated token list
+            const fromToken = tokensByAddresses.value[order.fromToken.address];
+            if (!order.automatic) {
+              const senderD = props.addresses.find((a) => a.address.toLowerCase() === order.sender.address.toLowerCase());
+
+              if (senderD?.balances == null || !fromToken) {
+                console.log(`Skipping order ${order.id} due to missing token or sender data`);
+                continue;
+              }
+
+              if (Number(order.fromAmount) > senderD.balances[fromToken.address.toLowerCase()]) {
+                order.isWaitingBalance = true;
+                continue;
+              } else if (order.isWaitingBalance) {
+                order.isWaitingBalance = false;
+              }
+            }
+
+            // Check minimum amount requirement for automatic orders
+            if (order.automatic && order.sourceLocation) {
+              const { rowIndex, colIndex } = order.sourceLocation;
+              const tradingPairConfig = tokensInRow.value?.[rowIndex]?.columns?.[colIndex];
+              const minimumAmount = tradingPairConfig?.details?.minimumAmount || 0;
+              
+              if (minimumAmount > 0) {
+                let meetsMinimumRequirement = false;
+                
+                if (order.sourceLocation.levelType === 'buy') {
+                  // For buy orders: check expected output amount (buying toToken)
+                  const expectedOutputAmount = Number(order.fromAmount) * order.priceLimit;
+                  meetsMinimumRequirement = expectedOutputAmount >= minimumAmount;
+                  
+                  if (!meetsMinimumRequirement) {
+                    console.log(`Skipping automatic BUY order ${order.id}: expected output ${expectedOutputAmount} ${order.toToken.symbol} below minimum amount ${minimumAmount}`);
+                    continue;
+                  }
+                } else if (order.sourceLocation.levelType === 'sell') {
+                  // For sell orders: check input amount (selling fromToken)
+                  meetsMinimumRequirement = Number(order.fromAmount) >= minimumAmount;
+                  
+                  if (!meetsMinimumRequirement) {
+                    console.log(`Skipping automatic SELL order ${order.id}: ${order.fromAmount} ${order.fromToken.symbol} below minimum amount ${minimumAmount}`);
+                    continue;
+                  }
+                }
+              }
+            }
+
+            const toToken = tokensByAddresses.value[order.toToken.address];
+            
+            if (!fromToken?.price || !toToken?.price) {
+              console.log(`Missing price data for order ${order.id}: fromToken=${fromToken?.symbol} price=${fromToken?.price}, toToken=${toToken?.symbol} price=${toToken?.price}`);
+              continue;
+            }
+
+            // Calculate current market price using token prices
+            let currentMarketPrice;
+            if (!order.shouldSwitchTokensForLimit) {
+              // Normal case: fromToken price in terms of toToken
+              currentMarketPrice = fromToken.price / toToken.price;
+            } else {
+              // Inverted case: toToken price in terms of fromToken
+              currentMarketPrice = toToken.price / fromToken.price;
+            }
+
+            // Define price tolerance (e.g., within 1% of trigger price)
+            const PRICE_TOLERANCE = 0.01; // 1%
+            const priceDifference = Math.abs(currentMarketPrice - order.priceLimit) / order.priceLimit;
+            
+            // Only proceed with expensive getBestTrades call if we're close to trigger price
+            let shouldCheckExactPrice = false;
+            let shouldTrigger = false;
+
+            if (order.orderType === 'take_profit') {
+              // For take profit: trigger when current price >= limit price
+              // Check exact price if we're within tolerance or already above
+              shouldCheckExactPrice = currentMarketPrice >= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
+            } else if (order.orderType === 'stop_loss') {
+              // For stop loss: trigger when current price <= limit price
+              // Check exact price if we're within tolerance or already below
+              shouldCheckExactPrice = currentMarketPrice <= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
+            } else {
+              // Default behavior (legacy support)
+              shouldCheckExactPrice = currentMarketPrice >= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
+            }
+
+            if (!shouldCheckExactPrice) {
+              // Price is not close enough to trigger, log and continue
+              console.log(`Order ${order.id} (${order.orderType || 'limit'}): market price ${currentMarketPrice.toFixed(6)} not close to limit ${order.priceLimit} (diff: ${(priceDifference * 100).toFixed(2)}%) - skipping exact price check`);
+              continue;
+            }
+
+            console.log(`Order ${order.id} (${order.orderType || 'limit'}): market price ${currentMarketPrice.toFixed(6)} is close to limit ${order.priceLimit} - checking exact execution price`);
+
+            // Get exact trade execution price by fetching best trades
+            const bestTradeResult = await getBestTrades(
+              order.fromToken.address,
+              order.toToken.address,
+              order.fromAmount,
+              order?.sender?.address || senderDetails.value.address,
+              true,
+              true,
+              tokensByAddresses.value[order.fromToken.address].price * Number(order.fromAmount) >= 100,
+            );
+
+            // Calculate exact execution price (output amount per input amount)
+            let exactExecutionPrice;
+            
+            console.log(props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice))
+            if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
+              console.warn(`Gas price ${props.gasPrice} is higher than max gas price ${props.maxGasPrice * 1e9}, deducing from execution price`);
+              const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / tokensByAddresses.value[order.toToken.address].price;
+              
+              if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
+                // For inverted prices (buy levels), gas cost reduces the received amount
+                exactExecutionPrice = Number(order.fromAmount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
+              } else {
+                // For non-inverted prices (sell levels), gas cost reduces the received amount
+                exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(order.fromAmount);
+              }
+              
+              console.log(`Adjusted execution price after gas deduction: ${exactExecutionPrice.toFixed(9)}`);
+            } else {
+              // No gas cost adjustment - calculate base price and apply inversion if needed
+              exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
+              
+              // For buy levels with shouldSwitchTokensForLimit, invert the price to match limit format
+              if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
+                exactExecutionPrice = 1 / exactExecutionPrice;
+              }
+            }
+            console.log({exactExecutionPrice})
+
+            // Determine if order should be triggered based on exact execution price
+            if (order.orderType === 'take_profit') {
+              shouldTrigger = exactExecutionPrice >= order.priceLimit;
+            } else if (order.orderType === 'stop_loss') {
+              shouldTrigger = exactExecutionPrice <= order.priceLimit;
+            } else {
+              shouldTrigger = exactExecutionPrice >= order.priceLimit;
+            }
+
+            if (!shouldTrigger) {
+              console.log(`Order ${order.id} (${order.orderType || 'limit'}): exact execution price ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit} - not triggered`);
+              
+              // Reset level status back to 'active' for automatic orders
+              if (order.automatic && order.sourceLocation) {
+                const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+                if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                  const levels = levelType === 'sell' 
+                    ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                    : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                    
+                  // Status should only be changed when user modifies inputs, not automatically
+                }
+              }
+              
+              continue
+            }
           
-          if (!fromToken?.price || !toToken?.price) {
-            console.log(`Missing price data for order ${order.id}: fromToken=${fromToken?.symbol} price=${fromToken?.price}, toToken=${toToken?.symbol} price=${toToken?.price}`);
-            continue;
-          }
-
-          // Calculate current market price using token prices
-          let currentMarketPrice;
-          if (!order.shouldSwitchTokensForLimit) {
-            // Normal case: fromToken price in terms of toToken
-            currentMarketPrice = fromToken.price / toToken.price;
-          } else {
-            // Inverted case: toToken price in terms of fromToken
-            currentMarketPrice = toToken.price / fromToken.price;
-          }
-
-          // Define price tolerance (e.g., within 1% of trigger price)
-          const PRICE_TOLERANCE = 0.01; // 1%
-          const priceDifference = Math.abs(currentMarketPrice - order.priceLimit) / order.priceLimit;
-          
-          // Only proceed with expensive getBestTrades call if we're close to trigger price
-          let shouldCheckExactPrice = false;
-          let shouldTrigger = false;
-
-          if (order.orderType === 'take_profit') {
-            // For take profit: trigger when current price >= limit price
-            // Check exact price if we're within tolerance or already above
-            shouldCheckExactPrice = currentMarketPrice >= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
-          } else if (order.orderType === 'stop_loss') {
-            // For stop loss: trigger when current price <= limit price
-            // Check exact price if we're within tolerance or already below
-            shouldCheckExactPrice = currentMarketPrice <= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
-          } else {
-            // Default behavior (legacy support)
-            shouldCheckExactPrice = currentMarketPrice >= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
-          }
-
-          if (!shouldCheckExactPrice) {
-            // Price is not close enough to trigger, log and continue
-            console.log(`Order ${order.id} (${order.orderType || 'limit'}): market price ${currentMarketPrice.toFixed(6)} not close to limit ${order.priceLimit} (diff: ${(priceDifference * 100).toFixed(2)}%) - skipping exact price check`);
-            continue;
-          }
-
-          console.log(`Order ${order.id} (${order.orderType || 'limit'}): market price ${currentMarketPrice.toFixed(6)} is close to limit ${order.priceLimit} - checking exact execution price`);
-
-          // Get exact trade execution price by fetching best trades
-          const bestTradeResult = await getBestTrades(
-            order.fromToken.address,
-            order.toToken.address,
-            order.fromAmount,
-            order.sender.address,
-            true,
-            true,
-            tokensByAddresses.value[order.fromToken.address].price * Number(order.fromAmount) >= 100,
-          );
-
-          // Calculate exact execution price (output amount per input amount)
-          let exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
-          
-          console.log(props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice))
-          if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
-            console.warn(`Gas price ${props.gasPrice} is higher than max gas price ${props.maxGasPrice * 1e9}, deducing from execution price`);
-            if (order.orderType === 'take_profit')
-              exactExecutionPrice = (Number(bestTradeResult.totalHuman) - bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/tokensByAddresses.value[order.toToken.address].price) 
-                / Number(order.fromAmount);
-            else if (order.orderType === 'stop_loss')
-              exactExecutionPrice = (Number(bestTradeResult.totalHuman) + bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice/tokensByAddresses.value[order.toToken.address].price) 
-                / Number(order.fromAmount);
-            console.log(`Adjusted execution price after gas deduction: ${exactExecutionPrice.toFixed(9)}`);
-          }
-          console.log({exactExecutionPrice})
-
-          // Determine if order should be triggered based on exact execution price
-          if (order.orderType === 'take_profit') {
-            shouldTrigger = exactExecutionPrice >= order.priceLimit;
-          } else if (order.orderType === 'stop_loss') {
-            shouldTrigger = exactExecutionPrice <= order.priceLimit;
-          } else {
-            shouldTrigger = exactExecutionPrice >= order.priceLimit;
-          }
-
-          if (shouldTrigger) {
             console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(10)} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
             
+            order.status = 'processing';
+
+            if (order.automatic && order.sourceLocation) {
+              const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+              if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                const levels = levelType === 'sell' 
+                  ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                  : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                  
+                if (levels[levelIndex]) {
+                  levels[levelIndex].status = 'processing';
+                  // Update the UI
+                  updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                }
+              }
+            } else {
+              await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
+            }
+
             // Create a trade summary object for this limit order
             const limitOrderTradeSummary = {
               protocol: bestTradeResult.protocol,
@@ -2176,7 +2941,7 @@ export default {
               expectedToAmount: bestTradeResult.totalHuman,
               fromTokenSymbol: bestTradeResult.fromToken.symbol,
               toTokenSymbol: bestTradeResult.toToken.symbol,
-              fromAddressName: order.sender.name,
+              fromAddressName: order.sender?.name,
               fromToken: bestTradeResult.fromToken,
               fromTokenAddress: bestTradeResult.fromToken.address,
               toToken: bestTradeResult.toToken,
@@ -2193,20 +2958,80 @@ export default {
             }
 
             try {
-              // Execute the trade with the specific trades and summary for this order
-              await approveSpending(bestTradeResult.trades);
-              await triggerTrade(bestTradeResult.trades, limitOrderTradeSummary);
-
-              // Only mark as completed if trade was successful
-              order.status = 'completed';
-              order.completedAt = new Date().toISOString();
-              order.executionPrice = exactExecutionPrice;
-              
-              // Remove from local array
-              pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
-              
-              // Update in database
-              await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
+              // Determine execution path based on order type and requirements
+              if (order.automatic && order.remainingAmount > 0) {
+                // Multi-address execution for automatic orders with remaining amount
+                const addressSelection = getAddressesWithHighestBalances(
+                  order.fromToken.address,
+                  order.remainingAmount,
+                  order
+                );
+                
+                if (addressSelection.totalAvailable < order.remainingAmount) {
+                  console.log(`Insufficient total balance across all addresses. Need: ${order.remainingAmount}, Available: ${addressSelection.totalAvailable}`);
+                  continue;
+                }
+                
+                // Execute multi-address trade asynchronously without blocking main loop
+                order.status = 'processing';
+                console.log(`Executing multi-address trade for order ${order.id} with ${addressSelection.addresses.length} addresses`);
+                executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
+                console.log(`Started multi-address execution for order ${order.id} in background`);
+                
+                // Update automatic order level status
+                const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+                if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                  const levels = levelType === 'sell' 
+                    ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                    : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                    
+                  if (levels[levelIndex]) {
+                    levels[levelIndex].status = 'processing';
+                    // Update the UI
+                    updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                  }
+                }
+                
+              } else if (!order.automatic) {
+                // Single address execution for:
+                // 1. Manual/limit orders (not automatic)
+                // 2. Automatic orders with no remaining amount (single execution)
+                
+                const singleAddress = order.automatic 
+                  ? { address: order.sender } 
+                  : { address: order.sender };
+                
+                const execution = await executeTradeWithAddress(order, singleAddress, order.fromAmount);
+                
+                if (execution.success) {
+                  // Mark order as completed
+                  order.status = 'completed';
+                  order.completedAt = new Date().toISOString();
+                  order.executionPrice = exactExecutionPrice;
+                  
+                  // Update UI for automatic orders
+                  if (order.automatic && order.sourceLocation) {
+                    const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+                    if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                      const levels = levelType === 'sell' 
+                        ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                        : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                        
+                      if (levels[levelIndex]) {
+                        levels[levelIndex].status = 'processed';
+                        levels[levelIndex].executionPrice = exactExecutionPrice;
+                        levels[levelIndex].executionDate = new Date().toISOString();
+                        updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                      }
+                    }
+                  }
+                  
+                  pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
+                  await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
+                } else {
+                  throw new Error(execution.error || 'Trade execution failed');
+                }
+              }
               
               console.log(`${order.orderType || 'Limit'} order ${order.id} completed successfully at price ${exactExecutionPrice}`);
             } catch (tradeError) {
@@ -2227,21 +3052,55 @@ export default {
               order.status = 'failed';
               order.failedAt = new Date().toISOString();
               order.errorMessage = tradeError.message || String(tradeError);
-              await window.electronAPI.updatePendingOrder(order);
+              
+              if (order.automatic && order.sourceLocation) {
+                const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+                if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                  const levels = levelType === 'sell' 
+                    ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                    : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                    
+                  if (levels[levelIndex]) {
+                    levels[levelIndex].status = 'failed';
+                    levels[levelIndex].failureReason = tradeError.message || String(tradeError);
+                    // Update the UI
+                    updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                  }
+                }
+              }
 
-              // Remove from pending orders list
-              pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);              // Save to database
+              if (!order.automatic) {
+                await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
+                // Remove from pending orders list
+                pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
+              }
+
               await window.electronAPI.saveFailedTrade(failedTradeEntry);
             }
-          } else {
-            // Log exact price vs target for debugging
-            console.log(`Order ${order.id} (${order.orderType || 'limit'}): exact execution price ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit} - not triggered`);
+          } catch (error) {
+            console.error(`Error checking limit order ${order.id}:`, error);
+
+            if (order.status === 'processing') {
+              order.status = 'pending';
+              
+              // Reset source level status if needed
+              if (order.automatic && order.sourceLocation) {
+                const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+                if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                  const levels = levelType === 'sell' 
+                    ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                    : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                    
+                }
+              }
+            }
           }
-        } catch (error) {
-          console.error(`Error checking limit order ${order.id}:`, error);
         }
-        isCheckingPendingOrders = false;
+      } catch (err) {
+      automaticMessage.value = err;
+        console.error(err)
       }
+      isCheckingPendingOrders = false;
     }
 
     watch (() => props.addresses, async () => {
@@ -2256,8 +3115,509 @@ export default {
       if (checkOrdersInterval) {
         clearInterval(checkOrdersInterval);
       }
-      if (priceUpdateInterval) {
-        clearInterval(priceUpdateInterval);
+    });
+
+    const deleteColumn = (i, j) => {
+      console.log({i, j});
+      tokensInRow[i].columns.splice(j, 1);
+    }
+
+    const deleteRow = (i) => {
+      // Check if this row actually has content to delete
+      if (!tokensInRow[i]?.token?.address && !tokensInRow[i]?.token?.symbol) {
+        console.log(`Row ${i} is already empty, nothing to delete`);
+        return;
+      }
+      
+      console.log(`Deleting row ${i} and shifting subsequent rows up...`);
+      
+      // Remove the row from the array (this automatically shifts subsequent elements)
+      tokensInRow.splice(i, 1);
+      
+      // Add an empty row at the end to maintain the total count
+      tokensInRow.push({
+        token: {
+          symbol: null,
+          address: null,
+          decimals: 18,
+          price: 0,
+        },
+        columns: []
+      });
+      
+      // 🔄 Update row indices in all automatic orders
+      if (automaticOrders.value && automaticOrders.value.length > 0) {
+        automaticOrders.value.forEach(order => {
+          if (order.sourceLocation && order.sourceLocation.rowIndex > i) {
+            const oldRowIndex = order.sourceLocation.rowIndex;
+            order.sourceLocation.rowIndex = oldRowIndex - 1;
+            console.log(`Updated automatic order ${order.id}: rowIndex ${oldRowIndex} → ${order.sourceLocation.rowIndex}`);
+          }
+        });
+      }
+      
+      // 🔄 Update row indices in any processing orders that might exist
+      // This ensures consistency for orders that are currently being executed
+      automaticOrders.value.forEach(order => {
+        if (order.automatic && order.sourceLocation && order.sourceLocation.rowIndex > i && 
+            (order.status === 'processing' || order.status === 'partially_filled')) {
+          const oldRowIndex = order.sourceLocation.rowIndex;
+          order.sourceLocation.rowIndex = oldRowIndex - 1;
+          console.log(`Updated processing order ${order.id}: rowIndex ${oldRowIndex} → ${order.sourceLocation.rowIndex}`);
+        }
+      });
+      
+      console.log(`Row deletion complete. ${tokensInRow.length} total rows, updated ${automaticOrders.value.filter(o => o.sourceLocation?.rowIndex >= i).length} order references`);
+      
+      // Regenerate orders with updated indices
+      generateOrdersFromLevels();
+    }
+
+    const addRowToMatrix = () => {
+      let firstEmptyIndex = tokensInRow.findIndex(t => !t?.token?.address && !t?.token?.columns?.length)
+      if (firstEmptyIndex === -1)
+        return;
+
+      tokensInRow[firstEmptyIndex] = {
+        token: tokensByAddresses.value[newTokenAddress.value],
+        columns: []
+      }
+
+      newTokenAddress.value = null;
+      shouldSelectTokenInRow.value = false;
+    }
+
+    const addCellToRow = (i) => {
+      tokensInRow[i].columns.push({
+        ...tokensByAddresses.value[newCellTokenAddress.value],
+        details: {
+          isPaused: false,
+          isRandomMode: false,
+          minimumAmount: 0,
+          buyLevels: [
+            { triggerPrice: null, balancePercentage: null },
+            { triggerPrice: null, balancePercentage: null },
+            { triggerPrice: null, balancePercentage: null }
+          ],
+          sellLevels: [
+            { triggerPrice: null, balancePercentage: null },
+            { triggerPrice: null, balancePercentage: null },
+            { triggerPrice: null, balancePercentage: null }
+          ]
+        }
+      })
+
+      shouldSelectTokenInCell.value = false;
+      newCellTokenAddress.value = null;
+    }
+
+    const toggleGlobalPause = () => {
+      isGloballyPaused.value = !isGloballyPaused.value;
+    }
+
+    const updateDetailsOrder = (i, j, details) => {
+      // Clean level data when modified to ensure clean state
+      const cleanedDetails = {
+        ...details,
+        buyLevels: details.buyLevels.map(level => {
+          // Remove execution-related properties when level is modified
+          const cleanedLevel = { ...level };
+          if (cleanedLevel.triggerPrice !== undefined || cleanedLevel.balancePercentage !== undefined) {
+            delete cleanedLevel.partialExecutionDate;
+            delete cleanedLevel.executedAmount; 
+            delete cleanedLevel.originalPercentage;
+            delete cleanedLevel.executionPrice;
+            delete cleanedLevel.executionDate;
+            delete cleanedLevel.failureReason;
+            // Reset status if it was partially executed before, but preserve processed status
+            if (cleanedLevel.status === 'partially_filled') {
+              cleanedLevel.status = 'active';
+            }
+            // Never reset processed status - once processed, always processed
+            if (cleanedLevel.status === 'processed') {
+              // Keep as processed, don't reset
+            }
+          }
+          return cleanedLevel;
+        }),
+        sellLevels: details.sellLevels.map(level => {
+          // Remove execution-related properties when level is modified
+          const cleanedLevel = { ...level };
+          if (cleanedLevel.triggerPrice !== undefined || cleanedLevel.balancePercentage !== undefined) {
+            delete cleanedLevel.partialExecutionDate;
+            delete cleanedLevel.executedAmount;
+            delete cleanedLevel.originalPercentage;
+            delete cleanedLevel.executionPrice;
+            delete cleanedLevel.executionDate;
+            delete cleanedLevel.failureReason;
+            // Reset status if it was partially executed before, but preserve processed status
+            if (cleanedLevel.status === 'partially_filled') {
+              cleanedLevel.status = 'active';
+            }
+            // Never reset processed status - once processed, always processed
+            if (cleanedLevel.status === 'processed') {
+              // Keep as processed, don't reset
+            }
+          }
+          return cleanedLevel;
+        })
+      };
+      
+      tokensInRow[i].columns[j].details = cleanedDetails;
+      
+      if (props.isInitialBalanceFetchDone)
+        generateOrdersFromLevels();
+    }
+
+    const removeTrailingZeros = (num, precision = 8) => {
+      if (num === null || num === undefined) return '0';
+      
+      // Convert to string with fixed precision
+      const fixed = Number(num).toFixed(precision);
+      
+      // Remove trailing zeros after the decimal point
+      // If all digits after decimal are zeros, remove decimal point too
+      return fixed.replace(/\.?0+$/, '');
+    };
+
+    const summedBalances = computed(() => {
+      const result = {};
+      
+      // Loop through all addresses
+      for (const detail of props.addresses) {
+        if (!detail.balances) continue;
+        
+        // For each token in the address's balance
+        for (const tokenAddr in detail.balances) {
+          const tokenAddrLower = tokenAddr.toLowerCase();
+          
+          // Initialize if not exists
+          if (!result[tokenAddrLower]) {
+            result[tokenAddrLower] = 0;
+          }
+          
+          // Add to summed balance
+          let bal = detail.balances[tokenAddr];
+          
+          // Subtract any pending offsets
+          if (balanceOffsetByTokenByAddress[tokenAddrLower] && 
+              balanceOffsetByTokenByAddress[tokenAddrLower][detail.address.toLowerCase()]) {
+            bal -= balanceOffsetByTokenByAddress[tokenAddrLower][detail.address.toLowerCase()];
+          }
+          
+          result[tokenAddrLower] += bal;
+        }
+      }
+      
+      console.log('Summed balances across all addresses:', result);
+      return result;
+    });
+
+    const generateOrdersFromLevels = async () => {
+      const orders = [];
+      const sender = senderDetails.value;
+      
+      // Create a set of existing orders to prevent duplicates
+      const existingOrders = new Set();
+      automaticOrders.value.forEach(order => {
+        if (order.sourceLocation && (order.status === 'processing' || order.status === 'partially_filled')) {
+          const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+          const key = `${rowIndex}-${colIndex}-${levelIndex}-${levelType}`;
+          existingOrders.add(key);
+        }
+      });
+      
+      // Preserve existing orders that are currently being processed
+      const preservedOrders = automaticOrders.value.filter(order => 
+        order.status === 'processing' || order.status === 'partially_filled'
+      );
+      if (!sender?.address) {
+        console.log('No sender address, skipping order generation');
+        return;
+      }
+
+      // Wait for initial balance fetch if needed
+      while (!props.isInitialBalanceFetchDone) {
+        await new Promise(r => setTimeout(r, 1000));
+        console.log('sleep wait for initial balance end');
+      }
+
+      // Use SUMMED balances instead of single address balance
+      const balances = summedBalances.value;
+      console.log('Available summed balances across all addresses:', balances);
+      
+      // Check if we have any valid rows
+      const validRows = tokensInRow.filter(row => row.token?.address && row.columns?.length > 0);
+      if (validRows.length === 0) {
+        console.log('No valid token rows found');
+        return;
+      }
+      
+      tokensInRow.forEach((row, i) => {
+        // Skip rows without valid tokens
+        if (!row.token?.address) {
+          return;
+        }
+        
+        // console.log(`Processing row ${i} with token ${row.token.symbol || row.token.address}`);
+        
+        row.columns.forEach((col, j) => {
+          // Skip columns without valid tokens or details
+          if (!col?.address) {
+            // console.log(`Skipping column ${j} in row ${i} - missing address`);
+            return;
+          }
+          
+          if (col.details && col.details.isPaused) {
+            return;
+          }
+
+          if (!col.details || !col.details.buyLevels || !col.details.sellLevels) {
+            console.log(`Skipping column ${j} in row ${i} - missing level details`);
+            return;
+          }
+          
+          // console.log(`Processing column ${j} - ${col.symbol || col.address}`);
+          
+          // BUY LEVELS - user sells "col" token to buy "row.token"
+          col.details.buyLevels.forEach((buyLevel, k) => {
+            const orderKey = `${i}-${j}-${k}-buy`;
+            if (
+              buyLevel.triggerPrice &&
+              buyLevel.balancePercentage &&
+              !isNaN(buyLevel.triggerPrice) &&
+              !isNaN(buyLevel.balancePercentage) &&        
+              buyLevel.status !== 'processed' &&
+              buyLevel.status !== 'pending' &&
+              buyLevel.status !== 'processing' &&
+              !existingOrders.has(orderKey)
+            ) {
+              // For a buy, fromToken is col, toToken is row.token
+              const fromToken = col;
+              const toToken = row.token;
+              const fromTokenAddr = fromToken.address?.toLowerCase();
+              
+              // Check if we have balance for this token
+              if (!balances[fromTokenAddr] && fromTokenAddr) {
+                console.log(`No balance found for token ${fromTokenAddr} (${fromToken.symbol})`);
+                return;
+              }
+              
+              const balance = balances[fromTokenAddr] || 0;
+              const fromAmount = (buyLevel.balancePercentage * 0.01 * balance);
+              
+              console.log(`Buy level ${k}: Token ${fromToken.symbol}, balance: ${balance}, amount: ${fromAmount}, trigger price: ${buyLevel.triggerPrice}`);
+              
+              // Check minimum amount requirement for output token (toToken)
+              const minimumAmount = col.details?.minimumAmount || 0;
+              let meetsMinimumRequirement = true;
+              
+              if (minimumAmount > 0 && fromAmount > 0) {
+                // Calculate expected output amount using trigger price
+                // For buy levels: we're buying toToken with fromToken
+                const expectedOutputAmount = fromAmount * buyLevel.triggerPrice;
+                meetsMinimumRequirement = expectedOutputAmount >= minimumAmount;
+                
+                if (!meetsMinimumRequirement) {
+                  console.log(`Skipping BUY order: expected output ${expectedOutputAmount} ${toToken.symbol} below minimum amount ${minimumAmount}`);
+                }
+              }
+              
+              if (fromAmount > 0 && meetsMinimumRequirement) {
+                orders.push({
+                  fromAmount,
+                  originalAmount: fromAmount,
+                  remainingAmount: fromAmount,
+                  fromToken: { ...fromToken },
+                  toToken: { ...toToken },
+                  priceLimit: buyLevel.triggerPrice,
+                  orderType: 'stop_loss',
+                  shouldSwitchTokensForLimit: true,
+                  status: 'pending',
+                  createdAt: new Date().toISOString(),
+                  automatic: true,
+                  sourceLocation: {
+                    rowIndex: i,
+                    colIndex: j,
+                    levelIndex: k,
+                    levelType: 'buy'
+                  }
+                });
+                console.log(`Created BUY order for ${fromAmount} ${fromToken.symbol} → ${toToken.symbol}`);
+              }
+            }
+          });
+          
+          // SELL LEVELS - user sells "row.token" to buy "col" token
+          col.details.sellLevels.forEach((sellLevel, k) => {
+            const orderKey = `${i}-${j}-${k}-sell`;
+            if (
+              sellLevel.triggerPrice &&
+              sellLevel.balancePercentage &&
+              !isNaN(sellLevel.triggerPrice) &&
+              !isNaN(sellLevel.balancePercentage) &&
+              sellLevel.status !== 'processed' &&
+              sellLevel.status !== 'pending' &&
+              sellLevel.status !== 'processing' &&
+              !existingOrders.has(orderKey)
+            ) {
+              // For a sell, fromToken is row.token, toToken is col
+              const fromToken = row.token;
+              const toToken = col;
+              const fromTokenAddr = fromToken.address?.toLowerCase();
+              
+              // Check if we have balance for this token
+              if (!balances[fromTokenAddr] && fromTokenAddr) {
+                console.log(`No balance found for token ${fromTokenAddr} (${fromToken.symbol})`);
+                return;
+              }
+              
+              const balance = balances[fromTokenAddr] || 0;
+              const fromAmount = (sellLevel.balancePercentage * 0.01 * balance);
+              
+              console.log(`Sell level ${k}: Token ${fromToken.symbol}, balance: ${balance}, amount: ${fromAmount}, trigger price: ${sellLevel.triggerPrice}`);
+              
+              // Check minimum amount requirement for input token (fromToken being sold)
+              const minimumAmount = col.details?.minimumAmount || 0;
+              let meetsMinimumRequirement = true;
+              
+              if (minimumAmount > 0 && fromAmount > 0) {
+                meetsMinimumRequirement = fromAmount >= minimumAmount;
+                
+                if (!meetsMinimumRequirement) {
+                  console.log(`Skipping SELL order: ${fromAmount} ${fromToken.symbol} below minimum amount ${minimumAmount}`);
+                }
+              }
+              
+              if (fromAmount > 0 && meetsMinimumRequirement) {
+                orders.push({
+                  fromAmount,
+                  originalAmount: fromAmount,
+                  remainingAmount: fromAmount,
+                  fromToken: { ...fromToken },
+                  toToken: { ...toToken },
+                  priceLimit: sellLevel.triggerPrice,
+                  orderType: 'take_profit',
+                  shouldSwitchTokensForLimit: false,
+                  status: 'pending',
+                  createdAt: new Date().toISOString(),
+                  automatic: true,
+                  sourceLocation: {
+                    rowIndex: i,
+                    colIndex: j,
+                    levelIndex: k,
+                    levelType: 'sell'
+                  }
+                });
+                console.log(`Created SELL order for ${fromAmount} ${fromToken.symbol} → ${toToken.symbol}`);
+              }
+            }
+          });
+        });
+      });
+      
+      console.log(`Generated ${orders.length} new orders:`, orders);
+      // Combine preserved orders (currently being processed) with new orders
+      automaticOrders.value = [...preservedOrders, ...orders];
+      console.log(`Total automatic orders after regeneration: ${automaticOrders.value.length} (${preservedOrders.length} preserved + ${orders.length} new)`);
+    };
+    // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
+    watch(
+      () => tokens.value,
+      (newTokens) => {
+        const map = {};
+        for (const t of newTokens) {
+          if (t.address && t.symbol && t.decimals != null) {
+            map[t.address] = t;
+          }
+        }
+        tokensByAddresses.value = map;
+
+        // Initialize default selection if not set
+        if (!fromTokenAddress.value && filteredTokens.value.length > 0) {
+          fromTokenAddress.value = filteredTokens.value[0].address;
+        }
+        if (!toTokenAddress.value && filteredTokens.value.length > 1) {
+          toTokenAddress.value = filteredTokens.value[1].address;
+        }
+      },
+      { immediate: true, deep: true }
+    );
+
+    watch(() => tokens.value, (tokensValue) => emit('update:settings', { tokens: [...tokensValue] }), { deep: true });
+    watch(() => tokensInRow, () => emit('update:settings', { tokensInRow: [...tokensInRow] }), { deep: true });
+    watch(
+      () => props.addresses,
+      async (addrs) => {
+        if (addrs && addrs[0]) {
+          senderDetails.value = addrs[0];
+        }
+        generateOrdersFromLevels();
+      },
+      { immediate: true }
+    );
+    watch(
+      () => senderDetails.value,
+      (val) => {
+        if (!val) {
+          isSwapButtonDisabled.value = true;
+        } else {
+          needsToApprove.value = false;
+        }
+      },
+      { immediate: true }
+    );
+
+    onMounted(async () => {
+      const settings = await window.electronAPI.loadSettings();
+      console.log(settings)
+      if (settings?.tokens) {
+        for (let i = 0; i < settings.tokens.length; i++) {
+          if (settings.tokens[i]?.address && settings.tokens[i]?.symbol) {
+            tokens.value[i] = settings.tokens[i];
+          }
+        }
+      }
+      if (settings?.tokensInRow) {
+        for (let i = 0; i < settings.tokensInRow.length; i++) {
+          if (settings.tokensInRow[i]?.token?.address && settings.tokensInRow[i]?.token?.symbol) {
+            tokensInRow[i] = settings.tokensInRow[i];
+          }
+        }
+        generateOrdersFromLevels();
+      }
+
+      const dbOrders = await window.electronAPI.getPendingOrders();
+      if (dbOrders && Array.isArray(dbOrders)) {
+        pendingLimitOrders.value = dbOrders.map(o => ({
+          id: o.id,
+          fromAmount: o.fromAmount,
+          toAmount: o.toAmount, // Make sure to map this field
+          fromToken: { 
+            address: o.fromTokenAddress, 
+            symbol: o.fromTokenSymbol 
+          },
+          toToken: { 
+            address: o.toTokenAddress, 
+            symbol: o.toTokenSymbol 
+          },
+          priceLimit: parseFloat(o.priceLimit),
+          currentMarketPrice: o.currentMarketPrice ? parseFloat(o.currentMarketPrice) : null,
+          orderType: o.orderType || 'take_profit',
+          shouldSwitchTokensForLimit: Boolean(o.shouldSwitchTokensForLimit),
+          sender: { 
+            address: o.senderAddress, 
+            name: o.senderName 
+          },
+          status: o.status || 'pending',
+          createdAt: o.createdAt || null,
+          completedAt: o.completedAt || null,
+          executionPrice: o.executionPrice ? parseFloat(o.executionPrice) : null
+        })).sort((a, b) => {
+          const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
+          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
+          return dateB.getTime() - dateA.getTime();
+        });
       }
       stopEthBalanceMonitoring();
     });
@@ -2310,7 +3670,26 @@ export default {
       pendingLimitOrders,
       placeLimitOrder,
       cancelLimitOrder,
-      formatUsdPrice
+      formatUsdPrice,
+      
+      currentMode,
+      tokensInRow,
+
+      deleteColumn,
+      deleteRow,
+      shouldSelectTokenInRow,
+      shouldSelectTokenInCell,
+      newTokenAddress,
+      newCellTokenAddress,
+      addRowToMatrix,
+      addCellToRow,
+      updateDetailsOrder,
+      automaticOrders,
+      computedEthPrice,
+      removeTrailingZeros,
+      automaticMessage,
+      isGloballyPaused,
+      toggleGlobalPause,
     };
   }
 };
@@ -2321,12 +3700,11 @@ export default {
   border-radius: 4px;
   box-shadow: 0 6px 8px rgba(0, 0, 0, 0.2);
   border-radius: 5px;
-  padding: 20px;
   background-color: #fff;
   display: flex;
   flex-direction: row;
   position: relative;
-  padding-top: 40px;
+  padding: 0px 0px 20px;
 }
 
 .form-group {
@@ -2449,7 +3827,7 @@ input.small-number {
   -ms-user-select: none; /* Internet Explorer/Edge */
   position: absolute;
   right: 20px;
-  top: 0px;
+  top: 40px;
 }
 
 .swap-button {
@@ -2506,6 +3884,22 @@ input.small-number {
   display: inline-block;
   position: relative;
   top: 3px;
+  cursor: pointer;
+}
+
+
+.token-details .delete-row {
+  display: none;
+  width: 20px;
+  height: 15px;
+}
+
+.token-details:hover .delete-row {
+  width: 15px;
+  height: 15px;
+  display: inline-block;
+  cursor: pointer;
+  top: 5px;
 }
 
 .checkbox-label.edit-label input {
@@ -2871,4 +4265,143 @@ button::-webkit-focus-inner {
   font-weight: 600;
 }
 
+.top-nav-bar {
+  width: 100%;
+  display: flex;
+  justify-content: space-around;
+}
+.top-nav-bar div {
+  cursor: pointer;
+  padding: 10px;
+  border-radius: 5px;
+  background-color: #f0f0f0;
+  transition: background-color 0.1s ease-in-out, transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out;
+  width: 50%;
+  z-index: 0;
+}
+.top-nav-bar div:hover {
+  background-color: #e0e0e0;
+}
+.top-nav-bar div.active-tab {
+  background-color: #b0b0b0;
+  transform: scale(1.01);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+.top-nav-bar div.active-tab h3 {
+  font-weight: 700;
+}
+.editing-tokens, .pending-orders {
+  padding: 20px;
+}
+h3 {
+  font-weight: 600;
+  margin: 0;
+}
+
+.token-row {
+  display: flex;
+  flex-direction: row;
+}
+
+.automatic-mode {
+  padding: 20px 20px 20px;
+}
+
+.automatic-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.automatic-info {
+  flex: 1;
+}
+
+.global-pause-btn {
+  background-color: #fff;
+  color: #000;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+  transition: background-color 0.3s ease;
+  min-width: 150px;
+  position: absolute;
+}
+
+.global-pause-btn:hover {
+  background-color: #ccc;
+}
+
+.global-pause-btn.paused {
+  background-color: #fba09a;
+}
+
+.global-pause-btn.paused:hover {
+  background-color: #d27771;
+}
+
+.matrix {
+  max-height: 900px;
+  overflow-y: auto;
+}
+
+.token-details {
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  background-color: #fafafa;
+  align-content: center;
+  text-align: center;
+  border-right: 1px solid #eee;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  width: 120px;
+  position: relative;
+}
+
+.token-price {
+  color: #666;
+  font-size: 12px;
+}
+
+.horizontal-scroll {
+  width: 85vw;
+  overflow-x: auto;
+  display: flex;
+  flex-direction: row;
+  background-color: #fafafa;
+  border-bottom: 2px solid #ddd;
+  border-top: 2px solid #ddd;
+}
+.token-symbol {
+  font-size: 22px;
+}
+.new-token-details {
+  cursor: pointer;
+  border-radius: 5px !important;
+  border: 2px solid #ddd !important;
+}
+.new-cell-details {
+  cursor: pointer;
+  border-radius: 0 !important;
+  border-top-right-radius: 5px !important;
+  border-bottom-right-radius: 5px !important;
+  border-left: 1px solid #eee;
+  border-right: 2px solid #ddd !important;
+  border: 0px;
+  display: flex;
+  justify-content: center;
+  align-content: center;
+  flex-wrap: wrap;
+  width: 50px;
+  padding: 20px;
+}
+.no-addresses-unlocked {
+  background-color: #aaa;
+  opacity: .5;
+}
 </style>

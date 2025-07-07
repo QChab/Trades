@@ -99,6 +99,7 @@
             :ethPrice="ethPrice"
             :provider="provider"
             :confirmedTrade="confirmedTrade"
+            :isInitialBalanceFetchDone="isInitialBalanceFetchDone"
           />
         </div>
 
@@ -165,6 +166,7 @@
 
       const setCurrentSettings = (settings) => {
         currentSettings.value = {
+          ...currentSettings.value,
           ...settings,
           maxGasPrice: maxGasPrice.value,
         };
@@ -231,7 +233,9 @@
       // Boolean to control whether the Infura API keys section is visible or not
       const showInfuraKeys = ref(false);
 
+      const isInitialBalanceFetchDone = ref(false);
       watch(() => loadedAddresses.value, async (loadedAddressesValue) => {
+        isInitialBalanceFetchDone.value = false;
         for (const addressDetail of loadedAddressesValue) {
           if (!currentSettings.value?.tokens) continue;
           for (const token of currentSettings.value.tokens) {
@@ -241,6 +245,7 @@
             await new Promise((r) => setTimeout(r, 100))
           }
         }
+        isInitialBalanceFetchDone.value = true;
       })
 
       const refreshBalance = async (addressDetail, token) => {
@@ -295,6 +300,7 @@
       const ethPrice = ref(0);
 
       async function getEthUsd () {
+        console.log('fetching eth price')
         try {
           const url =
             'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd';
@@ -313,19 +319,12 @@
         } catch (err) {
           console.error(err)
         }
-        try {
-          const url =
-            'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd';
-          const { ethereum } = await fetch(url).then(r => r.json());
-          if (ethereum.usd !== '0' && ethereum.usd !== 0)
-            return Number(ethereum.usd);
-        } catch (err) {
-          console.error(err)
-        }
-        return 0;
+        return ethPrice.value;
       }
       ( async () => ethPrice.value = await getEthUsd())();
-      setTimeout(async () => ethPrice.value = await getEthUsd(), 30000)
+      setInterval(async () => { 
+        ethPrice.value = await getEthUsd();
+       }, 30000);
 
       const readDataFromString = async (args) => { 
         let { fileContent, ext } = args;
@@ -530,6 +529,7 @@
         provider,
         setConfirmedTrade,
         confirmedTrade,
+        isInitialBalanceFetchDone,
       }
     }
   };

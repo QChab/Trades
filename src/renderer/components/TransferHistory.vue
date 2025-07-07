@@ -13,6 +13,9 @@
     <span class="gas">
       Gas
     </span>
+    <span class="gas">
+      Type
+    </span>
     <transition-group name="transfer" tag="ul">
       <li v-for="(t, index) in trades" :key="t.timestamp + t.txId">
         {{ t.hasFailed ? '❌' : (t.isConfirmed ? '✅' : '⏳') }}
@@ -24,7 +27,8 @@
         </span>
         <span class="from">{{ t.senderName || t.sender?.name }} | {{ t.protocol }}</span>
         <span class="date">{{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}</span>
-        <span class="gas" v-if="t.gasCost"> ${{ t.gasCost.substring(0, 4)}} </span>
+        <span class="gas"> ${{ t.gasCost?.substring(0, 4)}} </span>
+        <span class="gas" v-if="t.type"> {{ t.type }} </span>
         <span @click.stop="openTxDetails(t.txId)" class="view">View</span>
         <span @click.stop="deleteTrade(t, index)" class="delete">Delete</span>
       </li>
@@ -133,9 +137,16 @@ export default {
     const checkTx = async (trade) => {
       if (trade.isConfirmed) return;
 
+      const providersList = [
+        new ethers.providers.JsonRpcProvider('https://eth1.lava.build', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://mainnet.gateway.tenderly.co', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://eth-pokt.nodies.app', { chainId: 1, name: 'homestead' }),
+      ];
+
+      let i = 0;
       while (!trade.isConfirmed && trade.txId && !trade.hasFailed) {
         await new Promise((r) => setTimeout(r, 3000));
-        const receipt = await toRaw(props.provider).getTransactionReceipt(trade.txId)
+        const receipt = await providersList[i % providersList.length].getTransactionReceipt(trade.txId)
         if (receipt) {
           emit('confirmedTrade', trade);
           if (receipt.status === '1' || receipt.status === 1) {
@@ -151,6 +162,7 @@ export default {
             window.electronAPI.failTrade(trade.txId, trade.gasCost);
           }
         }
+        ++i;
       }
     }
 

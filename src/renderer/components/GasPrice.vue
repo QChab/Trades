@@ -15,7 +15,7 @@ export default {
   props: {
     pollInterval: {
       type: Number,
-      default: 10000,
+      default: 12000,
     },
     maxGasPrice: {
       type: Number,
@@ -30,6 +30,7 @@ export default {
     // Reactive variable to store the fetched gas price (in wei as a BigNumber)
     const gasPrice = ref(null);
 
+    let i = 0;
     // Function to fetch the current gas price from the blockchain
     async function fetchGasPrice() {
       try {
@@ -40,13 +41,13 @@ export default {
         const providersList = rpcUrls.map((url) => 
           new ethers.providers.JsonRpcProvider(url,{ chainId: 1, name: 'homestead' })
         );
-        const provider = new ethers.providers.FallbackProvider(providersList, 1);
-        const feeData = await toRaw(provider).getFeeData();
+        const feeData = await providersList[i % 2].getFeeData();
         // Extract the current gas price from the feeData object
         const currentGasPrice = feeData.gasPrice;
         // Update our reactive variable with the fetched gas price
         gasPrice.value = currentGasPrice;
         emit('update:gasPrice', currentGasPrice.toString());
+        ++i;
       } catch (error) {
         // Log any errors during fetch
         console.error('Error fetching gas price:', error);
