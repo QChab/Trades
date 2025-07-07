@@ -2302,21 +2302,26 @@ export default {
       // Determine order type based on price comparison
       // When shouldSwitchTokensForLimit is true, the comparison logic is inverted
       let orderType;
+      
+      // Determine order type based on the direction of the desired trigger
+      // We need to convert to a common price format to compare properly
+      let normalizedLimit, normalizedCurrent;
+      
       if (!shouldSwitchTokensForLimit.value) {
-        // Normal case: fromToken price in terms of toToken
-        if (priceLimit.value > currentMarketPrice) {
-          orderType = 'take_profit'; // Trigger when price goes above limit
-        } else {
-          orderType = 'stop_loss'; // Trigger when price goes below limit
-        }
+        // Already in normal format: fromToken price in terms of toToken
+        normalizedLimit = priceLimit.value;
+        normalizedCurrent = currentMarketPrice;
       } else {
-        // Inverted case: toToken price in terms of fromToken
-        // When the price is inverted, "higher limit" means "lower original price"
-        if (priceLimit.value > currentMarketPrice) {
-          orderType = 'stop_loss'; // This actually means the original price went DOWN
-        } else {
-          orderType = 'take_profit'; // This actually means the original price went UP
-        }
+        // Convert inverted prices back to normal format for comparison
+        normalizedLimit = 1 / priceLimit.value;
+        normalizedCurrent = 1 / currentMarketPrice;
+      }
+      
+      // Now compare in normalized space to determine user intent
+      if (normalizedLimit > normalizedCurrent) {
+        orderType = 'take_profit'; // User wants to trigger when price goes UP
+      } else {
+        orderType = 'stop_loss'; // User wants to trigger when price goes DOWN
       }
 
       const order = {
