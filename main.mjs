@@ -289,7 +289,7 @@ async function sendTransaction(transaction) {
 
     if (transaction.nonce) {
       txData.nonce = transaction.nonce;
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 800));
     }
 
     console.log(txData);
@@ -314,7 +314,7 @@ async function sendTransaction(transaction) {
     const PRIVATE_KEY = pk.pk;
     
     const wallet = new ethers.Wallet(PRIVATE_KEY, isPrivate ? 
-      new ethers.providers.JsonRpcProvider('https://eth.meowrpc.com', { chainId: 1, name: 'homestead' }) : provider);
+      new ethers.providers.JsonRpcProvider('https://rpc.mevblocker.io', { chainId: 1, name: 'homestead' }) : provider);
 
     if (!wallet || !wallet.address || wallet.address.toLowerCase() !== from) {
       throw new Error(`Incorrect private key for address ${transfer.from}`)

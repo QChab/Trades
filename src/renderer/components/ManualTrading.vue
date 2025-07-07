@@ -1861,11 +1861,11 @@ export default {
             (Number(props.gasPrice) * 1.85 / 1e9).toFixed(3), 9
           )
           const maxPriorityFeePerGas =  ethers.utils.parseUnits(
-            (0.02 + Math.random()*0.05 + Number(props.gasPrice)/(40e9)).toFixed(3), 9
+            (0.02 + Math.random()*0.05 + Number(props.gasPrice)/(40e9)).toFixed(9), 9
           )
           // https://eth.meowrpc.com
-          // https://rpc.mevblocker.io/fullprivacy
-          const privateProvider = new ethers.providers.JsonRpcProvider('https://eth.meowrpc.com', { chainId: 1, name: 'homestead' });
+          // https://rpc.mevblocker.io
+          const privateProvider = new ethers.providers.JsonRpcProvider('https://rpc.mevblocker.io', { chainId: 1, name: 'homestead' });
           const nonce = await privateProvider.getTransactionCount(currentTradeSummary.sender.address, 'pending');
 
           const [resultsU, resultsB] = await Promise.all([

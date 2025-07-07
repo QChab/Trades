@@ -129,7 +129,6 @@
               <span v-if="level.triggerPrice" class="usd-price">${{ getUsdPrice(level.triggerPrice) }}</span>
             </label>
             <label class="input-group" v-if="level.triggerPrice">
-              {{ level }}
               Sell
               <input
                 v-model.number="level.balancePercentage"
