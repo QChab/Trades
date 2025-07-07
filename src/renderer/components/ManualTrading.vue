@@ -366,7 +366,7 @@
                     <span v-else>
                       {{ order.toToken.symbol }} {{ order.orderType === 'take_profit' ? '≤' : '≥' }} {{ order.priceLimit }} {{ order.fromToken.symbol }}
                     </span>
-                    → Buy {{ order.toAmount || '' }} {{ order.toToken.symbol }}  Sell {{ order.fromAmount }} {{ order.fromToken.symbol }}
+                    : <div>{{ order.fromAmount }} <span style="color:rgb(223,81,81);font-weight:800;"> {{ order.fromToken.symbol }} </span> -> {{ order.toAmount || '' }}  <span style="color:rgb(69,201,99);font-weight:800;">{{ order.toToken.symbol }} </span></div>
                   </span>
                 </div>
                 <div class="order-meta">
@@ -2313,15 +2313,24 @@ export default {
         normalizedCurrent = currentMarketPrice;
       } else {
         // Convert inverted prices back to normal format for comparison
-        normalizedLimit = 1 / priceLimit.value;
-        normalizedCurrent = 1 / currentMarketPrice;
+        // Add validation to prevent division by zero
+        if (priceLimit.value === 0 || currentMarketPrice === 0) {
+          console.error('Cannot determine order type: zero price detected');
+          orderType = 'take_profit'; // Default fallback
+        } else {
+          normalizedLimit = 1 / priceLimit.value;
+          normalizedCurrent = 1 / currentMarketPrice;
+        }
       }
       
       // Now compare in normalized space to determine user intent
-      if (normalizedLimit > normalizedCurrent) {
-        orderType = 'take_profit'; // User wants to trigger when price goes UP
-      } else {
-        orderType = 'stop_loss'; // User wants to trigger when price goes DOWN
+      // Only proceed if we have valid normalized values
+      if (normalizedLimit !== undefined && normalizedCurrent !== undefined) {
+        if (normalizedLimit > normalizedCurrent) {
+          orderType = 'take_profit'; // User wants to trigger when price goes UP
+        } else {
+          orderType = 'stop_loss'; // User wants to trigger when price goes DOWN
+        }
       }
 
       const order = {
@@ -2978,12 +2987,19 @@ export default {
               console.warn(`Gas price ${props.gasPrice} is higher than max gas price ${props.maxGasPrice * 1e9}, deducing from execution price`);
               const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / tokensByAddresses.value[order.toToken.address].price;
               
+              // Check if gas cost would make the trade unprofitable
+              const totalReceived = Number(bestTradeResult.totalHuman);
+              if (totalReceived <= gasCostInToToken) {
+                console.warn(`Trade unprofitable: gas cost ${gasCostInToToken} exceeds output ${totalReceived}`);
+                continue; // Skip execution of unprofitable trade
+              }
+              
               if (order.shouldSwitchTokensForLimit) {
                 // For inverted prices, gas cost reduces the received amount
-                exactExecutionPrice = Number(order.fromAmount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
+                exactExecutionPrice = Number(order.fromAmount) / (totalReceived - gasCostInToToken);
               } else {
                 // For non-inverted prices, gas cost reduces the received amount
-                exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(order.fromAmount);
+                exactExecutionPrice = (totalReceived - gasCostInToToken) / Number(order.fromAmount);
               }
               
               console.log(`Adjusted execution price after gas deduction: ${exactExecutionPrice.toFixed(9)}`);
@@ -4349,6 +4365,7 @@ button::-webkit-focus-inner {
 .order-details {
   font-size: 16px;
   font-weight: 500;
+  position: relative;
 }
 
 .order-meta {
@@ -4357,6 +4374,10 @@ button::-webkit-focus-inner {
   margin-top: 5px;
   display: flex;
   justify-content: space-between;
+  width: 40%;
+  position: absolute;
+  top: 5px;
+  right: 10px;
 }
 .usd-price-quote {
   font-size: 14px !important;
