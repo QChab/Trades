@@ -359,14 +359,26 @@
               <div class="order-details">
                 <div class="trade-info">
                   <span class="left">
-                    If 1 
+                    If
                     <span v-if="!order.shouldSwitchTokensForLimit">
-                      {{ order.fromToken.symbol }} {{ order.orderType === 'take_profit' ? '≥' : '≤' }} {{ order.priceLimit }} {{ order.toToken.symbol }}
+                      <!-- {{ order.fromToken.symbol }} {{ order.orderType === 'take_profit' ? '≥' : '≤' }} {{ order.priceLimit }} {{ order.toToken.symbol }} -->
+                      {{ order.fromToken.symbol }} = {{ order.priceLimit }} {{ order.toToken.symbol }}
                     </span>
                     <span v-else>
-                      {{ order.toToken.symbol }} {{ order.orderType === 'take_profit' ? '≤' : '≥' }} {{ order.priceLimit }} {{ order.fromToken.symbol }}
+                      <!-- {{ order.toToken.symbol }} {{ order.orderType === 'take_profit' ? '≤' : '≥' }} {{ order.priceLimit }} {{ order.fromToken.symbol }} -->
+                      {{ order.toToken.symbol }} = {{ order.priceLimit }} {{ order.fromToken.symbol }}
                     </span>
-                    : <div>{{ order.fromAmount }} <span style="color:rgb(223,81,81);font-weight:800;"> {{ order.fromToken.symbol }} </span> -> {{ order.toAmount || '' }}  <span style="color:rgb(69,201,99);font-weight:800;">{{ order.toToken.symbol }} </span></div>
+                    <span class="current-market-price" style="margin-left: 10px; color: #888; font-size: 0.9em;">
+                      (Current: 
+                      <span v-if="!order.shouldSwitchTokensForLimit">
+                        {{ getCurrentMarketPrice(order.fromToken, order.toToken, false) }} {{ order.toToken.symbol }}/{{ order.fromToken.symbol }}
+                      </span>
+                      <span v-else>
+                        {{ getCurrentMarketPrice(order.fromToken, order.toToken, true) }} {{ order.fromToken.symbol }}/{{ order.toToken.symbol }}
+                      </span>
+                      )
+                    </span>
+                    <div>SELL {{ order.fromAmount }} <span style="color:rgb(223,81,81);font-weight:800;"> {{ order.fromToken.symbol }} </span> -> BUY {{ order.toAmount || '' }}  <span style="color:rgb(69,201,99);font-weight:800;">{{ order.toToken.symbol }} </span></div>
                   </span>
                 </div>
                 <div class="order-meta">
@@ -649,6 +661,25 @@ export default {
     });
 
     // Helper: get a user’s token‐balance as a string with 5 decimals
+    // Helper: get current market price for display in pending orders
+    const getCurrentMarketPrice = (fromToken, toToken, shouldInvert) => {
+      if (!fromToken?.address || !toToken?.address) {
+        return 'N/A';
+      }
+      const fToken = tokensByAddresses.value[fromToken.address.toLowerCase()];
+      const tToken = tokensByAddresses.value[toToken.address.toLowerCase()];
+      if (!fToken || !tToken || !fToken.price || !tToken.price) {
+        return 'N/A';
+      }
+      // Calculate market price: how much of toToken per unit of fromToken
+      const marketPrice = fToken.price / tToken.price;
+      
+      // If shouldInvert is true, show the inverse price
+      const displayPrice = shouldInvert ? (1 / marketPrice) : marketPrice;
+      
+      return displayPrice.toFixed(6);
+    };
+
     const balanceString = (ownerAddress, tokenAddr) => {
       if (!ownerAddress || !tokenAddr) return '0.00000';
       const b = computedBalancesByAddress.value[ownerAddress?.toLowerCase()]?.[tokenAddr.toLowerCase()] || 0;
@@ -3801,6 +3832,7 @@ export default {
       placeLimitOrder,
       cancelLimitOrder,
       formatUsdPrice,
+      getCurrentMarketPrice,
       
       currentMode,
       tokensInRow,
