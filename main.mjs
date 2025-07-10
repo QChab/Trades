@@ -851,6 +851,65 @@ function createWindow() {
       return false;
 
     settings = JSON.parse(fs.readFileSync(settingsPath));
+    
+    // Validate token addresses when loading
+    if (settings.tokens && Array.isArray(settings.tokens)) {
+      settings.tokens = settings.tokens.map(token => {
+        if (token && token.address) {
+          // Trim and validate address
+          const trimmedAddress = token.address.trim();
+          
+          // Only load if it's a valid address or empty
+          if (trimmedAddress !== '' && ethers.utils.isAddress(trimmedAddress)) {
+            return {
+              ...token,
+              address: trimmedAddress.toLowerCase()
+            };
+          } else {
+            // Invalid address - return empty token
+            console.log(`Invalid token address loaded: ${token.address}`);
+            return {
+              address: '',
+              symbol: '',
+              decimals: null,
+              price: 0
+            };
+          }
+        }
+        return token;
+      });
+    }
+    
+    // Validate tokensInRow addresses when loading
+    if (settings.tokensInRow && Array.isArray(settings.tokensInRow)) {
+      settings.tokensInRow = settings.tokensInRow.map(row => {
+        if (row && row.token && row.token.address) {
+          const trimmedAddress = row.token.address.trim();
+          
+          if (trimmedAddress === '' || 
+              trimmedAddress === ethers.constants.AddressZero ||
+              ethers.utils.isAddress(trimmedAddress)) {
+            return {
+              ...row,
+              token: {
+                ...row.token,
+                address: trimmedAddress.toLowerCase()
+              }
+            };
+          } else {
+            // Invalid address - clear the token
+            console.log(`Invalid tokensInRow address loaded: ${row.token.address}`);
+            return {
+              ...row,
+              token: { symbol: null, address: null, decimals: 18, price: null },
+              columns: row.columns || []
+            };
+          }
+        }
+        return row;
+      });
+    }
+    
     if (settings.amounts) {
       for (const amount of settings.amounts) {
         if (!amount.isRange) continue;
@@ -863,6 +922,65 @@ function createWindow() {
 
   ipcMain.handle('save-settings', (event, newSettings) => {
     console.log('saving');
+    
+    // Validate and clean token addresses before saving
+    if (newSettings.tokens && Array.isArray(newSettings.tokens)) {
+      newSettings.tokens = newSettings.tokens.map(token => {
+        if (token && token.address) {
+          // Trim and validate address
+          const trimmedAddress = token.address.trim();
+          
+          // Only save if it's a valid address or empty
+          if (trimmedAddress === '' || 
+              trimmedAddress === ethers.constants.AddressZero ||
+              ethers.utils.isAddress(trimmedAddress)) {
+            return {
+              ...token,
+              address: trimmedAddress.toLowerCase() // Store in lowercase
+            };
+          } else {
+            // Invalid address - clear it
+            return {
+              address: '',
+              symbol: '',
+              decimals: null,
+              price: 0
+            };
+          }
+        }
+        return token;
+      });
+    }
+    
+    // Validate tokensInRow addresses
+    if (newSettings.tokensInRow && Array.isArray(newSettings.tokensInRow)) {
+      newSettings.tokensInRow = newSettings.tokensInRow.map(row => {
+        if (row && row.token && row.token.address) {
+          const trimmedAddress = row.token.address.trim();
+          
+          if (trimmedAddress === '' || 
+              trimmedAddress === ethers.constants.AddressZero ||
+              ethers.utils.isAddress(trimmedAddress)) {
+            return {
+              ...row,
+              token: {
+                ...row.token,
+                address: trimmedAddress.toLowerCase()
+              }
+            };
+          } else {
+            // Invalid address - clear the token
+            return {
+              ...row,
+              token: { symbol: null, address: null, decimals: 18, price: null },
+              columns: row.columns || []
+            };
+          }
+        }
+        return row;
+      });
+    }
+    
     settings = newSettings;
     fs.writeFileSync(settingsPath, JSON.stringify(settings));
   });

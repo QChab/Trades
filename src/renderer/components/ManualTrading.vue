@@ -16,7 +16,7 @@
           <h3> Automatic trade</h3>
         </div>
       </div>
-      <button @click="isEditingTokens = !isEditingTokens" class="edit-button">
+      <button @click="toggleEditingTokens" class="edit-button">
         {{ isEditingTokens ? 'Stop editing' : 'Edit tokens' }}
       </button>
       <div>
@@ -305,7 +305,7 @@
                 <!-- First line: Token address and delete icon -->
                 <div class="line">
                   <input
-                    v-model="token.address"
+                    v-model.trim="token.address"
                     @input="findSymbol(index, token.address)"
                     placeholder="Address"
                   />
@@ -359,16 +359,33 @@
               <div class="order-details">
                 <div class="trade-info">
                   <span class="left">
-                    If
+                    <!-- If
                     <span v-if="!order.shouldSwitchTokensForLimit">
-                      <!-- {{ order.fromToken.symbol }} {{ order.orderType === 'take_profit' ? '≥' : '≤' }} {{ order.priceLimit }} {{ order.toToken.symbol }} -->
-                      {{ order.fromToken.symbol }} = {{ order.priceLimit }} {{ order.toToken.symbol }}
+                      {{ order.fromToken.symbol }} {{ order.orderType === 'take_profit' ? '≥' : '≤' }} {{ order.priceLimit }} {{ order.toToken.symbol }}
                     </span>
                     <span v-else>
-                      <!-- {{ order.toToken.symbol }} {{ order.orderType === 'take_profit' ? '≤' : '≥' }} {{ order.priceLimit }} {{ order.fromToken.symbol }} -->
-                      {{ order.toToken.symbol }} = {{ order.priceLimit }} {{ order.fromToken.symbol }}
+                      {{ order.toToken.symbol }} {{ order.orderType === 'take_profit' ? '≤' : '≥' }} {{ order.priceLimit }} {{ order.fromToken.symbol }}
+                    </span> -->
+                    <div>
+                      <span style="font-size:16px;color:rgb(223,81,81);">
+                        Sell <span style="font-size:16px;font-weight:800;text-decoration:underline;">{{ order.fromAmount }} {{ order.fromToken.symbol }} </span>
+                        (${{ tokensByAddresses[order.fromToken?.address].price.toFixed(7) }})
+                      </span> 
+                      -> 
+                      <span style="font-size:16px;color:rgb(69,201,99);">
+                        Buy <span style="font-size:16px;font-weight:800;text-decoration:underline;">{{ order.toAmount || '' }} {{ order.toToken.symbol }} </span>
+                        (${{ tokensByAddresses[order.toToken?.address].price.toFixed(7) }})
+                      </span>
+                    </div>
+                  </span>
+                </div>
+                <div class="order-meta">
+                  <span>
+                    {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
+                    <span v-if="order.currentMarketPrice">
+                      at {{ order.currentMarketPrice.toFixed(5) }}
                     </span>
-                    <span class="current-market-price" style="margin-left: 10px; color: #888; font-size: 0.9em;">
+                    <span class="current-market-price" style="margin-left: 10px; color: #888; font-size: 1em;">
                       (Current: 
                       <span v-if="!order.shouldSwitchTokensForLimit">
                         {{ getCurrentMarketPrice(order.fromToken, order.toToken, false) }} {{ order.toToken.symbol }}/{{ order.fromToken.symbol }}
@@ -377,15 +394,6 @@
                         {{ getCurrentMarketPrice(order.fromToken, order.toToken, true) }} {{ order.fromToken.symbol }}/{{ order.toToken.symbol }}
                       </span>
                       )
-                    </span>
-                    <div>SELL {{ order.fromAmount }} <span style="color:rgb(223,81,81);font-weight:800;"> {{ order.fromToken.symbol }} </span> -> BUY {{ order.toAmount || '' }}  <span style="color:rgb(69,201,99);font-weight:800;">{{ order.toToken.symbol }} </span></div>
-                  </span>
-                </div>
-                <div class="order-meta">
-                  <span>
-                    {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
-                    <span v-if="order.currentMarketPrice">
-                      at {{ order.currentMarketPrice.toFixed(5) }}
                     </span>
                   </span>
                   <span class="right">
@@ -1894,6 +1902,32 @@ export default {
         tokens.value[index].address = tokens.value[index].address.toLowerCase();
       } catch {
         tokens.value[index].symbol = null;
+      }
+    }
+
+    function toggleEditingTokens() {
+      if (!isEditingTokens.value) {
+        // Entering edit mode
+        isEditingTokens.value = true;
+      } else {
+        // Leaving edit mode - remove invalid tokens
+        for (let i = 0; i < tokens.value.length; i++) {
+          const token = tokens.value[i];
+          
+          // Skip empty tokens or ETH
+          if (!token.address || token.address === '') {
+            continue;
+          }
+          
+          // Check if address is valid (excluding the zero address for ETH)
+          if (!ethers.utils.isAddress(token.address) && token.address !== ethers.constants.AddressZero) {
+            // Clear invalid token
+            tokens.value[i] = {address: '', symbol: '', decimals: null, price: 0};
+            console.log(`Cleared invalid token at index ${i}`);
+          }
+        }
+        
+        isEditingTokens.value = false;
       }
     }
 
@@ -3825,6 +3859,7 @@ export default {
       approveSpending,
       findSymbol,
       deleteToken,
+      toggleEditingTokens,
       shouldSwitchTokensForLimit,
       setMarketPriceAsLimit,
 
