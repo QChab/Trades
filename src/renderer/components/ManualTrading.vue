@@ -385,8 +385,8 @@
                     <span v-if="order.currentMarketPrice">
                       at {{ order.currentMarketPrice.toFixed(5) }}
                     </span>
-                    <span class="current-market-price" style="margin-left: 10px; color: #888; font-size: 1em;">
-                      (Current: 
+                    <span class="current-market-price" style="color: #888; font-size: 1em;">
+                      ( 
                       <span v-if="!order.shouldSwitchTokensForLimit">
                         {{ getCurrentMarketPrice(order.fromToken, order.toToken, false) }} {{ order.toToken.symbol }}/{{ order.fromToken.symbol }}
                       </span>
@@ -394,6 +394,9 @@
                         {{ getCurrentMarketPrice(order.fromToken, order.toToken, true) }} {{ order.fromToken.symbol }}/{{ order.toToken.symbol }}
                       </span>
                       )
+                    </span>
+                    <span class="current-market-price" style="margin-left: 10px; color: #888; font-size: 1em;">
+                      Sum: ${{ (Number(tokensByAddresses[order.fromToken.address].price) * Number(order.fromAmount)).toFixed(2) }}
                     </span>
                   </span>
                   <span class="right">
