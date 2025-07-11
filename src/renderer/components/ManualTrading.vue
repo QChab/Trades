@@ -3816,6 +3816,9 @@ export default {
           const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
           return dateB.getTime() - dateA.getTime();
         });
+
+        const outdateOrders = dbOrders.filter(o => !tokensByAddresses.value[o.fromTokenAddress] || !tokensByAddresses.value[o.toTokenAddress])
+        outdateOrders.map(o => deletePendingOrder(o.id))
       }
       stopEthBalanceMonitoring();
     });
