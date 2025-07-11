@@ -355,7 +355,7 @@
             class="pending-order"
             :class="{'is-waiting-balance': order.isWaitingBalance}"
           >
-            <div class="order-info">
+            <div class="order-info" v-if="tokensByAddresses[order.fromToken?.address] && tokensByAddresses[order.toToken?.address]">
               <div class="order-details">
                 <div class="trade-info">
                   <span class="left">
