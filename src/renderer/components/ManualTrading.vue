@@ -396,7 +396,7 @@
                       )
                     </span>
                     <span class="current-market-price" style="margin-left: 10px; color: #888; font-size: 1em;">
-                      Sum: ${{ (Number(tokensByAddresses[order.fromToken.address].price) * Number(order.fromAmount)).toFixed(2) }}
+                      Sum: ${{ (Number(tokensByAddresses[order.fromToken.address]?.price) * Number(order.fromAmount)).toFixed(2) }}
                     </span>
                   </span>
                   <span class="right">
@@ -3787,7 +3787,7 @@ export default {
 
       const dbOrders = await window.electronAPI.getPendingOrders();
       if (dbOrders && Array.isArray(dbOrders)) {
-        pendingLimitOrders.value = dbOrders.map(o => ({
+        pendingLimitOrders.value = dbOrders.filter(o => tokensByAddresses.value[o.fromTokenAddress] && tokensByAddresses.value[o.toTokenAddress]).map(o => ({
           id: o.id,
           fromAmount: o.fromAmount,
           toAmount: o.toAmount, // Make sure to map this field
