@@ -611,7 +611,7 @@ export default {
 
     // Filter out tokens without valid symbol/address
     const filteredTokens = computed(() =>
-      tokens.value.filter(t => t.symbol && t.address && t.decimals != null && t.symbol !== '' && t.address !== '')
+      tokens.value.filter(t => t.symbol && t.address && t.decimals != null && t.symbol !== '' && t.address !== '').sort((a, b) => a.symbol <= b.symbol ? -1 : 1)
     );
 
     // Build a nested map: { [userAddress]: { [tokenAddress]: availableBalance } }
