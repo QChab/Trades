@@ -2172,23 +2172,26 @@ export default {
     }
 
     // ─── approveSpending(): Approve ERC20 → Permit2 → Router ───────────────
-    const approveSpending = async (localTrades) => {
+    const approveSpending = async (localTrades, localTradeSummary) => {
       try {
         isSwapButtonDisabled.value = true;
         const originalAddress = senderDetails.value.address;
+        
+        // Use local trade summary if provided, otherwise fall back to global tradeSummary
+        const activeTradeSummary = localTradeSummary || tradeSummary;
 
         // Uniswap
-        if (tradeSummary.protocol === 'Uniswap' || tradeSummary.protocol === 'Uniswap & Balancer') {
+        if (activeTradeSummary.protocol === 'Uniswap' || activeTradeSummary.protocol === 'Uniswap & Balancer') {
           const { success, error } = await window.electronAPI.approveSpender(
             originalAddress,
-            fromTokenAddress.value,
+            localTradeSummary ? localTradeSummary.fromTokenAddress : fromTokenAddress.value,
             PERMIT2_ADDRESS,
             UNIVERSAL_ROUTER_ADDRESS
           );
           if (!success) throw error;
         }
         // Balancer
-        if (tradeSummary.protocol === 'Balancer' || tradeSummary.protocol === 'Uniswap & Balancer') {
+        if (activeTradeSummary.protocol === 'Balancer' || activeTradeSummary.protocol === 'Uniswap & Balancer') {
           const myTrades = localTrades || trades.value;
           const balancerTradeV3 = myTrades.find(
             t => t.callData && t.contractAddress.toLowerCase() !== BALANCER_VAULT_ADDRESS.toLowerCase()
@@ -2196,14 +2199,14 @@ export default {
           if (!balancerTradeV3) {
             const { success, error } = await window.electronAPI.approveSpender(
               originalAddress,
-              fromTokenAddress.value,
+              localTradeSummary ? localTradeSummary.fromTokenAddress : fromTokenAddress.value,
               BALANCER_VAULT_ADDRESS
             );
             if (!success) throw error;
           } else {
             const { success, error } = await window.electronAPI.approveSpender(
               originalAddress,
-              fromTokenAddress.value,
+              localTradeSummary ? localTradeSummary.fromTokenAddress : fromTokenAddress.value,
               PERMIT2_ADDRESS,
               balancerTradeV3.contractAddress
             );
@@ -2872,7 +2875,7 @@ export default {
         
         // 🕐 Time the approval process and re-validate if it takes too long
         const approvalStartTime = Date.now();
-        await approveSpending(bestTradeResult.trades);
+        await approveSpending(bestTradeResult.trades, limitOrderTradeSummary);
         const approvalDuration = (Date.now() - approvalStartTime) / 1000; // Convert to seconds
         
         console.log(`Approval completed in ${approvalDuration.toFixed(2)} seconds`);

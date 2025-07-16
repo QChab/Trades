@@ -67,7 +67,7 @@ Follow these steps to get your development environment set up:
 Build: 
 ```
 npm run build
-xcrun notarytool submit "./dist/trades-1.1.3-arm64.dmg" --apple-id "thibault@techinblocks.com" --password "txuv-flqw-bboi-yhqj" --team-id "BAXBQTTS3U" --wait --progress
-xcrun stapler staple "dist/trades-1.1.3-arm64.dmg"
-scp dist/trades-1.1.3-arm64.dmg game:~/drive/
+xcrun notarytool submit "./dist/trades-1.1.5-arm64.dmg" --apple-id "thibault@techinblocks.com" --password "txuv-flqw-bboi-yhqj" --team-id "BAXBQTTS3U" --wait --progress
+xcrun stapler staple "dist/trades-1.1.5-arm64.dmg"
+scp dist/trades-1.1.5-arm64.dmg game:~/drive/
 ```
