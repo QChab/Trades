@@ -84,10 +84,24 @@
           <div class="to-swap">
             <img :src="downArrowImage" class="down-arrow-image" @click="switchTokens"/>
             <p>Buy</p>
-            <div class="amount-token">
+            <div class="amount-token" v-if="tabOrder === 'market'">
               <span class="amount-out" :class="{'fetching-price': isFetchingPrice}">
                 {{ spaceThousands(tradeSummary.toAmount) }}
               </span>
+              <select id="to-token" v-model="toTokenAddress">
+                <option 
+                  v-for="(token, index) in filteredTokens" 
+                  :key="'toToken-' + index" 
+                  :value="token.address"
+                >
+                  {{ token.symbol }} ({{ balanceString(senderDetails?.address, token.address) }})
+                </option>
+              </select>
+            </div>
+            <div class="amount-token" v-else>
+              <input class="amount-out" :class="{'fetching-price': isFetchingPrice}" v-model="tradeSummary.toAmount"/>
+                <!-- {{ spaceThousands(tradeSummary.toAmount) }}
+              </input> -->
               <select id="to-token" v-model="toTokenAddress">
                 <option 
                   v-for="(token, index) in filteredTokens" 
@@ -119,8 +133,8 @@
             class="effective-price"
             style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 14px; color: #111; text-align: center;"
           >
-            <div>1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.usdValue }}</div>
-            <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{ effectivePrice.usdValueInverse }}</div>
+            <div>1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.toSymbol === 'ETH' ? ethPrice : effectivePrice.usdValue }}</div>
+            <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{effectivePrice.fromSymbol === 'ETH' ? ethPrice : effectivePrice.usdValueInverse }}</div>
           </div>
           
           <div class="address-form">
@@ -414,7 +428,7 @@
 </template>
 
 <script>
-import { ref, reactive, watch, onMounted, computed, toRaw, onUnmounted } from 'vue';
+import { ref, reactive, watch, onMounted, computed, toRaw, onUnmounted, nextTick } from 'vue';
 import { ethers, BigNumber } from 'ethers';
 import chevronDownImage from '@/../assets/chevron-down.svg';
 import reverseImage from '@/../assets/reverse.svg';
@@ -2250,9 +2264,14 @@ export default {
 
     watch(() => tokens.value, () => emitSettings(), { deep: true });
 
+    // Track if we're updating from bidirectional calculation to prevent infinite loops
+    let isUpdatingFromBidirectional = false;
+    let lastFromAmountUpdate = 0;
+
     watch(
       [() => priceLimit.value, () => fromAmount.value, () => fromTokenAddress.value, () => toTokenAddress.value],
       ([priceLimitValue, fromAmountValue]) => {
+      if (isUpdatingFromBidirectional) return;
       if (!fromAmountValue || isNaN(fromAmountValue)) {
         tradeSummary.toAmount = null;
         return;
@@ -2260,6 +2279,8 @@ export default {
       if (tabOrder.value !== 'limit') return;
       if (priceLimitValue && !isNaN(priceLimitValue)) {
         tradeSummary.priceLimit = Number(priceLimitValue);
+        // Mark that we're updating based on fromAmount change
+        lastFromAmountUpdate = Date.now();
         if (shouldSwitchTokensForLimit.value) {
           tradeSummary.toAmount = (fromAmountValue / tradeSummary.priceLimit).toFixed(tokensByAddresses.value[toTokenAddress.value].decimals >= 9 ? 9 : 6);
         } else
@@ -2269,6 +2290,34 @@ export default {
         tradeSummary.toAmount = null;
       }
     });
+
+    // Watch for changes in toAmount to update fromAmount bidirectionally
+    watch(
+      () => tradeSummary.toAmount,
+      (toAmountValue) => {
+        if (isUpdatingFromBidirectional) return;
+        if (tabOrder.value !== 'limit') return;
+        if (!toAmountValue || isNaN(toAmountValue)) return;
+        if (!priceLimit.value || isNaN(priceLimit.value)) return;
+        
+        // Don't update fromAmount if it was just updated (within 100ms)
+        // This prevents interference when user is typing in fromAmount
+        if (Date.now() - lastFromAmountUpdate < 100) return;
+        
+        isUpdatingFromBidirectional = true;
+        
+        if (shouldSwitchTokensForLimit.value) {
+          fromAmount.value = (toAmountValue * priceLimit.value).toFixed(tokensByAddresses.value[fromTokenAddress.value].decimals >= 9 ? 9 : 6);
+        } else {
+          fromAmount.value = (toAmountValue / priceLimit.value).toFixed(tokensByAddresses.value[fromTokenAddress.value].decimals >= 9 ? 9 : 6);
+        }
+        
+        // Reset the flag after a short delay to allow the DOM to update
+        nextTick(() => {
+          isUpdatingFromBidirectional = false;
+        });
+      }
+    );
 
     watch(() => shouldSwitchTokensForLimit.value, () => {
       if (!priceLimit.value || isNaN(priceLimit.value)) return priceLimit.value = 0;
@@ -4627,5 +4676,16 @@ h3 {
 .no-addresses-unlocked {
   background-color: #aaa;
   opacity: .5;
+}
+
+input.amount-out {
+  background-color: #fff;
+  width: 240px;
+  border: none;
+  text-align: left;
+  padding: 5px;
+  font-weight: 500;
+  font-size: 22px;
+  display: inline-block;
 }
 </style>
