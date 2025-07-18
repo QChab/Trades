@@ -117,3 +117,51 @@ The system implements sophisticated gas cost calculations:
 - Developer tools auto-open in development mode
 
 When working with this codebase, pay special attention to the order type determination logic, gas cost calculations, and price inversion handling as these are complex areas with many edge cases that have been specifically addressed.
+
+## Recent Critical Fixes and Implementations
+
+### Token Address Validation System
+- **Save/Load Operations**: Both `save-settings` and `load-settings` handlers in `main.mjs` now validate token addresses
+- **Validation Logic**: Trims whitespace, validates with `ethers.utils.isAddress()`, converts to lowercase
+- **Invalid Address Handling**: Automatically clears invalid addresses, accepts empty strings and zero address for ETH
+- **Frontend Validation**: `toggleEditingTokens()` function in ManualTrading.vue validates addresses when exiting edit mode
+
+### Price Display and Order Management
+- **Current Market Price Display**: Added `getCurrentMarketPrice()` function and display in pending orders
+- **Order Type Logic**: Fixed normalization of inverted prices for correct take-profit vs stop-loss determination
+- **Trigger Display**: Shows "If 1 TOKEN ≥/≤ PRICE" format with current market price context
+
+### Gas Cost Handling Critical Updates
+- **BigNumber Underflow Prevention**: Added checks to prevent negative BigNumber operations
+- **Negative Value Tracking**: Separate tracking variables for unprofitable trades
+- **Mixed Trade Comparison**: Enhanced sorting logic to handle negative outputs correctly
+- **Trade Selection**: Fixed logic to choose "least bad" option when all trades are unprofitable
+
+### Limit Order Execution Fix
+- **approveSpending Function**: Updated to accept `localTradeSummary` parameter instead of always using global `tradeSummary`
+- **executeTradeWithAddress**: Now passes `limitOrderTradeSummary` to `approveSpending` for correct protocol detection
+- **Critical Issue**: Was using wrong protocol/token address for limit order approvals
+
+### MEV Protection Architecture
+- **WalletBundler Contracts**: Individual per-wallet contracts for atomic multi-DEX execution
+- **Factory Pattern**: CREATE2 deployment for efficient contract creation
+- **Partial Execution**: Allows some trades to fail while others succeed
+- **Automatic Fund Transfer**: Built-in logic to return funds to owner after execution
+
+### 1inch Integration Analysis
+- **API Limitations**: 1 RPS rate limit on basic tier, registration required since 2023
+- **No Platform Fees**: 1inch doesn't charge trading fees, only captures rare positive slippage (~1%)
+- **Direct Contract Usage**: Technically possible but impractical due to proprietary routing algorithm
+- **Recommendation**: Use direct DEX integration instead of 1inch aggregation
+
+### Development Pain Points to Avoid
+- **Price Inversion Logic**: Complex interaction between `shouldSwitchTokensForLimit` and order types
+- **Gas Cost Edge Cases**: When gas exceeds trade output, requires special handling
+- **BigNumber Limitations**: No native negative number support, requires workarounds
+- **Trade Summary Context**: Always verify which trade summary object is being used (global vs local)
+
+### Testing and Validation Notes
+- **Address Validation**: Test with malformed addresses, trailing spaces, mixed case
+- **Negative Scenarios**: Test high gas costs that exceed trade outputs
+- **Order Type Edge Cases**: Test price inversions with different token pairs
+- **Limit Order Execution**: Verify correct protocol is used for approvals
