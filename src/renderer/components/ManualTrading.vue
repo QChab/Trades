@@ -133,8 +133,8 @@
             class="effective-price"
             style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 14px; color: #111; text-align: center;"
           >
-            <div>1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.toSymbol === 'ETH' ? ethPrice : effectivePrice.usdValue }}</div>
-            <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{effectivePrice.fromSymbol === 'ETH' ? ethPrice : effectivePrice.usdValueInverse }}</div>
+            <div>1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.usdValue }}</div>
+            <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{effectivePrice.usdValueInverse }}</div>
           </div>
           
           <div class="address-form">
@@ -439,6 +439,8 @@ import { useBalancerV3 } from '../composables/useBalancer';
 import spaceThousands from '../composables/spaceThousands';
 import OrderBookLevels from './OrderBookLevels.vue';
 
+import list100CoinsEth from '../composables/list100CoinsEth';
+
 export default {
   name: 'ManualTrading',
   components: {
@@ -672,8 +674,17 @@ export default {
       const fromTokenPrice = tokensByAddresses.value[fromTokenAddress.value]?.price || 0;
       const toTokenPrice = tokensByAddresses.value[toTokenAddress.value]?.price || 0;
       console.log(pricePerOutputToken, fromAmount, toAmount);
-      const usdValue = fromTokenPrice > 0 ? (pricePerOutputToken * fromTokenPrice).toFixed(2) : '0.00';
-      const usdValueInverse = toTokenPrice > 0 ? (pricePerInputToken * toTokenPrice).toFixed(2) : '0.00';
+      
+      let usdValue, usdValueInverse
+      if (list100CoinsEth.includes(tradeSummary.fromTokenSymbol))
+        usdValueInverse = fromTokenPrice
+      else
+        usdValueInverse = toTokenPrice > 0 ? (pricePerInputToken * toTokenPrice).toFixed(2) : '0.00';
+
+      if (list100CoinsEth.includes(tradeSummary.toTokenSymbol))
+        usdValue = toTokenPrice
+      else
+        usdValue = fromTokenPrice > 0 ? (pricePerOutputToken * fromTokenPrice).toFixed(2) : '0.00';
       
       return {
         pricePerToken: pricePerOutputToken.toFixed(6),
