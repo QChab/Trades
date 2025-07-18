@@ -728,6 +728,17 @@ export default {
 
     // ─── Watchers ─────────────────────────────────────────────────────────────
     // Refresh balances
+    watch([() => fromTokenAddress.value,
+      () => toTokenAddress.value,
+      () => tabOrder.value,
+    ],
+      ([_fromAddr, _toAddr, _tabOrder]) => {
+        if (_tabOrder === 'limit') {
+          setMarketPriceAsLimit(_fromAddr, _toAddr);
+        }
+    });
+
+    // Refresh balances
     watch(
       [() => senderDetails.value,
       () => fromTokenAddress.value,
@@ -2270,14 +2281,16 @@ export default {
       window.electronAPI.deletePendingOrder(id);
     }
 
-    function setMarketPriceAsLimit() {
+    function setMarketPriceAsLimit(fTokenAddress, tTokenAddress) {
+      if (!fTokenAddress) fTokenAddress = fromTokenAddress.value
+      if (!tTokenAddress) tTokenAddress = toTokenAddress.value
       // Use the current market price (fromToken to toToken)
       if (
-        tokensByAddresses.value[fromTokenAddress.value]?.price &&
-        tokensByAddresses.value[toTokenAddress.value]?.price
+        tokensByAddresses.value[fTokenAddress]?.price &&
+        tokensByAddresses.value[tTokenAddress]?.price
       ) {
-        const fromPrice = tokensByAddresses.value[fromTokenAddress.value].price;
-        const toPrice = tokensByAddresses.value[toTokenAddress.value].price;
+        const fromPrice = tokensByAddresses.value[fTokenAddress].price;
+        const toPrice = tokensByAddresses.value[tTokenAddress].price;
         // Price of 1 fromToken in toToken units
         const marketPrice = !shouldSwitchTokensForLimit.value
           ? fromPrice / toPrice
@@ -2309,25 +2322,25 @@ export default {
       return displayedUsdValue
     }
 
-    watch(
-      () => fromTokenAddress.value,
-      async (fromTokenAddressValue) => {
-        if (tabOrder.value !== 'limit') return;
-        if (fromTokenAddressValue !== ethers.constants.AddressZero) {
-          await checkAllowances(fromTokenAddressValue, true);
-          await checkAllowances(fromTokenAddressValue, false);
-        }
-      }
-    );
+    // watch(
+    //   () => fromTokenAddress.value,
+    //   async (fromTokenAddressValue) => {
+    //     if (tabOrder.value !== 'limit') return;
+    //     if (fromTokenAddressValue !== ethers.constants.AddressZero) {
+    //       await checkAllowances(fromTokenAddressValue, true);
+    //       await checkAllowances(fromTokenAddressValue, false);
+    //     }
+    //   }
+    // );
     
-    watch(
-      () => senderDetails.value,
-      async () => {
-        if (tabOrder.value !== 'limit') return;
-        await checkAllowances(fromTokenAddress.value, true);
-        await checkAllowances(fromTokenAddress.value, false);
-      }
-    );
+    // watch(
+    //   () => senderDetails.value,
+    //   async () => {
+    //     if (tabOrder.value !== 'limit') return;
+    //     await checkAllowances(fromTokenAddress.value, true);
+    //     await checkAllowances(fromTokenAddress.value, false);
+    //   }
+    // );
 
     function placeLimitOrder() {
       if (!senderDetails.value.address) {
