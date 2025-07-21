@@ -129,7 +129,7 @@
           
           <!-- Effective Price Display -->
           <div
-            v-if="effectivePrice && tabOrder !== 'limit'"
+            v-if="effectivePrice"
             class="effective-price"
             style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 14px; color: #111; text-align: center;"
           >
@@ -655,33 +655,40 @@ export default {
 
     // Computed property for effective price display
     const effectivePrice = computed(() => {
-      if (!tradeSummary.fromAmount || !tradeSummary.toAmount || !tradeSummary.fromTokenSymbol || !tradeSummary.toTokenSymbol) {
+      // For limit orders, we need to get token symbols from the token addresses
+      const fromSymbol = tradeSummary.fromTokenSymbol || tokensByAddresses.value[fromTokenAddress.value]?.symbol;
+      const toSymbol = tradeSummary.toTokenSymbol || tokensByAddresses.value[toTokenAddress.value]?.symbol;
+      
+      // Also get fromAmount from the input field for limit orders
+      const fromAmountValue = tradeSummary.fromAmount || fromAmount.value;
+      
+      if (!fromAmountValue || !tradeSummary.toAmount || !fromSymbol || !toSymbol) {
         return null;
       }
       
-      const fromAmount = parseFloat(tradeSummary.fromAmount);
+      const fromAmountParsed = parseFloat(fromAmountValue);
       const toAmount = parseFloat(tradeSummary.toAmount);
       
-      if (fromAmount <= 0 || toAmount <= 0) {
+      if (fromAmountParsed <= 0 || toAmount <= 0) {
         return null;
       }
       
       // Calculate price per unit of output token
-      const pricePerOutputToken = fromAmount / toAmount;
-      const pricePerInputToken = toAmount / fromAmount;
+      const pricePerOutputToken = fromAmountParsed / toAmount;
+      const pricePerInputToken = toAmount / fromAmountParsed;
       
       // Get USD price of the output token
       const fromTokenPrice = tokensByAddresses.value[fromTokenAddress.value]?.price || 0;
       const toTokenPrice = tokensByAddresses.value[toTokenAddress.value]?.price || 0;
-      console.log(pricePerOutputToken, fromAmount, toAmount);
+      console.log(pricePerOutputToken, fromAmountParsed, toAmount);
       
       let usdValue, usdValueInverse
-      if (list100CoinsEth.includes(tradeSummary.fromTokenSymbol))
+      if (list100CoinsEth.includes(fromSymbol))
         usdValueInverse = fromTokenPrice
       else
         usdValueInverse = toTokenPrice > 0 ? (pricePerInputToken * toTokenPrice).toFixed(2) : '0.00';
 
-      if (list100CoinsEth.includes(tradeSummary.toTokenSymbol))
+      if (list100CoinsEth.includes(toSymbol))
         usdValue = toTokenPrice
       else
         usdValue = fromTokenPrice > 0 ? (pricePerOutputToken * fromTokenPrice).toFixed(2) : '0.00';
@@ -689,8 +696,8 @@ export default {
       return {
         pricePerToken: pricePerOutputToken.toFixed(6),
         inversedPricePerToken: (1 / pricePerOutputToken).toFixed(6),
-        fromSymbol: tradeSummary.fromTokenSymbol,
-        toSymbol: tradeSummary.toTokenSymbol,
+        fromSymbol: fromSymbol,
+        toSymbol: toSymbol,
         usdValue: usdValue,
         usdValueInverse,
       };
@@ -2280,14 +2287,14 @@ export default {
     let lastFromAmountUpdate = 0;
 
     watch(
-      [() => priceLimit.value, () => fromAmount.value, () => fromTokenAddress.value, () => toTokenAddress.value],
-      ([priceLimitValue, fromAmountValue]) => {
+      [() => priceLimit.value, () => fromAmount.value, () => fromTokenAddress.value, () => toTokenAddress.value, () => tabOrder.value],
+      ([priceLimitValue, fromAmountValue, fTA, tTA, tabOrderValue]) => {
       if (isUpdatingFromBidirectional) return;
       if (!fromAmountValue || isNaN(fromAmountValue)) {
         tradeSummary.toAmount = null;
         return;
       }
-      if (tabOrder.value !== 'limit') return;
+      if (tabOrderValue !== 'limit') return;
       if (priceLimitValue && !isNaN(priceLimitValue)) {
         tradeSummary.priceLimit = Number(priceLimitValue);
         // Mark that we're updating based on fromAmount change

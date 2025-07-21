@@ -997,6 +997,20 @@ function createWindow() {
         }
       });
     });
+  });
+
+  ipcMain.handle('get-all-trades', async (event) => {
+    return new Promise((resolve, reject) => {
+      const sql = `SELECT * FROM trades ORDER BY id DESC`;
+      db.all(sql, [], (err, rows) => {
+        if (err) {
+          console.error('Failed to fetch all trades:', err);
+          reject({ success: false, error: err.message });
+        } else {
+          resolve({ success: true, data: rows });
+        }
+      });
+    });
   });  
 }
 
