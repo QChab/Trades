@@ -83,9 +83,9 @@ contract WalletBundlerOptimized {
      * @dev Internal assembly function to get ERC20 token balance
      * @param token Token contract address
      * @param account Account to check balance for
-     * @return balance Token balance
+     * @return tokenBalance Token balance
      */
-    function _getTokenBalance(address token, address account) private view returns (uint256 balance) {
+    function _getTokenBalance(address token, address account) private view returns (uint256 tokenBalance) {
         assembly {
             let ptr := mload(0x40)
             // Store balanceOf(address) selector
@@ -95,7 +95,7 @@ contract WalletBundlerOptimized {
             let success := staticcall(gas(), token, ptr, 0x24, ptr, 0x20)
             if iszero(success) { revert(0, 0) }
             
-            balance := mload(ptr)
+            tokenBalance := mload(ptr)
         }
     }
     
@@ -237,7 +237,7 @@ contract WalletBundlerOptimized {
         } else {
             uint256 balance = _getTokenBalance(token, address(this));
             uint256 withdrawAmount = amount == 0 ? balance : amount;
-            if (withdrawAmount > balance) revert InsufficientBalance();
+            if (withdrawAmount > balance) revert TransferFailed();
             
             _transferToken(token, owner, withdrawAmount);
         }
