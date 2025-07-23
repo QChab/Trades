@@ -16,7 +16,7 @@
           <h3> Automatic trade</h3>
         </div>
       </div>
-      <button @click="isEditingTokens = !isEditingTokens" class="edit-button">
+      <button @click="toggleEditingTokens" class="edit-button">
         {{ isEditingTokens ? 'Stop editing' : 'Edit tokens' }}
       </button>
       <div>
@@ -84,10 +84,24 @@
           <div class="to-swap">
             <img :src="downArrowImage" class="down-arrow-image" @click="switchTokens"/>
             <p>Buy</p>
-            <div class="amount-token">
+            <div class="amount-token" v-if="tabOrder === 'market'">
               <span class="amount-out" :class="{'fetching-price': isFetchingPrice}">
                 {{ spaceThousands(tradeSummary.toAmount) }}
               </span>
+              <select id="to-token" v-model="toTokenAddress">
+                <option 
+                  v-for="(token, index) in filteredTokens" 
+                  :key="'toToken-' + index" 
+                  :value="token.address"
+                >
+                  {{ token.symbol }} ({{ balanceString(senderDetails?.address, token.address) }})
+                </option>
+              </select>
+            </div>
+            <div class="amount-token" v-else>
+              <input class="amount-out" :class="{'fetching-price': isFetchingPrice}" v-model="tradeSummary.toAmount"/>
+                <!-- {{ spaceThousands(tradeSummary.toAmount) }}
+              </input> -->
               <select id="to-token" v-model="toTokenAddress">
                 <option 
                   v-for="(token, index) in filteredTokens" 
@@ -115,12 +129,12 @@
           
           <!-- Effective Price Display -->
           <div
-            v-if="effectivePrice && tabOrder !== 'limit'"
+            v-if="effectivePrice"
             class="effective-price"
             style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 14px; color: #111; text-align: center;"
           >
             <div>1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.usdValue }}</div>
-            <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{ effectivePrice.usdValueInverse }}</div>
+            <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{effectivePrice.usdValueInverse }}</div>
           </div>
           
           <div class="address-form">
@@ -305,7 +319,7 @@
                 <!-- First line: Token address and delete icon -->
                 <div class="line">
                   <input
-                    v-model="token.address"
+                    v-model.trim="token.address"
                     @input="findSymbol(index, token.address)"
                     placeholder="Address"
                   />
@@ -355,21 +369,38 @@
             class="pending-order"
             :class="{'is-waiting-balance': order.isWaitingBalance}"
           >
-            <div class="order-info">
+            <div class="order-info" v-if="tokensByAddresses[order.fromToken?.address] && tokensByAddresses[order.toToken?.address]">
               <div class="order-details">
                 <div class="trade-info">
                   <span class="left">
-                    If
+                    <!-- If
                     <span v-if="!order.shouldSwitchTokensForLimit">
-                      <!-- {{ order.fromToken.symbol }} {{ order.orderType === 'take_profit' ? '≥' : '≤' }} {{ order.priceLimit }} {{ order.toToken.symbol }} -->
-                      {{ order.fromToken.symbol }} = {{ order.priceLimit }} {{ order.toToken.symbol }}
+                      {{ order.fromToken.symbol }} {{ order.orderType === 'take_profit' ? '≥' : '≤' }} {{ order.priceLimit }} {{ order.toToken.symbol }}
                     </span>
                     <span v-else>
-                      <!-- {{ order.toToken.symbol }} {{ order.orderType === 'take_profit' ? '≤' : '≥' }} {{ order.priceLimit }} {{ order.fromToken.symbol }} -->
-                      {{ order.toToken.symbol }} = {{ order.priceLimit }} {{ order.fromToken.symbol }}
+                      {{ order.toToken.symbol }} {{ order.orderType === 'take_profit' ? '≤' : '≥' }} {{ order.priceLimit }} {{ order.fromToken.symbol }}
+                    </span> -->
+                    <div>
+                      <span style="font-size:16px;color:rgb(223,81,81);">
+                        Sell <span style="font-size:16px;font-weight:800;text-decoration:underline;">{{ order.fromAmount }} {{ order.fromToken.symbol }} </span>
+                        (${{ tokensByAddresses[order.fromToken?.address].price.toFixed(7) }})
+                      </span> 
+                      -> 
+                      <span style="font-size:16px;color:rgb(69,201,99);">
+                        Buy <span style="font-size:16px;font-weight:800;text-decoration:underline;">{{ order.toAmount || '' }} {{ order.toToken.symbol }} </span>
+                        (${{ tokensByAddresses[order.toToken?.address].price.toFixed(7) }})
+                      </span>
+                    </div>
+                  </span>
+                </div>
+                <div class="order-meta">
+                  <span>
+                    {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
+                    <span v-if="order.currentMarketPrice">
+                      at {{ order.currentMarketPrice.toFixed(5) }}
                     </span>
-                    <span class="current-market-price" style="margin-left: 10px; color: #888; font-size: 0.9em;">
-                      (Current: 
+                    <span class="current-market-price" style="color: #888; font-size: 1em;">
+                      ( 
                       <span v-if="!order.shouldSwitchTokensForLimit">
                         {{ getCurrentMarketPrice(order.fromToken, order.toToken, false) }} {{ order.toToken.symbol }}/{{ order.fromToken.symbol }}
                       </span>
@@ -378,14 +409,8 @@
                       </span>
                       )
                     </span>
-                    <div>SELL {{ order.fromAmount }} <span style="color:rgb(223,81,81);font-weight:800;"> {{ order.fromToken.symbol }} </span> -> BUY {{ order.toAmount || '' }}  <span style="color:rgb(69,201,99);font-weight:800;">{{ order.toToken.symbol }} </span></div>
-                  </span>
-                </div>
-                <div class="order-meta">
-                  <span>
-                    {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
-                    <span v-if="order.currentMarketPrice">
-                      at {{ order.currentMarketPrice.toFixed(5) }}
+                    <span class="current-market-price" style="margin-left: 10px; color: #888; font-size: 1em;">
+                      Sum: ${{ (Number(tokensByAddresses[order.fromToken.address]?.price) * Number(order.fromAmount)).toFixed(2) }}
                     </span>
                   </span>
                   <span class="right">
@@ -403,7 +428,7 @@
 </template>
 
 <script>
-import { ref, reactive, watch, onMounted, computed, toRaw, onUnmounted } from 'vue';
+import { ref, reactive, watch, onMounted, computed, toRaw, onUnmounted, nextTick } from 'vue';
 import { ethers, BigNumber } from 'ethers';
 import chevronDownImage from '@/../assets/chevron-down.svg';
 import reverseImage from '@/../assets/reverse.svg';
@@ -413,6 +438,8 @@ import { useUniswapV4 } from '../composables/useUniswap';
 import { useBalancerV3 } from '../composables/useBalancer';
 import spaceThousands from '../composables/spaceThousands';
 import OrderBookLevels from './OrderBookLevels.vue';
+
+import list100CoinsEth from '../composables/list100CoinsEth';
 
 export default {
   name: 'ManualTrading',
@@ -600,7 +627,7 @@ export default {
 
     // Filter out tokens without valid symbol/address
     const filteredTokens = computed(() =>
-      tokens.value.filter(t => t.symbol && t.address && t.decimals != null && t.symbol !== '' && t.address !== '')
+      tokens.value.filter(t => t.symbol && t.address && t.decimals != null && t.symbol !== '' && t.address !== '').sort((a, b) => a.symbol <= b.symbol ? -1 : 1)
     );
 
     // Build a nested map: { [userAddress]: { [tokenAddress]: availableBalance } }
@@ -628,33 +655,49 @@ export default {
 
     // Computed property for effective price display
     const effectivePrice = computed(() => {
-      if (!tradeSummary.fromAmount || !tradeSummary.toAmount || !tradeSummary.fromTokenSymbol || !tradeSummary.toTokenSymbol) {
+      // For limit orders, we need to get token symbols from the token addresses
+      const fromSymbol = tradeSummary.fromTokenSymbol || tokensByAddresses.value[fromTokenAddress.value]?.symbol;
+      const toSymbol = tradeSummary.toTokenSymbol || tokensByAddresses.value[toTokenAddress.value]?.symbol;
+      
+      // Also get fromAmount from the input field for limit orders
+      const fromAmountValue = tradeSummary.fromAmount || fromAmount.value;
+      
+      if (!fromAmountValue || !tradeSummary.toAmount || !fromSymbol || !toSymbol) {
         return null;
       }
       
-      const fromAmount = parseFloat(tradeSummary.fromAmount);
+      const fromAmountParsed = parseFloat(fromAmountValue);
       const toAmount = parseFloat(tradeSummary.toAmount);
       
-      if (fromAmount <= 0 || toAmount <= 0) {
+      if (fromAmountParsed <= 0 || toAmount <= 0) {
         return null;
       }
       
       // Calculate price per unit of output token
-      const pricePerOutputToken = fromAmount / toAmount;
-      const pricePerInputToken = toAmount / fromAmount;
+      const pricePerOutputToken = fromAmountParsed / toAmount;
+      const pricePerInputToken = toAmount / fromAmountParsed;
       
       // Get USD price of the output token
       const fromTokenPrice = tokensByAddresses.value[fromTokenAddress.value]?.price || 0;
       const toTokenPrice = tokensByAddresses.value[toTokenAddress.value]?.price || 0;
-      console.log(pricePerOutputToken, fromAmount, toAmount);
-      const usdValue = fromTokenPrice > 0 ? (pricePerOutputToken * fromTokenPrice).toFixed(2) : '0.00';
-      const usdValueInverse = toTokenPrice > 0 ? (pricePerInputToken * toTokenPrice).toFixed(2) : '0.00';
+      console.log(pricePerOutputToken, fromAmountParsed, toAmount);
+      
+      let usdValue, usdValueInverse
+      if (list100CoinsEth.includes(fromSymbol))
+        usdValueInverse = fromTokenPrice
+      else
+        usdValueInverse = toTokenPrice > 0 ? (pricePerInputToken * toTokenPrice).toFixed(2) : '0.00';
+
+      if (list100CoinsEth.includes(toSymbol))
+        usdValue = toTokenPrice
+      else
+        usdValue = fromTokenPrice > 0 ? (pricePerOutputToken * fromTokenPrice).toFixed(2) : '0.00';
       
       return {
         pricePerToken: pricePerOutputToken.toFixed(6),
         inversedPricePerToken: (1 / pricePerOutputToken).toFixed(6),
-        fromSymbol: tradeSummary.fromTokenSymbol,
-        toSymbol: tradeSummary.toTokenSymbol,
+        fromSymbol: fromSymbol,
+        toSymbol: toSymbol,
         usdValue: usdValue,
         usdValueInverse,
       };
@@ -716,6 +759,17 @@ export default {
     };
 
     // ─── Watchers ─────────────────────────────────────────────────────────────
+    // Refresh balances
+    watch([() => fromTokenAddress.value,
+      () => toTokenAddress.value,
+      () => tabOrder.value,
+    ],
+      ([_fromAddr, _toAddr, _tabOrder]) => {
+        if (_tabOrder === 'limit') {
+          setMarketPriceAsLimit(_fromAddr, _toAddr);
+        }
+    });
+
     // Refresh balances
     watch(
       [() => senderDetails.value,
@@ -1897,6 +1951,32 @@ export default {
       }
     }
 
+    function toggleEditingTokens() {
+      if (!isEditingTokens.value) {
+        // Entering edit mode
+        isEditingTokens.value = true;
+      } else {
+        // Leaving edit mode - remove invalid tokens
+        for (let i = 0; i < tokens.value.length; i++) {
+          const token = tokens.value[i];
+          
+          // Skip empty tokens or ETH
+          if (!token.address || token.address === '') {
+            continue;
+          }
+          
+          // Check if address is valid (excluding the zero address for ETH)
+          if (!ethers.utils.isAddress(token.address) && token.address !== ethers.constants.AddressZero) {
+            // Clear invalid token
+            tokens.value[i] = {address: '', symbol: '', decimals: null, price: 0};
+            console.log(`Cleared invalid token at index ${i}`);
+          }
+        }
+        
+        isEditingTokens.value = false;
+      }
+    }
+
     function deleteToken(index) {
       const tokenToDelete = tokens.value[index];
       tokens.value[index] = {address: '', symbol: '', decimals: null, price: 0};
@@ -2135,23 +2215,26 @@ export default {
     }
 
     // ─── approveSpending(): Approve ERC20 → Permit2 → Router ───────────────
-    const approveSpending = async (localTrades) => {
+    const approveSpending = async (localTrades, localTradeSummary) => {
       try {
         isSwapButtonDisabled.value = true;
         const originalAddress = senderDetails.value.address;
+        
+        // Use local trade summary if provided, otherwise fall back to global tradeSummary
+        const activeTradeSummary = localTradeSummary || tradeSummary;
 
         // Uniswap
-        if (tradeSummary.protocol === 'Uniswap' || tradeSummary.protocol === 'Uniswap & Balancer') {
+        if (activeTradeSummary.protocol === 'Uniswap' || activeTradeSummary.protocol === 'Uniswap & Balancer') {
           const { success, error } = await window.electronAPI.approveSpender(
             originalAddress,
-            fromTokenAddress.value,
+            localTradeSummary ? localTradeSummary.fromTokenAddress : fromTokenAddress.value,
             PERMIT2_ADDRESS,
             UNIVERSAL_ROUTER_ADDRESS
           );
           if (!success) throw error;
         }
         // Balancer
-        if (tradeSummary.protocol === 'Balancer' || tradeSummary.protocol === 'Uniswap & Balancer') {
+        if (activeTradeSummary.protocol === 'Balancer' || activeTradeSummary.protocol === 'Uniswap & Balancer') {
           const myTrades = localTrades || trades.value;
           const balancerTradeV3 = myTrades.find(
             t => t.callData && t.contractAddress.toLowerCase() !== BALANCER_VAULT_ADDRESS.toLowerCase()
@@ -2159,14 +2242,14 @@ export default {
           if (!balancerTradeV3) {
             const { success, error } = await window.electronAPI.approveSpender(
               originalAddress,
-              fromTokenAddress.value,
+              localTradeSummary ? localTradeSummary.fromTokenAddress : fromTokenAddress.value,
               BALANCER_VAULT_ADDRESS
             );
             if (!success) throw error;
           } else {
             const { success, error } = await window.electronAPI.approveSpender(
               originalAddress,
-              fromTokenAddress.value,
+              localTradeSummary ? localTradeSummary.fromTokenAddress : fromTokenAddress.value,
               PERMIT2_ADDRESS,
               balancerTradeV3.contractAddress
             );
@@ -2199,16 +2282,23 @@ export default {
 
     watch(() => tokens.value, () => emitSettings(), { deep: true });
 
+    // Track if we're updating from bidirectional calculation to prevent infinite loops
+    let isUpdatingFromBidirectional = false;
+    let lastFromAmountUpdate = 0;
+
     watch(
-      [() => priceLimit.value, () => fromAmount.value, () => fromTokenAddress.value, () => toTokenAddress.value],
-      ([priceLimitValue, fromAmountValue]) => {
+      [() => priceLimit.value, () => fromAmount.value, () => fromTokenAddress.value, () => toTokenAddress.value, () => tabOrder.value],
+      ([priceLimitValue, fromAmountValue, fTA, tTA, tabOrderValue]) => {
+      if (isUpdatingFromBidirectional) return;
       if (!fromAmountValue || isNaN(fromAmountValue)) {
         tradeSummary.toAmount = null;
         return;
       }
-      if (tabOrder.value !== 'limit') return;
+      if (tabOrderValue !== 'limit') return;
       if (priceLimitValue && !isNaN(priceLimitValue)) {
         tradeSummary.priceLimit = Number(priceLimitValue);
+        // Mark that we're updating based on fromAmount change
+        lastFromAmountUpdate = Date.now();
         if (shouldSwitchTokensForLimit.value) {
           tradeSummary.toAmount = (fromAmountValue / tradeSummary.priceLimit).toFixed(tokensByAddresses.value[toTokenAddress.value].decimals >= 9 ? 9 : 6);
         } else
@@ -2218,6 +2308,34 @@ export default {
         tradeSummary.toAmount = null;
       }
     });
+
+    // Watch for changes in toAmount to update fromAmount bidirectionally
+    watch(
+      () => tradeSummary.toAmount,
+      (toAmountValue) => {
+        if (isUpdatingFromBidirectional) return;
+        if (tabOrder.value !== 'limit') return;
+        if (!toAmountValue || isNaN(toAmountValue)) return;
+        if (!priceLimit.value || isNaN(priceLimit.value)) return;
+        
+        // Don't update fromAmount if it was just updated (within 100ms)
+        // This prevents interference when user is typing in fromAmount
+        if (Date.now() - lastFromAmountUpdate < 100) return;
+        
+        isUpdatingFromBidirectional = true;
+        
+        if (shouldSwitchTokensForLimit.value) {
+          fromAmount.value = (toAmountValue * priceLimit.value).toFixed(tokensByAddresses.value[fromTokenAddress.value].decimals >= 9 ? 9 : 6);
+        } else {
+          fromAmount.value = (toAmountValue / priceLimit.value).toFixed(tokensByAddresses.value[fromTokenAddress.value].decimals >= 9 ? 9 : 6);
+        }
+        
+        // Reset the flag after a short delay to allow the DOM to update
+        nextTick(() => {
+          isUpdatingFromBidirectional = false;
+        });
+      }
+    );
 
     watch(() => shouldSwitchTokensForLimit.value, () => {
       if (!priceLimit.value || isNaN(priceLimit.value)) return priceLimit.value = 0;
@@ -2230,14 +2348,16 @@ export default {
       window.electronAPI.deletePendingOrder(id);
     }
 
-    function setMarketPriceAsLimit() {
+    function setMarketPriceAsLimit(fTokenAddress, tTokenAddress) {
+      if (!fTokenAddress) fTokenAddress = fromTokenAddress.value
+      if (!tTokenAddress) tTokenAddress = toTokenAddress.value
       // Use the current market price (fromToken to toToken)
       if (
-        tokensByAddresses.value[fromTokenAddress.value]?.price &&
-        tokensByAddresses.value[toTokenAddress.value]?.price
+        tokensByAddresses.value[fTokenAddress]?.price &&
+        tokensByAddresses.value[tTokenAddress]?.price
       ) {
-        const fromPrice = tokensByAddresses.value[fromTokenAddress.value].price;
-        const toPrice = tokensByAddresses.value[toTokenAddress.value].price;
+        const fromPrice = tokensByAddresses.value[fTokenAddress].price;
+        const toPrice = tokensByAddresses.value[tTokenAddress].price;
         // Price of 1 fromToken in toToken units
         const marketPrice = !shouldSwitchTokensForLimit.value
           ? fromPrice / toPrice
@@ -2269,25 +2389,25 @@ export default {
       return displayedUsdValue
     }
 
-    watch(
-      () => fromTokenAddress.value,
-      async (fromTokenAddressValue) => {
-        if (tabOrder.value !== 'limit') return;
-        if (fromTokenAddressValue !== ethers.constants.AddressZero) {
-          await checkAllowances(fromTokenAddressValue, true);
-          await checkAllowances(fromTokenAddressValue, false);
-        }
-      }
-    );
+    // watch(
+    //   () => fromTokenAddress.value,
+    //   async (fromTokenAddressValue) => {
+    //     if (tabOrder.value !== 'limit') return;
+    //     if (fromTokenAddressValue !== ethers.constants.AddressZero) {
+    //       await checkAllowances(fromTokenAddressValue, true);
+    //       await checkAllowances(fromTokenAddressValue, false);
+    //     }
+    //   }
+    // );
     
-    watch(
-      () => senderDetails.value,
-      async () => {
-        if (tabOrder.value !== 'limit') return;
-        await checkAllowances(fromTokenAddress.value, true);
-        await checkAllowances(fromTokenAddress.value, false);
-      }
-    );
+    // watch(
+    //   () => senderDetails.value,
+    //   async () => {
+    //     if (tabOrder.value !== 'limit') return;
+    //     await checkAllowances(fromTokenAddress.value, true);
+    //     await checkAllowances(fromTokenAddress.value, false);
+    //   }
+    // );
 
     function placeLimitOrder() {
       if (!senderDetails.value.address) {
@@ -2835,7 +2955,7 @@ export default {
         
         // 🕐 Time the approval process and re-validate if it takes too long
         const approvalStartTime = Date.now();
-        await approveSpending(bestTradeResult.trades);
+        await approveSpending(bestTradeResult.trades, limitOrderTradeSummary);
         const approvalDuration = (Date.now() - approvalStartTime) / 1000; // Convert to seconds
         
         console.log(`Approval completed in ${approvalDuration.toFixed(2)} seconds`);
@@ -3750,7 +3870,7 @@ export default {
 
       const dbOrders = await window.electronAPI.getPendingOrders();
       if (dbOrders && Array.isArray(dbOrders)) {
-        pendingLimitOrders.value = dbOrders.map(o => ({
+        pendingLimitOrders.value = dbOrders.filter(o => tokensByAddresses.value[o.fromTokenAddress] && tokensByAddresses.value[o.toTokenAddress]).map(o => ({
           id: o.id,
           fromAmount: o.fromAmount,
           toAmount: o.toAmount, // Make sure to map this field
@@ -3779,6 +3899,9 @@ export default {
           const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
           return dateB.getTime() - dateA.getTime();
         });
+
+        const outdateOrders = dbOrders.filter(o => !tokensByAddresses.value[o.fromTokenAddress] || !tokensByAddresses.value[o.toTokenAddress])
+        outdateOrders.map(o => deletePendingOrder(o.id))
       }
       stopEthBalanceMonitoring();
     });
@@ -3825,6 +3948,7 @@ export default {
       approveSpending,
       findSymbol,
       deleteToken,
+      toggleEditingTokens,
       shouldSwitchTokensForLimit,
       setMarketPriceAsLimit,
 
@@ -4570,5 +4694,16 @@ h3 {
 .no-addresses-unlocked {
   background-color: #aaa;
   opacity: .5;
+}
+
+input.amount-out {
+  background-color: #fff;
+  width: 240px;
+  border: none;
+  text-align: left;
+  padding: 5px;
+  font-weight: 500;
+  font-size: 22px;
+  display: inline-block;
 }
 </style>

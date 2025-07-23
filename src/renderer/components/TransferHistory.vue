@@ -38,6 +38,7 @@
       </li>
     </transition-group>
     <button class="delete-all" @click="deleteAll">Delete all</button>
+    <button class="download-all" @click="downloadAllAsCSV">Download all</button>
   </div>
 </template>
 
@@ -180,11 +181,92 @@ export default {
       window.electronAPI.deleteHistory();
     }
 
+    const downloadAllAsCSV = async () => {
+      try {
+        const result = await window.electronAPI.getAllTrades();
+        if (!result.success) {
+          console.error('Failed to get all trades:', result.error);
+          return;
+        }
+
+        const trades = result.data;
+        if (!trades || trades.length === 0) {
+          alert('No trades to export');
+          return;
+        }
+
+        // CSV headers
+        const headers = [
+          'Status',
+          'From Amount',
+          'From Token',
+          'To Amount',
+          'To Token',
+          'Expected To Amount',
+          'Sender',
+          'Protocol',
+          'Date',
+          'Gas Cost ($)',
+          'Type',
+          'Transaction ID'
+        ];
+
+        // Convert trades to CSV rows
+        const rows = trades.map(t => {
+          const status = t.hasFailed ? 'Failed' : (t.isConfirmed ? 'Confirmed' : 'Pending');
+          const toAmount = (!t.toAmount || t.toAmount === 'unknown') ? t.expectedToAmount : t.toAmount;
+          const date = new Date(t.sentDate || t.timestamp).toISOString();
+          const gasCost = t.gasCost || '0';
+          
+          return [
+            status,
+            t.fromAmount || '',
+            t.fromTokenSymbol || t.fromToken?.symbol || '',
+            toAmount || '',
+            t.toTokenSymbol || t.toToken?.symbol || '',
+            t.expectedToAmount || '',
+            t.senderName || t.sender?.name || '',
+            t.protocol || '',
+            date,
+            gasCost,
+            t.type || '',
+            t.txId || ''
+          ];
+        });
+
+        // Combine headers and rows
+        const csvContent = [
+          headers,
+          ...rows
+        ].map(row => row.map(cell => {
+          // Escape quotes and wrap in quotes if contains comma or quotes
+          const cellStr = String(cell);
+          if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+            return '"' + cellStr.replace(/"/g, '""') + '"';
+          }
+          return cellStr;
+        }).join(',')).join('\n');
+
+        // Create blob and download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `trades_export_${new Date().toISOString().slice(0, 10)}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Error downloading trades:', error);
+        alert('Failed to download trades');
+      }
+    }
+
     return { 
       formatTimestamp,
       openTxDetails,
       deleteTrade,
       deleteAll,
+      downloadAllAsCSV,
     };
   }
 };
@@ -278,6 +360,22 @@ li:hover .delete, li:hover .view {
   margin-left: auto;
   display: block;
   margin-top: 10px;
+}
+
+.download-all {
+  margin-left: auto;
+  display: block;
+  margin-top: 10px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.download-all:hover {
+  background-color: #45a049;
 }
 
 .is-manual {

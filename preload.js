@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isFileDetected: () => ipcRenderer.invoke('is-file-detected'),
   openURL: (url) => ipcRenderer.invoke('open-url', url),
   getTrades: () => ipcRenderer.invoke('get-trades'),
+  getAllTrades: () => ipcRenderer.invoke('get-all-trades'),
   loadSettings: () => ipcRenderer.invoke('load-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   deleteTrade: (txId) => ipcRenderer.invoke('delete-trade', txId),
