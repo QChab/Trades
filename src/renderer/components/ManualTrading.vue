@@ -2910,6 +2910,25 @@ export default {
           // orderType removed - using shouldSwitchTokensForLimit instead
           automatic: order.automatic,
         };
+
+        if (props.isTestMode) {
+          // Test mode: simulate multi-address execution
+          console.log(`TEST MODE: Simulating multi-address execution for order ${order.id}`);
+          
+          const testTrade = {
+            ...limitOrderTradeSummary,
+            txId: 'TEST_MULTI_' + Date.now(),
+            type: 'automatic',
+            sentDate: new Date(),
+            isConfirmed: true,
+            timestamp: new Date(),
+            testMode: true
+          };
+          
+          emit('update:trade', testTrade);
+          
+          return;
+        }
         
         // 🕐 Time the approval process and re-validate if it takes too long
         const approvalStartTime = Date.now();
@@ -3061,7 +3080,7 @@ export default {
             // Calculate exact execution price (output amount per input amount)
             let exactExecutionPrice;
             // No gas cost adjustment - calculate base price and apply inversion if needed
-            exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(order.fromAmount);
+            exactExecutionPrice = Number(bestTradeResult.totalHuman) / (Number(order.fromAmount) * 0.1);
             
             // For shouldSwitchTokensForLimit, invert the price to match limit format
             if (order.shouldSwitchTokensForLimit) {
@@ -3254,7 +3273,7 @@ export default {
           order.status = 'processing';
           
           // Update remaining amount to 0 since we're executing everything
-          await window.api.invoke('update-pending-order', {
+          await window.electronAPI.invoke('update-pending-order', {
             ...order,
             remainingAmount: '0',
             status: 'processing'
@@ -3321,7 +3340,7 @@ export default {
           
           // Update remaining amount immediately
           newRemainingAmount = Number(remainingAmount) - (originalFromAmount * bestPercentage);
-          window.api.invoke('update-pending-order', {
+          window.electronAPI.invoke('update-pending-order', {
             ...order,
             remainingAmount: newRemainingAmount.toString(),
             status: 'processing'
@@ -3379,7 +3398,7 @@ export default {
         
         // Restore order status on error
         try {
-          await window.api.invoke('update-pending-order', {
+          await window.electronAPI.invoke('update-pending-order', {
             ...order,
             status: 'pending'
           });
@@ -3401,75 +3420,33 @@ export default {
         // Handle different execution paths based on order type
         if (order.automatic && order.remainingAmount > 0) {
           // Multi-address execution for automatic orders
-          const addressSelection = await selectAddressesForAmount(
+          const addressSelection = getAddressesWithHighestBalances(
             order.fromToken.address, 
             order.remainingAmount, 
-            order.sender
+            order
           );
           
-          if (addressSelection.totalAvailable < order.remainingAmount * 0.1) {
-            console.log(`Insufficient total balance across all addresses for order ${order.id}`);
+          if (addressSelection.totalAvailable < order.remainingAmount) {
+            console.log(`Insufficient total balance across all addresses. Need: ${order.remainingAmount}, Available: ${addressSelection.totalAvailable}`);
             return;
           }
           
           // Execute multi-address trade asynchronously without blocking main loop
           order.status = 'processing';
-          
-          if (props.isTestMode) {
-            // Test mode: simulate multi-address execution
-            console.log(`TEST MODE: Simulating multi-address execution for order ${order.id}`);
-            
-            const testTrade = {
-              ...limitOrderTradeSummary,
-              txId: 'TEST_MULTI_' + Date.now(),
-              type: 'automatic',
-              sentDate: new Date(),
-              isConfirmed: true,
-              timestamp: new Date(),
-              testMode: true
-            };
-            
-            emit('update:trade', testTrade);
-            
-            setTimeout(() => {
-              console.log(`TEST MODE: Completed simulated multi-address execution for order ${order.id}`);
-            }, 100);
-          } else {
-            console.log(`Executing multi-address trade for order ${order.id}`);
-            executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
-          }
-          
+          console.log(`Executing multi-address trade for order ${order.id}`);
+          executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
         } else {
           // Limit order: Single address execution
           const singleAddress = { address: order.sender };
           
           // Update status to running before execution
-          await window.api.invoke('update-pending-order', {
+          await window.electronAPI.invoke('update-pending-order', {
             ...order,
             status: 'pending',
             remainingAmount: newRemainingAmount.toString()
           });
           
-          let execution;
-          if (props.isTestMode) {
-            // Test mode: simulate successful execution
-            console.log(`TEST MODE: Simulating execution of order ${order.id} with amount ${executableAmount}`);
-            
-            const testTrade = {
-              ...limitOrderTradeSummary,
-              txId: 'TEST_' + Date.now(),
-              type: order.automatic ? 'automatic' : 'limit',
-              sentDate: new Date(),
-              isConfirmed: true,
-              timestamp: new Date(),
-              testMode: true
-            };
-            
-            emit('update:trade', testTrade);
-            execution = { success: true };
-          } else {
-            execution = await executeTradeWithAddress(order, singleAddress, executableAmount);
-          }
+          let execution = await executeTradeWithAddress(order, singleAddress, executableAmount);
           
           if (execution.success) {
             // Check if order is 97.5% or more filled
@@ -3508,7 +3485,7 @@ export default {
               console.log(`Order ${order.id} partially filled - ${fillPercentage.toFixed(1)}% complete, remaining: ${newRemainingAmount}`);
             }
             
-            await window.api.invoke('update-pending-order', {
+            await window.electronAPI.invoke('update-pending-order', {
               ...order,
               remainingAmount: newRemainingAmount.toString(),
               status: order.status
@@ -3516,7 +3493,7 @@ export default {
           } else {
             // Trade failed, restore the remaining amount
             const restoredAmount = Number(order.remainingAmount || order.fromAmount);
-            await window.api.invoke('update-pending-order', {
+            await window.electronAPI.invoke('update-pending-order', {
               ...order,
               remainingAmount: restoredAmount.toString(),
               status: 'pending'
