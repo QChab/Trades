@@ -351,11 +351,6 @@
       ];
       
       const getBalance = async (address, token) => {
-        console.log('fetching balance ' + token.symbol)
-        if (isTestMode.value) {
-          return Math.floor(Math.random() * 60);
-        }
-
         const contract = new ethers.Contract(token.address, erc20Abi, toRaw(provider.value));
         if (!token.decimals)
           token.decimals = await contract.decimals();

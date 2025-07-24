@@ -165,3 +165,16 @@ When working with this codebase, pay special attention to the order type determi
 - **Negative Scenarios**: Test high gas costs that exceed trade outputs
 - **Order Type Edge Cases**: Test price inversions with different token pairs
 - **Limit Order Execution**: Verify correct protocol is used for approvals
+
+### New Limit Order System (Latest Implementation)
+- **Removed OrderType Logic**: Eliminated stop_loss/take_profit distinction entirely
+- **Price Comparison**: Uses `shouldSwitchTokensForLimit` flag for trigger evaluation
+  - Normal: `fromTokenPrice >= limitPrice * toTokenPrice`
+  - Inverted: `toTokenPrice <= priceLimit * fromTokenPrice`
+- **Dichotomy Algorithm**: Binary search for optimal executable amounts with 2.5% precision
+- **Partial Execution**: Allows orders to execute at 97.5% of remaining amount
+- **Order Locking**: `orderExecutionLocks` Map prevents parallel execution of same order
+- **Test Mode**: Complete simulation without blockchain interaction or balance modifications
+- **20% Loss Protection**: USD value comparison before execution to prevent excessive losses
+- **Automatic Order Logic**: Buy levels use `shouldSwitchTokensForLimit: false`, sell levels use `true`
+- **Execution Function**: `tryExecutePendingOrder()` handles all execution logic with proper error handling
