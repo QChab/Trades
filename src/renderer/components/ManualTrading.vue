@@ -2000,7 +2000,6 @@ export default {
       const tmp = toTokenAddress.value;
       toTokenAddress.value = fromTokenAddress.value;
       fromTokenAddress.value = tmp;
-      shouldSwitchTokensForLimit.value = !shouldSwitchTokensForLimit.value;
       if (tradeSummary.toAmount) {
         [fromAmount.value, tradeSummary.toAmount] = [tradeSummary.toAmount, fromAmount.value];
       }

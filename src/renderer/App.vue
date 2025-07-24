@@ -1,6 +1,16 @@
 <template>
   <div class="header">
     <div class="settings">
+      <div class="test-mode-container">
+        <label class="test-mode-label">
+          <input 
+            v-model="isTestMode" 
+            type="checkbox" 
+            class="test-mode-checkbox"
+          >
+          <span>Test limit&auto</span>
+        </label>
+      </div>
       <!-- <label>Test mode: <input type="checkbox" v-model="isTestMode"/></label> -->
       <div class="infura-keys">
         <!-- The title that toggles the infura keys section -->
@@ -193,18 +203,6 @@
         ></TransferHistory>
       </div>
     </div>
-  </div>
-    
-  <!-- Test Mode Checkbox at bottom -->
-  <div class="test-mode-container">
-    <label class="test-mode-label">
-      <input 
-        v-model="isTestMode" 
-        type="checkbox" 
-        class="test-mode-checkbox"
-      >
-      <span>Test Mode (Simulate limit and auto without executing)</span>
-    </label>
   </div>
 </template>
 
@@ -860,14 +858,9 @@
 
   /* Test Mode Checkbox Styles */
   .test-mode-container {
-    position: fixed;
-    bottom: 10px;
-    right: 10px;
     background-color: #fff;
     padding: 10px;
     border-radius: 5px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    z-index: 1000;
   }
 
   .test-mode-label {
