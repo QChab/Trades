@@ -15,7 +15,7 @@ module.exports = {
   rules: {
     'no-console': process.env.NODE_ENV === 'production' ? 'warn' : 'off',
     'vue/no-unused-components': 'warn',
-    "vue/html-self-closing": ["warning", {
+    "vue/html-self-closing": ["warn", {
       "html": {
         "void": "never",
         "normal": "always",

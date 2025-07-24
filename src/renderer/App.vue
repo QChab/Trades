@@ -1,113 +1,179 @@
-  <template>
-    <div class="header">
-      <div class="settings">
-        <!-- <label>Test mode: <input type="checkbox" v-model="isTestMode"/></label> -->
-        <div class="infura-keys">
-          <!-- The title that toggles the infura keys section -->
-          <p class="title" @click="toggleInfuraKeys">
-            RPCs ({{ infuraKeys.length }})
-            <!-- Icon that rotates when the section is toggled open/closed -->
-            <img :src="chevronDownImage" class="chevron-down" :class="{ rotated: showInfuraKeys }" />
-          </p>
-          <!-- The section that shows the list of Infura API keys and an input to add new keys -->
-          <div v-if="showInfuraKeys" class="infura-keys-content">
-            <!-- Loop over the infuraKeys array to display each key -->
-            <div v-for="(key, index) in infuraKeys" :key="index" class="infura-key-entry">
-              <span class="rpc-url">{{ key }}</span>
-              <!-- Delete button to remove a specific key -->
-              <button @click="deleteInfuraKey(index)">Delete</button>
-            </div>
-            <!-- Section to add a new Infura API key -->
-            <div class="add-infura-key">
-              <form @submit.prevent="addInfuraKey">
-                <!-- Two-way binding with newInfuraKey -->
-                <input v-model="newInfuraKey" placeholder="http..." @input="errorInfuraKey = ''"/>
-                <!-- Clicking this button adds the new key to the list -->
-                <button type="submit">+</button>
-              </form>
-            </div>
-            <p class="error-message">{{ errorInfuraKey }}</p>
+<template>
+  <div class="header">
+    <div class="settings">
+      <!-- <label>Test mode: <input type="checkbox" v-model="isTestMode"/></label> -->
+      <div class="infura-keys">
+        <!-- The title that toggles the infura keys section -->
+        <p
+          class="title"
+          @click="toggleInfuraKeys"
+        >
+          RPCs ({{ infuraKeys.length }})
+          <!-- Icon that rotates when the section is toggled open/closed -->
+          <img
+            :src="chevronDownImage"
+            class="chevron-down"
+            :class="{ rotated: showInfuraKeys }"
+          >
+        </p>
+        <!-- The section that shows the list of Infura API keys and an input to add new keys -->
+        <div
+          v-if="showInfuraKeys"
+          class="infura-keys-content"
+        >
+          <!-- Loop over the infuraKeys array to display each key -->
+          <div
+            v-for="(key, index) in infuraKeys"
+            :key="index"
+            class="infura-key-entry"
+          >
+            <span class="rpc-url">{{ key }}</span>
+            <!-- Delete button to remove a specific key -->
+            <button @click="deleteInfuraKey(index)">
+              Delete
+            </button>
           </div>
-        </div>
-        <div class="private-keys" >
-          <p class="title" @click="shouldShowPKForm = !shouldShowPKForm">
-            Trading Addresses ({{ loadedAddresses.length }})
-            <img :src="chevronDownImage" class="chevron-down" :class="{ rotated : shouldShowPKForm }"></img>
-          </p>
-          <div v-if="shouldShowPKForm && !hasUnlockedPrivateKeys">
-            <p class="text-center" v-if="!isFileDetected">First set your password</p>
-            <p class="text-center" v-if="isFileDetected">Enter your password to load the addresses</p>
-            <form
-              @submit.prevent="() => isFileDetected ? loadPrivateKeys() : readPrivateKeyFile()"
-            >
-              <input class="center" v-model="password" type="password" required/>
-              <div v-if="!isFileDetected">
-                <p class="text-center">
-                  Then submit a Excel or CSV file with the addresses, private keys and names of the trading addresses
-                </p>
-                <FileManager 
-                  @file:new="storePrivateKeyArgs"
-                  :noPreview="true"
-                  file-type="C"
-                  :extensions="'xls xlsx csv'"
-                  id="2"
-                  :shouldHideNoFile="false"
-                />
-              </div>
-              <p v-if="errorMessagePK" class="error-message"> {{ errorMessagePK }} </p>
-              <button 
-                type="submit"
-                class="submit-button"
+          <!-- Section to add a new Infura API key -->
+          <div class="add-infura-key">
+            <form @submit.prevent="addInfuraKey">
+              <!-- Two-way binding with newInfuraKey -->
+              <input
+                v-model="newInfuraKey"
+                placeholder="http..."
+                @input="errorInfuraKey = ''"
               >
-                {{ isFileDetected ? 'Load' : 'Submit' }}
+              <!-- Clicking this button adds the new key to the list -->
+              <button type="submit">
+                +
               </button>
             </form>
-            <span class="action" v-if="isFileDetected" @click="hasUnlockedPrivateKeys = false, isFileDetected = false">Import another file</span>
           </div>
-          <div v-if="shouldShowPKForm && hasUnlockedPrivateKeys">
-            <span class="action" @click="hasUnlockedPrivateKeys = false, isFileDetected = false">Import another file</span>
-          </div>
+          <p class="error-message">
+            {{ errorInfuraKey }}
+          </p>
         </div>
-        <!-- Max Gas Input -->
-        <div class="form-group">
-          <img class="icon-line" :src="gasImage" width="30"/>
-          <label>
-            Max
-            <input class="medium-number" type="number" v-model.number="maxGasPrice" placeholder="Max Gas" /> gwei
-          </label>
-          <GasPrice 
-            @update:gas-price="setGasPrice"
-            :maxGasPrice="maxGasPrice"
-            :provider="provider"
-          />
+      </div>
+      <div class="private-keys">
+        <p
+          class="title"
+          @click="shouldShowPKForm = !shouldShowPKForm"
+        >
+          Trading Addresses ({{ loadedAddresses.length }})
+          <img
+            :src="chevronDownImage"
+            class="chevron-down"
+            :class="{ rotated : shouldShowPKForm }"
+          ></img>
+        </p>
+        <div v-if="shouldShowPKForm && !hasUnlockedPrivateKeys">
+          <p
+            v-if="!isFileDetected"
+            class="text-center"
+          >
+            First set your password
+          </p>
+          <p
+            v-if="isFileDetected"
+            class="text-center"
+          >
+            Enter your password to load the addresses
+          </p>
+          <form
+            @submit.prevent="() => isFileDetected ? loadPrivateKeys() : readPrivateKeyFile()"
+          >
+            <input
+              v-model="password"
+              class="center"
+              type="password"
+              required
+            >
+            <div v-if="!isFileDetected">
+              <p class="text-center">
+                Then submit a Excel or CSV file with the addresses, private keys and names of the trading addresses
+              </p>
+              <FileManager 
+                id="2"
+                :no-preview="true"
+                file-type="C"
+                :extensions="'xls xlsx csv'"
+                :should-hide-no-file="false"
+                @file:new="storePrivateKeyArgs"
+              ></FileManager>
+            </div>
+            <p
+              v-if="errorMessagePK"
+              class="error-message"
+            >
+              {{ errorMessagePK }}
+            </p>
+            <button 
+              type="submit"
+              class="submit-button"
+            >
+              {{ isFileDetected ? 'Load' : 'Submit' }}
+            </button>
+          </form>
+          <span
+            v-if="isFileDetected"
+            class="action"
+            @click="hasUnlockedPrivateKeys = false, isFileDetected = false"
+          >Import another file</span>
         </div>
+        <div v-if="shouldShowPKForm && hasUnlockedPrivateKeys">
+          <span
+            class="action"
+            @click="hasUnlockedPrivateKeys = false, isFileDetected = false"
+          >Import another file</span>
+        </div>
+      </div>
+      <!-- Max Gas Input -->
+      <div class="form-group">
+        <img
+          class="icon-line"
+          :src="gasImage"
+          width="30"
+        >
+        <label>
+          Max
+          <input
+            v-model.number="maxGasPrice"
+            class="medium-number"
+            type="number"
+            placeholder="Max Gas"
+          > gwei
+        </label>
+        <GasPrice 
+          :max-gas-price="maxGasPrice"
+          :provider="provider"
+          @update:gas-price="setGasPrice"
+        ></GasPrice>
       </div>
     </div>
-    <div class="app-container">
-      <div class="main-content">
-
-        <!-- Middle Column: Modes (paramétrage avancé) -->
-        <div class="middle-column">
-          <ManualTrading
-            @update:settings="setCurrentSettings"
-            @update:gasPrice="setGasPrice"
-            @update:trade="addTrade"
-            @refreshBalance="refreshBalance"
-            :addresses="loadedAddresses"
-            :gasPrice="gasPrice"
-            :maxGasPrice="maxGasPrice * 1000000000"
-            :ethPrice="ethPrice"
-            :provider="provider"
-            :confirmedTrade="confirmedTrade"
-            :isInitialBalanceFetchDone="isInitialBalanceFetchDone"
-          />
-        </div>
-
+  </div>
+  <div class="app-container">
+    <div class="main-content">
+      <!-- Middle Column: Modes (paramétrage avancé) -->
+      <div class="middle-column">
+        <ManualTrading
+          :addresses="loadedAddresses"
+          :gas-price="gasPrice"
+          :max-gas-price="maxGasPrice * 1000000000"
+          :eth-price="ethPrice"
+          :provider="provider"
+          @update:settings="setCurrentSettings"
+          :confirmed-trade="confirmedTrade"
+          @update:gas-price="setGasPrice"
+          :is-initial-balance-fetch-done="isInitialBalanceFetchDone"
+          @update:trade="addTrade"
+          @refresh-balance="refreshBalance"
+          :is-test-mode="isTestMode"
+        ></ManualTrading>
       </div>
-      <!-- Bottom Section: History and Live Visualization -->
-      <div class="bottom-section">
-        <div class="history-section">
-          <!-- <TransferControl
+    </div>
+    <!-- Bottom Section: History and Live Visualization -->
+    <div class="bottom-section">
+      <div class="history-section">
+        <!-- <TransferControl
             :settings="currentSettings"
             :sourceAddresses="sourceAddresses"
             :destinationAddresses="destinationAddresses"
@@ -119,16 +185,28 @@
             @deleteHistory="emptyTransfers"
             :infuraKeys="infuraKeys"
           /> -->
-          <TransferHistory 
-            @confirmedTrade="setConfirmedTrade"
-            :trades="trades"
-            :ethPrice="ethPrice"
-            :provider="provider"
-          />
-        </div>
+        <TransferHistory 
+          :trades="trades"
+          :eth-price="ethPrice"
+          :provider="provider"
+          @confirmed-trade="setConfirmedTrade"
+        ></TransferHistory>
       </div>
     </div>
-  </template>
+  </div>
+    
+  <!-- Test Mode Checkbox at bottom -->
+  <div class="test-mode-container">
+    <label class="test-mode-label">
+      <input 
+        v-model="isTestMode" 
+        type="checkbox" 
+        class="test-mode-checkbox"
+      >
+      <span>Test Mode (Simulate limit and auto without executing)</span>
+    </label>
+  </div>
+</template>
 
   <script>
   import { watch, shallowRef, onMounted, onBeforeMount, reactive, ref, markRaw, toRaw} from 'vue';
@@ -778,5 +856,29 @@
     position: relative;
     top: 10px;
     margin-right: 10px;
+  }
+
+  /* Test Mode Checkbox Styles */
+  .test-mode-container {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    background-color: #fff;
+    padding: 10px;
+    border-radius: 5px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+  }
+
+  .test-mode-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.9em;
+  }
+
+  .test-mode-checkbox {
+    margin: 0;
   }
 </style>

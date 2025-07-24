@@ -29,14 +29,14 @@
             <div v-if="tabOrder === 'limit'">
               <p>
                 when 1 {{ !shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }} = 
-                <input v-model.number="priceLimit" placeholder="0"/> 
+                <input v-model.number="priceLimit" type="number" placeholder="0"/> 
                 {{ shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }}
                 <span v-if="priceLimit && tokensByAddresses[fromTokenAddress]?.price && tokensByAddresses[toTokenAddress]?.price" class="usd-price-quote">
                   (${{ formatUsdPrice(priceLimit) }})
                 </span>
                 <img :src="reverseImage" class="reverse-image" @click="shouldSwitchTokensForLimit = !shouldSwitchTokensForLimit"/>
               </p>
-              <span class="set-market-price" @click="setMarketPriceAsLimit">
+              <span class="set-market-price" @click="setMarketPriceAsLimit()">
                 Set market price
               </span>
               
@@ -375,10 +375,10 @@
                   <span class="left">
                     <!-- If
                     <span v-if="!order.shouldSwitchTokensForLimit">
-                      {{ order.fromToken.symbol }} {{ order.orderType === 'take_profit' ? '≥' : '≤' }} {{ order.priceLimit }} {{ order.toToken.symbol }}
+                      {{ order.fromToken.symbol }} ≥ {{ order.priceLimit }} {{ order.toToken.symbol }}
                     </span>
                     <span v-else>
-                      {{ order.toToken.symbol }} {{ order.orderType === 'take_profit' ? '≤' : '≥' }} {{ order.priceLimit }} {{ order.fromToken.symbol }}
+                      {{ order.toToken.symbol }} ≤ {{ order.priceLimit }} {{ order.fromToken.symbol }}
                     </span> -->
                     <div>
                       <span style="font-size:16px;color:rgb(223,81,81);">
@@ -454,6 +454,7 @@ export default {
     provider:   { type: Object },
     confirmedTrade: { type: Object },
     isInitialBalanceFetchDone: {type: Boolean, default: false},
+    isTestMode: { type: Boolean, default: false },
   },
   emits: ['update:settings', 'update:trade', 'refreshBalance'],
   setup(props, { emit }) {
@@ -2021,13 +2022,16 @@ export default {
         currentTradeSummary.isConfirmed = false;
         
         // Determine trade type based on order context
-        if (providedTradeSummary && providedTradeSummary.orderType) {
-          // Check if this is an automatic order execution
+        if (providedTradeSummary) {
           if (providedTradeSummary.automatic) {
+            // This is an automatic order execution
             currentTradeSummary.type = 'automatic';
-          } else {
-            // This is a manual limit order execution
+          } else if (providedTradeSummary.priceLimit !== undefined) {
+            // This is a manual limit order execution (has priceLimit)
             currentTradeSummary.type = 'limit';
+          } else {
+            // This is a manual swap
+            currentTradeSummary.type = 'manual';
           }
         } else {
           // This is a manual trade
@@ -2450,49 +2454,21 @@ export default {
         ? (fromAmount.value * priceLimit.value).toFixed(6)
         : (fromAmount.value / priceLimit.value).toFixed(6);
 
-      // Determine order type based on price comparison
-      // When shouldSwitchTokensForLimit is true, the comparison logic is inverted
-      let orderType;
-      
-      // Determine order type based on the direction of the desired trigger
-      // We need to convert to a common price format to compare properly
-      let normalizedLimit, normalizedCurrent;
-      
-      if (!shouldSwitchTokensForLimit.value) {
-        // Already in normal format: fromToken price in terms of toToken
-        normalizedLimit = priceLimit.value;
-        normalizedCurrent = currentMarketPrice;
-      } else {
-        // Convert inverted prices back to normal format for comparison
-        // Add validation to prevent division by zero
-        if (priceLimit.value === 0 || currentMarketPrice === 0) {
-          console.error('Cannot determine order type: zero price detected');
-          orderType = 'take_profit'; // Default fallback
-        } else {
-          normalizedLimit = 1 / priceLimit.value;
-          normalizedCurrent = 1 / currentMarketPrice;
-        }
-      }
-      
-      // Now compare in normalized space to determine user intent
-      // Only proceed if we have valid normalized values
-      if (normalizedLimit !== undefined && normalizedCurrent !== undefined) {
-        if (normalizedLimit > normalizedCurrent) {
-          orderType = 'take_profit'; // User wants to trigger when price goes UP
-        } else {
-          orderType = 'stop_loss'; // User wants to trigger when price goes DOWN
-        }
-      }
+      // New limit order logic - no order type distinction
+      // Order will trigger based on price comparison logic:
+      // If not inverted: fromTokenPrice >= limitPrice * toTokenPrice
+      // If inverted: toTokenPrice <= limitPrice * fromTokenPrice
 
       const order = {
         id: Date.now(),
         fromAmount: fromAmount.value,
+        remainingAmount: fromAmount.value, // Track remaining amount for partial executions
         toAmount: expectedToAmount, // Use calculated expected amount
         fromToken: JSON.parse(JSON.stringify(tokensByAddresses.value[fromTokenAddress.value])),
         toToken: JSON.parse(JSON.stringify(tokensByAddresses.value[toTokenAddress.value])),
         priceLimit: priceLimit.value,
         currentMarketPrice: currentMarketPrice,
-        orderType: orderType, // 'take_profit' or 'stop_loss'
+        // orderType removed - new logic doesn't use this distinction
         shouldSwitchTokensForLimit: shouldSwitchTokensForLimit.value,
         sender: JSON.parse(JSON.stringify(senderDetails.value)),
         status: 'pending',
@@ -2504,11 +2480,14 @@ export default {
       // Save to database with order type information
       window.electronAPI.savePendingOrder(order);
       
-      increaseOffsetBalance(
-        order.fromToken.address.toLowerCase(),
-        order.sender.address.toLowerCase(),
-        order,
-      );
+      // Only apply balance offset in real mode (not test mode)
+      if (!props.isTestMode) {
+        increaseOffsetBalance(
+          order.fromToken.address.toLowerCase(),
+          order.sender.address.toLowerCase(),
+          order,
+        );
+      }
 
       swapMessage.value = `Limit order placed`;
     }
@@ -2678,14 +2657,14 @@ export default {
           }
         }
 
-        // Check if trigger condition is still valid
+        // Check if trigger condition is still valid based on new logic
         let shouldTrigger = false;
-        if (order.orderType === 'take_profit') {
+        if (!order.shouldSwitchTokensForLimit) {
+          // Normal case: trigger when execution price >= limit price
           shouldTrigger = exactExecutionPrice >= order.priceLimit;
-        } else if (order.orderType === 'stop_loss') {
-          shouldTrigger = exactExecutionPrice <= order.priceLimit;
         } else {
-          shouldTrigger = exactExecutionPrice >= order.priceLimit;
+          // Inverted case: trigger when execution price <= limit price
+          shouldTrigger = exactExecutionPrice <= order.priceLimit;
         }
 
         const priceDifference = Math.abs(exactExecutionPrice - order.priceLimit) / order.priceLimit;
@@ -2919,20 +2898,20 @@ export default {
         
         // Validate price condition still holds after first trade impact
         let shouldExecute = false;
-        if (order.orderType === 'take_profit') {
+        if (!order.shouldSwitchTokensForLimit) {
+          // Normal case: trigger when execution price >= limit price
           shouldExecute = exactExecutionPrice >= order.priceLimit;
-        } else if (order.orderType === 'stop_loss') {
-          shouldExecute = exactExecutionPrice <= order.priceLimit;
         } else {
-          shouldExecute = exactExecutionPrice >= order.priceLimit;
+          // Inverted case: trigger when execution price <= limit price
+          shouldExecute = exactExecutionPrice <= order.priceLimit;
         }
         
         if (!shouldExecute) {
-          console.log(`Price condition no longer valid for ${order.orderType} order. Execution price: ${exactExecutionPrice.toFixed(9)} vs limit: ${order.priceLimit}`);
+          console.log(`Price condition no longer valid. Execution price: ${exactExecutionPrice.toFixed(9)} vs limit: ${order.priceLimit} (inverted: ${order.shouldSwitchTokensForLimit})`);
           return { success: false, error: 'Price condition no longer valid after market impact' };
         }
         
-        console.log(`Price validation passed for ${order.orderType} order. Execution price: ${exactExecutionPrice.toFixed(9)} vs limit: ${order.priceLimit}`);
+        console.log(`Price validation passed. Execution price: ${exactExecutionPrice.toFixed(9)} vs limit: ${order.priceLimit} (inverted: ${order.shouldSwitchTokensForLimit})`);
         
         
         const limitOrderTradeSummary = {
@@ -2949,7 +2928,7 @@ export default {
           toToken: toToken,
           toTokenAddress: toToken.address,
           gasLimit: bestTradeResult.gasLimit,
-          orderType: order.orderType,
+          // orderType removed - using shouldSwitchTokensForLimit instead
           automatic: order.automatic,
         };
         
@@ -3098,26 +3077,24 @@ export default {
             let shouldCheckExactPrice = false;
             let shouldTrigger = false;
 
-            if (order.orderType === 'take_profit') {
-              // For take profit: trigger when current price >= limit price
-              // Check exact price if we're within tolerance or already above
+            // New trigger logic based on price comparison
+            // If not inverted: trigger when fromTokenPrice >= limitPrice * toTokenPrice
+            // If inverted: trigger when toTokenPrice <= limitPrice * fromTokenPrice
+            if (!order.shouldSwitchTokensForLimit) {
+              // Normal case: check if we're close to trigger price (>=)
               shouldCheckExactPrice = currentMarketPrice >= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
-            } else if (order.orderType === 'stop_loss') {
-              // For stop loss: trigger when current price <= limit price
-              // Check exact price if we're within tolerance or already below
-              shouldCheckExactPrice = currentMarketPrice <= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
             } else {
-              // Default behavior (legacy support)
-              shouldCheckExactPrice = currentMarketPrice >= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
+              // Inverted case: check if we're close to trigger price (<=)
+              shouldCheckExactPrice = currentMarketPrice <= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
             }
 
             if (!shouldCheckExactPrice) {
               // Price is not close enough to trigger, log and continue
-              console.log(`Order ${order.id} (${order.orderType || 'limit'}): market price ${currentMarketPrice.toFixed(6)} not close to limit ${order.priceLimit} (diff: ${(priceDifference * 100).toFixed(2)}%) - skipping exact price check`);
+              console.log(`Order ${order.id}: market price ${currentMarketPrice.toFixed(6)} not close to limit ${order.priceLimit} (diff: ${(priceDifference * 100).toFixed(2)}%) - skipping exact price check`);
               continue;
             }
 
-            console.log(`Order ${order.id} (${order.orderType || 'limit'}): market price ${currentMarketPrice.toFixed(6)} is close to limit ${order.priceLimit} - checking exact execution price`);
+            console.log(`Order ${order.id}: market price ${currentMarketPrice.toFixed(6)} is close to limit ${order.priceLimit} - checking exact execution price`);
 
             // Get exact trade execution price by fetching best trades
             const bestTradeResult = await getBestTrades(
@@ -3165,17 +3142,17 @@ export default {
             }
             console.log({exactExecutionPrice})
 
-            // Determine if order should be triggered based on exact execution price
-            if (order.orderType === 'take_profit') {
+            // Determine if order should be triggered based on new logic
+            if (!order.shouldSwitchTokensForLimit) {
+              // Normal case: trigger when execution price >= limit price
               shouldTrigger = exactExecutionPrice >= order.priceLimit;
-            } else if (order.orderType === 'stop_loss') {
-              shouldTrigger = exactExecutionPrice <= order.priceLimit;
             } else {
-              shouldTrigger = exactExecutionPrice >= order.priceLimit;
+              // Inverted case: trigger when execution price <= limit price
+              shouldTrigger = exactExecutionPrice <= order.priceLimit;
             }
 
             if (!shouldTrigger) {
-              console.log(`Order ${order.id} (${order.orderType || 'limit'}): exact execution price ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit} - not triggered`);
+              console.log(`Order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit} - not triggered`);
               
               // Reset level status back to 'active' for automatic orders
               if (order.automatic && order.sourceLocation) {
@@ -3192,9 +3169,100 @@ export default {
               continue
             }
           
-            console.log(`Triggering ${order.orderType || 'limit'} order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(10)} meets ${order.orderType === 'stop_loss' ? 'stop loss' : 'take profit'} limit ${order.priceLimit}`);
+            console.log(`Order ${order.id} meets trigger condition. Finding optimal executable amount...`);
             
-            order.status = 'processing';
+            // Use dichotomy to find the maximum executable percentage of fromAmount
+            const remainingAmount = order.remainingAmount || order.fromAmount;
+            const originalFromAmount = Number(order.fromAmount);
+            const remainingPercentage = Number(remainingAmount) / originalFromAmount;
+            
+            let lowPercentage = 0;
+            let highPercentage = remainingPercentage;
+            let bestPercentage = 0;
+            const marginError = 0.025; // 2.5% margin error
+            const minPercentage = marginError; // Minimum percentage to consider
+            
+            // Start at remainingAmount/(fromAmount * 2) as suggested
+            const startPercentage = remainingPercentage / 2;
+            
+            // Binary search to find maximum executable percentage
+            while ((highPercentage - lowPercentage) > minPercentage) {
+              const midPercentage = (lowPercentage + highPercentage) / 2;
+              const testAmount = originalFromAmount * midPercentage;
+              
+              // Check if this amount meets the price condition
+              const testResult = await getBestTrades(
+                order.fromToken.address,
+                order.toToken.address,
+                testAmount.toString(),
+                order?.sender?.address || senderDetails.value.address,
+                true,
+                true,
+                tokensByAddresses.value[order.fromToken.address].price * testAmount >= 100,
+              );
+              
+              // Calculate execution price for this amount
+              let testExecutionPrice;
+              if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
+                const gasCostInToToken = testResult.gasLimit * Number(props.gasPrice) * props.ethPrice / tokensByAddresses.value[order.toToken.address].price;
+                const totalReceived = Number(testResult.totalHuman);
+                
+                if (totalReceived <= gasCostInToToken) {
+                  // This amount is unprofitable, try lower percentage
+                  highPercentage = midPercentage;
+                  continue;
+                }
+                
+                if (order.shouldSwitchTokensForLimit) {
+                  testExecutionPrice = testAmount / (totalReceived - gasCostInToToken);
+                } else {
+                  testExecutionPrice = (totalReceived - gasCostInToToken) / testAmount;
+                }
+              } else {
+                testExecutionPrice = Number(testResult.totalHuman) / testAmount;
+                
+                // Apply price inversion based on shouldSwitchTokensForLimit if needed
+                if (order.shouldSwitchTokensForLimit) {
+                  testExecutionPrice = 1 / testExecutionPrice;
+                }
+              }
+              
+              // Check if this amount meets the limit condition
+              let meetsCondition;
+              if (!order.shouldSwitchTokensForLimit) {
+                meetsCondition = testExecutionPrice >= order.priceLimit;
+              } else {
+                meetsCondition = testExecutionPrice <= order.priceLimit;
+              }
+              
+              if (meetsCondition) {
+                bestPercentage = midPercentage;
+                lowPercentage = midPercentage;
+              } else {
+                highPercentage = midPercentage;
+              }
+            }
+            
+            // If we couldn't find any executable percentage, skip this order
+            if (bestPercentage < minPercentage) {
+              console.log(`Order ${order.id}: No executable amount found within price limits`);
+              continue;
+            }
+            
+            // Calculate the best executable amount from the percentage
+            const executableAmount = (originalFromAmount * bestPercentage).toString();
+            console.log(`Order ${order.id}: Found optimal executable amount: ${executableAmount} (${(bestPercentage*100).toFixed(1)}% of original, ${(bestPercentage/remainingPercentage*100).toFixed(1)}% of remaining)`);
+            
+            // Update order status to idle while processing
+            order.status = 'idle';
+            
+            // Update remaining amount immediately
+            const newRemainingAmount = Number(remainingAmount) - (originalFromAmount * bestPercentage);
+            await window.api.invoke('update-pending-order', {
+              ...order,
+              remainingAmount: newRemainingAmount.toString(),
+              status: 'idle'
+            });
 
             if (order.automatic && order.sourceLocation) {
               const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
@@ -3213,29 +3281,60 @@ export default {
               await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
             }
 
+            // Get the final best trades for the executable amount
+            const finalBestTrades = await getBestTrades(
+              order.fromToken.address,
+              order.toToken.address,
+              executableAmount,
+              order?.sender?.address || senderDetails.value.address,
+              true,
+              true,
+              tokensByAddresses.value[order.fromToken.address].price * Number(executableAmount) >= 100,
+            );
+            
+            // Safety check: Verify the theoretical loss is less than 20%
+            const inputValueUSD = Number(executableAmount) * tokensByAddresses.value[order.fromToken.address].price;
+            const outputValueUSD = Number(finalBestTrades.totalHuman) * tokensByAddresses.value[order.toToken.address].price;
+            const lossPercentage = ((inputValueUSD - outputValueUSD) / inputValueUSD) * 100;
+            
+            if (lossPercentage > 20) {
+              console.warn(`Order ${order.id}: Trade rejected - theoretical loss of ${lossPercentage.toFixed(2)}% exceeds 20% threshold`);
+              console.warn(`Input: ${executableAmount} ${order.fromToken.symbol} ($${inputValueUSD.toFixed(2)}) -> Output: ${finalBestTrades.totalHuman} ${order.toToken.symbol} ($${outputValueUSD.toFixed(2)})`);
+              
+              // Restore the remaining amount and set back to pending
+              await window.api.invoke('update-pending-order', {
+                ...order,
+                remainingAmount: remainingAmount.toString(),
+                status: 'pending'
+              });
+              continue;
+            }
+            
+            console.log(`Order ${order.id}: Loss check passed - theoretical loss: ${lossPercentage.toFixed(2)}%`);
+            
             // Create a trade summary object for this limit order
             const limitOrderTradeSummary = {
-              protocol: bestTradeResult.protocol,
+              protocol: finalBestTrades.protocol,
               sender: order.sender,
-              fromAmount: order.fromAmount.toString(),
-              toAmount: bestTradeResult.totalHuman,
-              expectedToAmount: bestTradeResult.totalHuman,
-              fromTokenSymbol: bestTradeResult.fromToken.symbol,
-              toTokenSymbol: bestTradeResult.toToken.symbol,
+              fromAmount: executableAmount,
+              toAmount: finalBestTrades.totalHuman,
+              expectedToAmount: finalBestTrades.totalHuman,
+              fromTokenSymbol: finalBestTrades.fromToken.symbol,
+              toTokenSymbol: finalBestTrades.toToken.symbol,
               fromAddressName: order.sender?.name,
-              fromToken: bestTradeResult.fromToken,
-              fromTokenAddress: bestTradeResult.fromToken.address,
-              toToken: bestTradeResult.toToken,
-              toTokenAddress: bestTradeResult.toToken.address,
-              gasLimit: bestTradeResult.gasLimit,
+              fromToken: finalBestTrades.fromToken,
+              fromTokenAddress: finalBestTrades.fromToken.address,
+              toToken: finalBestTrades.toToken,
+              toTokenAddress: finalBestTrades.toToken.address,
+              gasLimit: finalBestTrades.gasLimit,
             };
 
-            if (bestTradeResult.bestMixed) {
-              limitOrderTradeSummary.fromAmountU = (order.fromAmount * bestTradeResult.fractionMixed / 100).toFixed(7);
-              limitOrderTradeSummary.fromAmountB = (order.fromAmount - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
-              limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
-              limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
-              limitOrderTradeSummary.fraction = bestTradeResult.fractionMixed;
+            if (finalBestTrades.bestMixed) {
+              limitOrderTradeSummary.fromAmountU = (Number(executableAmount) * finalBestTrades.fractionMixed / 100).toFixed(7);
+              limitOrderTradeSummary.fromAmountB = (Number(executableAmount) - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
+              limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(finalBestTrades.bestMixed.tradesU.totalBig, finalBestTrades.toToken.decimals)).toFixed(7);
+              limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(finalBestTrades.bestMixed.tradesB.outputAmount, finalBestTrades.toToken.decimals)).toFixed(7);
+              limitOrderTradeSummary.fraction = finalBestTrades.fractionMixed;
             }
 
             try {
@@ -3255,9 +3354,35 @@ export default {
                 
                 // Execute multi-address trade asynchronously without blocking main loop
                 order.status = 'processing';
-                console.log(`Executing multi-address trade for order ${order.id} with ${addressSelection.addresses.length} addresses`);
-                executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
-                console.log(`Started multi-address execution for order ${order.id} in background`);
+                
+                if (props.isTestMode) {
+                  // Test mode: simulate multi-address execution
+                  console.log(`TEST MODE: Simulating multi-address execution for order ${order.id} with ${addressSelection.addresses.length} addresses`);
+                  
+                  // Create test trade entry for history
+                  const testTrade = {
+                    ...limitOrderTradeSummary,
+                    txId: 'TEST_MULTI_' + Date.now(),
+                    type: 'automatic',
+                    sentDate: new Date(),
+                    isConfirmed: true,
+                    timestamp: new Date(),
+                    testMode: true
+                  };
+                  
+                  // Add to trade history
+                  emit('update:trade', testTrade);
+                  
+                  // Simulate completion after a short delay
+                  setTimeout(() => {
+                    console.log(`TEST MODE: Completed simulated multi-address execution for order ${order.id}`);
+                  }, 100);
+                } else {
+                  // Real mode: execute actual multi-address trade
+                  console.log(`Executing multi-address trade for order ${order.id} with ${addressSelection.addresses.length} addresses`);
+                  executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
+                  console.log(`Started multi-address execution for order ${order.id} in background`);
+                }
                 
                 // Update automatic order level status
                 const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
@@ -3282,39 +3407,94 @@ export default {
                   ? { address: order.sender } 
                   : { address: order.sender };
                 
-                const execution = await executeTradeWithAddress(order, singleAddress, order.fromAmount);
+                // Update status to running before execution
+                await window.api.invoke('update-pending-order', {
+                  ...order,
+                  status: 'pending',
+                  remainingAmount: newRemainingAmount.toString()
+                });
+                
+                let execution;
+                if (props.isTestMode) {
+                  // Test mode: simulate successful execution
+                  console.log(`TEST MODE: Simulating execution of order ${order.id} with amount ${executableAmount}`);
+                  
+                  // Create test trade entry for history
+                  const testTrade = {
+                    ...limitOrderTradeSummary,
+                    txId: 'TEST_' + Date.now(),
+                    type: order.automatic ? 'automatic' : 'limit',
+                    sentDate: new Date(),
+                    isConfirmed: true,
+                    timestamp: new Date(),
+                    testMode: true
+                  };
+                  
+                  // Add to trade history
+                  emit('update:trade', testTrade);
+                  
+                  // Simulate successful execution
+                  execution = { success: true };
+                } else {
+                  // Real mode: execute actual trade
+                  execution = await executeTradeWithAddress(order, singleAddress, executableAmount);
+                }
                 
                 if (execution.success) {
-                  // Mark order as completed
-                  order.status = 'completed';
-                  order.completedAt = new Date().toISOString();
-                  order.executionPrice = exactExecutionPrice;
+                  // Check if order is 97.5% or more filled
+                  const originalAmount = Number(order.fromAmount);
+                  const filledAmount = originalAmount - newRemainingAmount;
+                  const fillPercentage = (filledAmount / originalAmount) * 100;
                   
-                  // Update UI for automatic orders
-                  if (order.automatic && order.sourceLocation) {
-                    const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
-                    if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
-                      const levels = levelType === 'sell' 
-                        ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
-                        : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
-                        
-                      if (levels[levelIndex]) {
-                        levels[levelIndex].status = 'processed';
-                        levels[levelIndex].executionPrice = exactExecutionPrice;
-                        levels[levelIndex].executionDate = new Date().toISOString();
-                        updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                  if (fillPercentage >= 97.5 || newRemainingAmount < originalAmount * 0.025) {
+                    // Mark order as completed
+                    order.status = 'completed';
+                    order.completedAt = new Date().toISOString();
+                    order.executionPrice = exactExecutionPrice;
+                    
+                    // Update UI for automatic orders
+                    if (order.automatic && order.sourceLocation) {
+                      const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+                      if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                        const levels = levelType === 'sell' 
+                          ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+                          : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+                          
+                        if (levels[levelIndex]) {
+                          levels[levelIndex].status = 'processed';
+                          levels[levelIndex].executionPrice = exactExecutionPrice;
+                          levels[levelIndex].executionDate = new Date().toISOString();
+                          updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                        }
                       }
                     }
+                    
+                    pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
+                    console.log(`Order ${order.id} completed - filled ${fillPercentage.toFixed(1)}%`);
+                  } else {
+                    // Order partially filled, set back to pending for future executions
+                    order.status = 'pending';
+                    console.log(`Order ${order.id} partially filled - ${fillPercentage.toFixed(1)}% complete, remaining: ${newRemainingAmount}`);
                   }
                   
-                  pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
-                  await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
+                  await window.api.invoke('update-pending-order', {
+                    ...order,
+                    remainingAmount: newRemainingAmount.toString(),
+                    status: order.status
+                  });
                 } else {
+                  // Trade failed, restore the remaining amount
+                  const restoredAmount = Number(remainingAmount);
+                  await window.api.invoke('update-pending-order', {
+                    ...order,
+                    remainingAmount: restoredAmount.toString(),
+                    status: 'pending'
+                  });
                   throw new Error(execution.error || 'Trade execution failed');
                 }
               }
               
-              console.log(`${order.orderType || 'Limit'} order ${order.id} completed successfully at price ${exactExecutionPrice}`);
+              console.log(`Limit order ${order.id} completed successfully at price ${exactExecutionPrice}`);
             } catch (tradeError) {
               console.error(`Failed to execute trade for order ${order.id}:`, tradeError);
               order.status = 'failed';
@@ -3329,10 +3509,12 @@ export default {
               // Emit the failed trade to be added to history
               emit('update:trade', failedTradeEntry);
 
-              // Mark order as failed and update in database
+              // Mark order as failed and restore remaining amount
+              const restoredAmount = Number(remainingAmount);
               order.status = 'failed';
               order.failedAt = new Date().toISOString();
               order.errorMessage = tradeError.message || String(tradeError);
+              order.remainingAmount = restoredAmount.toString();
               
               if (order.automatic && order.sourceLocation) {
                 const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
@@ -3707,13 +3889,12 @@ export default {
               if (fromAmount > 0 && meetsMinimumRequirement) {
                 orders.push({
                   fromAmount,
-                  originalAmount: fromAmount,
                   remainingAmount: fromAmount,
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
                   priceLimit: buyLevel.triggerPrice,
-                  orderType: 'stop_loss',
-                  shouldSwitchTokensForLimit: true,
+                  // orderType removed - using shouldSwitchTokensForLimit instead
+                  shouldSwitchTokensForLimit: false,
                   status: 'pending',
                   createdAt: new Date().toISOString(),
                   automatic: true,
@@ -3773,13 +3954,12 @@ export default {
               if (fromAmount > 0 && meetsMinimumRequirement) {
                 orders.push({
                   fromAmount,
-                  originalAmount: fromAmount,
                   remainingAmount: fromAmount,
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
                   priceLimit: sellLevel.triggerPrice,
-                  orderType: 'take_profit',
-                  shouldSwitchTokensForLimit: false,
+                  // orderType removed - using shouldSwitchTokensForLimit instead
+                  shouldSwitchTokensForLimit: true,
                   status: 'pending',
                   createdAt: new Date().toISOString(),
                   automatic: true,
@@ -3884,7 +4064,7 @@ export default {
           },
           priceLimit: parseFloat(o.priceLimit),
           currentMarketPrice: o.currentMarketPrice ? parseFloat(o.currentMarketPrice) : null,
-          orderType: o.orderType || 'take_profit',
+          // orderType field removed - using shouldSwitchTokensForLimit instead
           shouldSwitchTokensForLimit: Boolean(o.shouldSwitchTokensForLimit),
           sender: { 
             address: o.senderAddress, 

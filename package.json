@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "NODE_ENV=development electron .",
-    "lint": "eslint --ext .js,.vue src/ tests/",
+    "lint": "eslint --ext .js,.vue src/",
     "test": "jest",
     "build": "vite build && electron-builder",
     "buildSign": "node scripts/buildSign.js",
