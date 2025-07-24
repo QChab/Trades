@@ -2662,22 +2662,22 @@ export default {
       }
     }
 
-    async function executeMultiAddressTrade(order, addressSelection, exactExecutionPrice) {
+    async function executeMultiAddressTrade(order, addressSelection, exactExecutionPrice, targetAmount) {
       let totalExecuted = 0;
       let allExecutionSuccessful = true;
       let validationFailures = 0;
       const maxValidationFailures = 2; // Allow up to 2 validation failures before stopping
       
       try {
-        console.log(`Starting multi-address execution for order ${order.id} with ${addressSelection.addresses.length} addresses`);
+        console.log(`Starting multi-address execution for order ${order.id} with ${addressSelection.addresses.length} addresses, target amount: ${targetAmount}`);
         
         // Execute trades sequentially with each address
         for (let i = 0; i < addressSelection.addresses.length; i++) {
           const { address, amount } = addressSelection.addresses[i];
           
-          if (totalExecuted >= order.remainingAmount) break;
+          if (totalExecuted >= targetAmount) break;
           
-          const executeAmount = Math.min(amount, order.remainingAmount - totalExecuted);
+          const executeAmount = Math.min(amount, targetAmount - totalExecuted);
           
           // Re-validate trigger conditions before each address execution (except first)
           if (i > 0) {
@@ -2909,6 +2909,7 @@ export default {
           gasLimit: bestTradeResult.gasLimit,
           // orderType removed - using shouldSwitchTokensForLimit instead
           automatic: order.automatic,
+          type: order.automatic ? 'automatic' : 'limit',
         };
 
         if (props.isTestMode) {
@@ -2927,7 +2928,7 @@ export default {
           
           emit('update:trade', testTrade);
           
-          return;
+          return {success: true, executedAmount: amount};
         }
         
         // 🕐 Time the approval process and re-validate if it takes too long
@@ -3002,7 +3003,7 @@ export default {
         for (const order of allOrders) {
           // Skip if order is not pending or already being processed
           if (!order || !order.status || (order.status !== 'pending')) continue;
-
+          console.log(order);
           try {
             // Get current token prices from our updated token list
             const fromToken = tokensByAddresses.value[order.fromToken.address];
@@ -3273,8 +3274,8 @@ export default {
           order.status = 'processing';
           
           // Update remaining amount to 0 since we're executing everything
-          await window.electronAPI.invoke('update-pending-order', {
-            ...order,
+          await window.electronAPI.updatePendingOrder({
+            ...JSON.parse(JSON.stringify(order)),
             remainingAmount: '0',
             status: 'processing'
           });
@@ -3340,8 +3341,8 @@ export default {
           
           // Update remaining amount immediately
           newRemainingAmount = Number(remainingAmount) - (originalFromAmount * bestPercentage);
-          window.electronAPI.invoke('update-pending-order', {
-            ...order,
+          window.electronAPI.updatePendingOrder({
+            ...JSON.parse(JSON.stringify(order)),
             remainingAmount: newRemainingAmount.toString(),
             status: 'processing'
           });
@@ -3398,8 +3399,8 @@ export default {
         
         // Restore order status on error
         try {
-          await window.electronAPI.invoke('update-pending-order', {
-            ...order,
+          await window.electronAPI.updatePendingOrder({
+            ...JSON.parse(JSON.stringify(order)),
             status: 'pending'
           });
         } catch (dbError) {
@@ -3422,26 +3423,26 @@ export default {
           // Multi-address execution for automatic orders
           const addressSelection = getAddressesWithHighestBalances(
             order.fromToken.address, 
-            order.remainingAmount, 
+            executableAmount, 
             order
           );
           
-          if (addressSelection.totalAvailable < order.remainingAmount) {
-            console.log(`Insufficient total balance across all addresses. Need: ${order.remainingAmount}, Available: ${addressSelection.totalAvailable}`);
+          if (addressSelection.totalAvailable < executableAmount) {
+            console.log(`Insufficient total balance across all addresses. Need: ${executableAmount}, Available: ${addressSelection.totalAvailable}`);
             return;
           }
           
           // Execute multi-address trade asynchronously without blocking main loop
           order.status = 'processing';
-          console.log(`Executing multi-address trade for order ${order.id}`);
-          executeMultiAddressTrade(order, addressSelection, exactExecutionPrice);
+          console.log(`Executing multi-address trade for order ${order.id} with amount ${executableAmount}`);
+          await executeMultiAddressTrade(order, addressSelection, exactExecutionPrice, executableAmount);
         } else {
           // Limit order: Single address execution
           const singleAddress = { address: order.sender };
           
           // Update status to running before execution
-          await window.electronAPI.invoke('update-pending-order', {
-            ...order,
+          await window.electronAPI.updatePendingOrder({
+            ...JSON.parse(JSON.stringify(order)),
             status: 'pending',
             remainingAmount: newRemainingAmount.toString()
           });
@@ -3485,16 +3486,16 @@ export default {
               console.log(`Order ${order.id} partially filled - ${fillPercentage.toFixed(1)}% complete, remaining: ${newRemainingAmount}`);
             }
             
-            await window.electronAPI.invoke('update-pending-order', {
-              ...order,
+            await window.electronAPI.updatePendingOrder({
+              ...JSON.parse(JSON.stringify(order)),
               remainingAmount: newRemainingAmount.toString(),
               status: order.status
             });
           } else {
             // Trade failed, restore the remaining amount
             const restoredAmount = Number(order.remainingAmount || order.fromAmount);
-            await window.electronAPI.invoke('update-pending-order', {
-              ...order,
+            await window.electronAPI.updatePendingOrder({
+              ...JSON.parse(JSON.stringify(order)),
               remainingAmount: restoredAmount.toString(),
               status: 'pending'
             });

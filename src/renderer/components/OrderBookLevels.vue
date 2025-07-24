@@ -239,8 +239,16 @@ export default {
       const priceA = Number(tokenAPrice.value);
       const priceB = Number(tokenBPrice.value);
       
-      if (!priceA || !priceB) {
-        console.log('Cannot calculate market price - missing prices', { priceA, priceB });
+      // Check for invalid prices (0, null, undefined, NaN)
+      if (priceA <= 0 || priceB <= 0 || !Number.isFinite(priceA) || !Number.isFinite(priceB)) {
+        console.log('Cannot calculate market price - invalid prices', { 
+          priceA, 
+          priceB,
+          tokenA: tokenA.value?.symbol,
+          tokenB: tokenB.value?.symbol,
+          tokenAAddress: tokenA.value?.address,
+          tokenBAddress: tokenB.value?.address
+        });
         return 0;
       }
       
