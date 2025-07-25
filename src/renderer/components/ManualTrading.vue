@@ -681,7 +681,6 @@ export default {
       // Get USD price of the output token
       const fromTokenPrice = tokensByAddresses.value[fromTokenAddress.value]?.price || 0;
       const toTokenPrice = tokensByAddresses.value[toTokenAddress.value]?.price || 0;
-      console.log(pricePerOutputToken, fromAmountParsed, toAmount);
       
       let usdValue, usdValueInverse
       if (list100CoinsEth.includes(fromSymbol))
@@ -1252,12 +1251,10 @@ export default {
         [_oldFrom, _oldTo]
       ) => {
         if (tabOrderValue === 'limit') {
-          console.log('Skipping re-quoting for Limit Order tab');
           if (debounceTimer) clearTimeout(debounceTimer);
           return;
         }
         if (currentModeValue === 'automatic') {
-          console.log('Skipping re-quoting for automatic tab');
           if (debounceTimer) clearTimeout(debounceTimer);
           return;
         }
@@ -2919,7 +2916,6 @@ export default {
           const testTrade = {
             ...limitOrderTradeSummary,
             txId: 'TEST_MULTI_' + Date.now(),
-            type: 'automatic',
             sentDate: new Date(),
             isConfirmed: true,
             timestamp: new Date(),
@@ -2985,7 +2981,7 @@ export default {
 
       if (!props.isInitialBalanceFetchDone) return;
 
-      if (isCheckingPendingOrders) return;
+      if (isCheckingPendingOrders) return console.log('isCheckingPendingOrders === true');
       isCheckingPendingOrders = true;
 
       try {
@@ -2997,8 +2993,14 @@ export default {
           allOrders = allOrders.concat(automaticOrders.value);
         }
 
-        if (!senderDetails.value?.address) return console.log('skipping pending orders check, no sender address');
-        if (!allOrders || !allOrders.length) return;
+        if (!senderDetails.value?.address) {
+          isCheckingPendingOrders = false;
+          return console.log('skipping pending orders check, no sender address');
+        }
+        if (!allOrders || !allOrders.length) {
+          isCheckingPendingOrders = false;
+          return
+        }
 
         for (const order of allOrders) {
           // Skip if order is not pending or already being processed
@@ -3868,13 +3870,14 @@ export default {
               
               if (fromAmount > 0 && meetsMinimumRequirement) {
                 orders.push({
+                  id: Math.floor(Math.random() * 10000000000000),
                   fromAmount,
                   remainingAmount: fromAmount,
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
                   priceLimit: buyLevel.triggerPrice,
                   // orderType removed - using shouldSwitchTokensForLimit instead
-                  shouldSwitchTokensForLimit: false,
+                  shouldSwitchTokensForLimit: true,
                   status: 'pending',
                   createdAt: new Date().toISOString(),
                   automatic: true,
@@ -3933,13 +3936,14 @@ export default {
               
               if (fromAmount > 0 && meetsMinimumRequirement) {
                 orders.push({
+                  id: Math.floor(Math.random() * 10000000000000),
                   fromAmount,
                   remainingAmount: fromAmount,
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
                   priceLimit: sellLevel.triggerPrice,
                   // orderType removed - using shouldSwitchTokensForLimit instead
-                  shouldSwitchTokensForLimit: true,
+                  shouldSwitchTokensForLimit: false,
                   status: 'pending',
                   createdAt: new Date().toISOString(),
                   automatic: true,
