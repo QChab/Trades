@@ -477,10 +477,9 @@ export default {
         const bidAskValidation = validateAgainstExistingOrders(level.triggerPrice, type);
         
         if (!bidAskValidation.isValid) {
-          // Revert to original price and don't emit change
-          level.triggerPrice = originalPrice;
+          // Clear the invalid price instead of reverting to original
+          level.triggerPrice = null;
           console.warn(`Order validation failed: ${bidAskValidation.reason}`);
-          // You could emit an error event here if needed
           return;
         }
       }
