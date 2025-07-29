@@ -331,6 +331,20 @@ const ERC20_ABI = [
 async function approveSpender({ from, contractAddress, spender, permit2Spender }) {
   const warnings = [];
   try {
+    // Validate input parameters
+    if (!from || !ethers.utils.isAddress(from)) {
+      throw new Error('Invalid from address: ' + from);
+    }
+    if (!contractAddress || !ethers.utils.isAddress(contractAddress)) {
+      throw new Error('Invalid contract address: ' + contractAddress);
+    }
+    if (!spender || !ethers.utils.isAddress(spender)) {
+      throw new Error('Invalid spender address: ' + spender);
+    }
+    if (permit2Spender && !ethers.utils.isAddress(permit2Spender)) {
+      throw new Error('Invalid permit2Spender address: ' + permit2Spender);
+    }
+    
     const wallet = getWallet(from);
     const balance = await provider.getBalance(wallet.address);
     const balanceEth = Number(ethers.utils.formatEther(balance));
@@ -391,6 +405,17 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
     if (!tradeSummary.fromToken?.address) throw new Error('Missing from token address in trade details')
     if (!tradeSummary.toToken?.address) throw new Error('Missing to token address in trade details')
     if (!tradeSummary.sender?.address) throw new Error('Missing sender address in trade details')
+    
+    // Validate addresses
+    if (!ethers.utils.isAddress(tradeSummary.fromToken.address) && tradeSummary.fromToken.address !== ethers.constants.AddressZero) {
+      throw new Error('Invalid from token address: ' + tradeSummary.fromToken.address);
+    }
+    if (!ethers.utils.isAddress(tradeSummary.toToken.address) && tradeSummary.toToken.address !== ethers.constants.AddressZero) {
+      throw new Error('Invalid to token address: ' + tradeSummary.toToken.address);
+    }
+    if (!ethers.utils.isAddress(tradeSummary.sender.address)) {
+      throw new Error('Invalid sender address: ' + tradeSummary.sender.address);
+    }
 
     if (tradeSummary.fromToken.address !== ethers.constants.AddressZero) {
       const erc20 = new ethers.Contract(
@@ -446,6 +471,24 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
   }
 }
 function savePendingOrder(order) {
+  // Validate token addresses before saving
+  const fromTokenAddress = order.fromToken?.address;
+  const toTokenAddress = order.toToken?.address;
+  const senderAddress = order.sender?.address;
+  
+  if (!fromTokenAddress || !ethers.utils.isAddress(fromTokenAddress)) {
+    console.error('Invalid fromToken address in savePendingOrder:', fromTokenAddress);
+    return;
+  }
+  if (!toTokenAddress || !ethers.utils.isAddress(toTokenAddress)) {
+    console.error('Invalid toToken address in savePendingOrder:', toTokenAddress);
+    return;
+  }
+  if (!senderAddress || !ethers.utils.isAddress(senderAddress)) {
+    console.error('Invalid sender address in savePendingOrder:', senderAddress);
+    return;
+  }
+  
   const sql = `
     INSERT INTO PendingOrder (
       id, 
@@ -471,15 +514,15 @@ function savePendingOrder(order) {
     order.id,
     order.fromAmount,
     order.toAmount,
-    order.fromToken?.address,
+    fromTokenAddress,
     order.fromToken?.symbol,
-    order.toToken?.address,
+    toTokenAddress,
     order.toToken?.symbol,
     order.priceLimit,
     order.currentMarketPrice,
     order.orderType || 'take_profit',
     order.shouldSwitchTokensForLimit ? 1 : 0,
-    order.sender?.address,
+    senderAddress,
     order.sender?.name,
     order.status || 'pending',
     order.createdAt || new Date().toISOString(),
@@ -531,7 +574,28 @@ function getAllPendingOrders() {
         console.error('Failed to fetch pending orders:', err);
         resolve([]); // Return empty array instead of rejecting
       } else {
-        resolve(rows || []);
+        // Filter out orders with invalid addresses before returning
+        const validOrders = (rows || []).filter(order => {
+          const isValid = order.fromTokenAddress && 
+                          order.toTokenAddress && 
+                          order.senderAddress &&
+                          ethers.utils.isAddress(order.fromTokenAddress) &&
+                          ethers.utils.isAddress(order.toTokenAddress) &&
+                          ethers.utils.isAddress(order.senderAddress);
+          
+          if (!isValid) {
+            console.warn('Filtering out order with invalid addresses:', {
+              id: order.id,
+              fromTokenAddress: order.fromTokenAddress,
+              toTokenAddress: order.toTokenAddress,
+              senderAddress: order.senderAddress
+            });
+          }
+          
+          return isValid;
+        });
+        
+        resolve(validOrders);
       }
     });
   });

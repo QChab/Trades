@@ -906,7 +906,7 @@ export default {
       () => fromTokenAddress.value,
       (newFrom, oldFrom) => {
         if (!newFrom) return;
-
+        shouldSwitchTokensForLimit.value = false;
         // If user just made From == To, push the "To" back to what the old From was
         if (newFrom === toTokenAddress.value) {
           toTokenAddress.value = oldFrom;
@@ -918,7 +918,7 @@ export default {
       () => toTokenAddress.value,
       (newTo, oldTo) => {
         if (!newTo) return;
-
+        shouldSwitchTokensForLimit.value = false;
         // If user just made To == From, push the "From" back to what the old To was
         if (newTo === fromTokenAddress.value) {
           fromTokenAddress.value = oldTo;
@@ -1464,6 +1464,21 @@ export default {
         needsToApprove.value = false;
         return;
       }
+      
+      // Skip allowance check for ETH (zero address) - native token doesn't need approval
+      if (tokenAddress === ethers.constants.AddressZero) {
+        console.log('Skipping allowance check for ETH (native token)');
+        needsToApprove.value = false;
+        return;
+      }
+      
+      // Validate token address before creating contract
+      if (!tokenAddress || !ethers.utils.isAddress(tokenAddress)) {
+        console.error('Invalid token address in checkAllowances:', tokenAddress);
+        needsToApprove.value = false;
+        return;
+      }
+      
       const erc20 = new ethers.Contract(
         tokenAddress,
         ERC20_ABI,
@@ -2307,12 +2322,27 @@ export default {
         if (!senderAddress) {
           throw new Error('No sender address available for approval');
         }
+        
+        // Validate token address before approval
+        const tokenAddr = activeTradeSummary.fromTokenAddress || fromTokenAddress.value;
+        if (!tokenAddr || !ethers.utils.isAddress(tokenAddr)) {
+          throw new Error('Invalid token address for approval: ' + tokenAddr);
+        }
 
+        console.log({senderAddress, tokenAddr})
+        
+        // Skip approval for ETH (zero address) - native token doesn't need approval
+        if (tokenAddr === ethers.constants.AddressZero) {
+          console.log('Skipping approval for ETH (native token)');
+          needsToApprove.value = false;
+          return;
+        }
+        
         // Uniswap
         if (activeTradeSummary.protocol === 'Uniswap' || activeTradeSummary.protocol === 'Uniswap & Balancer') {
           const { success, error } = await window.electronAPI.approveSpender(
             senderAddress,
-            activeTradeSummary.fromTokenAddress || fromTokenAddress.value,
+            tokenAddr,
             PERMIT2_ADDRESS,
             UNIVERSAL_ROUTER_ADDRESS
           );
@@ -2327,14 +2357,14 @@ export default {
           if (!balancerTradeV3) {
             const { success, error } = await window.electronAPI.approveSpender(
               senderAddress,
-              activeTradeSummary.fromTokenAddress || fromTokenAddress.value,
+              tokenAddr,
               BALANCER_VAULT_ADDRESS
             );
             if (!success) throw error;
           } else {
             const { success, error } = await window.electronAPI.approveSpender(
               senderAddress,
-              activeTradeSummary.fromTokenAddress || fromTokenAddress.value,
+              tokenAddr,
               PERMIT2_ADDRESS,
               balancerTradeV3.contractAddress
             );
@@ -3168,8 +3198,17 @@ export default {
           gasLimit: bestTradeResult.gasLimit,
           // orderType removed - using shouldSwitchTokensForLimit instead
           automatic: order.automatic,
+          priceLimit: order.priceLimit, // Add priceLimit to enable correct type detection
           type: order.automatic ? 'automatic' : 'limit',
         };
+
+
+        // 🕐 Time the approval process and re-validate if it takes too long
+        const approvalStartTime = Date.now();
+        await approveSpending(bestTradeResult.trades, limitOrderTradeSummary);
+        const approvalDuration = (Date.now() - approvalStartTime) / 1000; // Convert to seconds
+        
+        console.log(`Approval completed in ${approvalDuration.toFixed(2)} seconds`);
 
         if (props.isTestMode) {
           // Test mode: simulate multi-address execution
@@ -3188,13 +3227,6 @@ export default {
           
           return {success: true, executedAmount: amount};
         }
-        
-        // 🕐 Time the approval process and re-validate if it takes too long
-        const approvalStartTime = Date.now();
-        await approveSpending(bestTradeResult.trades, limitOrderTradeSummary);
-        const approvalDuration = (Date.now() - approvalStartTime) / 1000; // Convert to seconds
-        
-        console.log(`Approval completed in ${approvalDuration.toFixed(2)} seconds`);
         
         // 🔍 Re-validate and refresh trade data if approval took longer than 5 seconds
         if (approvalDuration > 5) {
@@ -3267,8 +3299,18 @@ export default {
         for (const order of allOrders) {
           // Skip if order is not pending or already being processed
           if (!order || !order.status || (order.status !== 'pending')) continue;
-          console.log(order);
           try {
+            // Validate token addresses first
+            if (!order.fromToken?.address || !order.toToken?.address || 
+                !ethers.utils.isAddress(order.fromToken.address) || 
+                !ethers.utils.isAddress(order.toToken.address)) {
+              console.error(`Order ${order.id} has invalid token addresses:`, {
+                fromToken: order.fromToken?.address,
+                toToken: order.toToken?.address
+              });
+              continue;
+            }
+            
             // Get current token prices from our updated token list
             const fromToken = tokensByAddresses.value[order.fromToken.address];
             if (!order.automatic) {
@@ -3346,7 +3388,6 @@ export default {
             let exactExecutionPrice;
             // No gas cost adjustment - calculate base price and apply inversion if needed
             exactExecutionPrice = Number(bestTradeResult.totalHuman) / (Number(order.fromAmount) * 0.01);
-            
             // For shouldSwitchTokensForLimit, invert the price to match limit format
             if (order.shouldSwitchTokensForLimit) {
               exactExecutionPrice = 1 / exactExecutionPrice;
@@ -3647,6 +3688,8 @@ export default {
           toToken: finalBestTrades.toToken,
           toTokenAddress: finalBestTrades.toToken.address,
           gasLimit: finalBestTrades.gasLimit,
+          automatic: order.automatic,
+          priceLimit: order.priceLimit, // Add priceLimit to enable correct type detection
         };
 
         if (finalBestTrades.bestMixed) {
@@ -4052,7 +4095,7 @@ export default {
 
       // Use SUMMED balances instead of single address balance
       const balances = summedBalances.value;
-      console.log('Available summed balances across all addresses:', balances);
+      // console.log('Available summed balances across all addresses:', balances);
       
       // Check if we have any valid rows
       const validRows = tokensInRow.filter(row => row.token?.address && row.columns?.length > 0);
@@ -4224,10 +4267,12 @@ export default {
         });
       });
       
-      console.log(`Generated ${orders.length} new orders:`, orders);
+      if (orders.length)
+        console.log(`Generated ${orders.length} new orders:`, orders);
       // Combine preserved orders (currently being processed) with new orders
       automaticOrders.value = [...preservedOrders, ...orders];
-      console.log(`Total automatic orders after regeneration: ${automaticOrders.value.length} (${preservedOrders.length} preserved + ${orders.length} new)`);
+      if (automaticOrders.value.length)
+        console.log(`Total automatic orders after regeneration: ${automaticOrders.value.length} (${preservedOrders.length} preserved + ${orders.length} new)`);
     };
     // Whenever the tokens list is edited (addresses, symbols, decimals), rebuild tokensByAddresses
     watch(

@@ -31,9 +31,9 @@
         </span>
         <span class="from">{{ t.senderName || t.sender?.name }} | {{ t.protocol }}</span>
         <span class="date">{{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}</span>
-        <span class="gas"> ${{ t.gasCost?.substring(0, 4)}} </span>
+        <span class="gas">{{ t.txId && t.txId.toString().startsWith('TEST') ? 'TEST' : '$' + (t.gasCost?.substring(0, 4) || '0') }}</span>
         <span class="gas" v-if="t.type"> {{ t.type }} </span>
-        <span @click.stop="openTxDetails(t.txId)" class="view">View</span>
+        <span v-if="!t.txId || !t.txId.toString().startsWith('TEST')" @click.stop="openTxDetails(t.txId)" class="view">View</span>
         <span @click.stop="deleteTrade(t, index)" class="delete">Delete</span>
       </li>
     </transition-group>
@@ -142,6 +142,13 @@ export default {
     const checkTx = async (trade) => {
       // Validate input
       if (!trade || !trade.txId || trade.isConfirmed) return;
+      
+      // Skip checking TEST transactions (they don't exist on blockchain)
+      if (trade.txId.toString().startsWith('TEST')) {
+        trade.isConfirmed = true;
+        trade.gasCost = 'TEST';
+        return;
+      }
 
       const providersList = [
         new ethers.providers.JsonRpcProvider('https://eth1.lava.build', { chainId: 1, name: 'homestead' }),
@@ -243,7 +250,7 @@ export default {
           const status = t.hasFailed ? 'Failed' : (t.isConfirmed ? 'Confirmed' : 'Pending');
           const toAmount = (!t.toAmount || t.toAmount === 'unknown') ? t.expectedToAmount : t.toAmount;
           const date = new Date(t.sentDate || t.timestamp).toISOString();
-          const gasCost = t.gasCost || '0';
+          const gasCost = (t.txId && t.txId.toString().startsWith('TEST')) ? 'TEST' : (t.gasCost || '0');
           
           return [
             status,
