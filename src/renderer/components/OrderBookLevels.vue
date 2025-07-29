@@ -151,14 +151,28 @@
       </div>
     </div>
   </div>
+  
+  <!-- Price Deviation Confirmation Modal -->
+  <ConfirmationModal
+    :show="showPriceDeviationModal"
+    title="Price Deviation Warning"
+    :message="priceDeviationMessage"
+    :details="priceDeviationDetails"
+    @confirm="confirmPriceDeviationUpdate"
+    @cancel="cancelPriceDeviationUpdate"
+  />
 </template>
 
 <script>
 import { ref, reactive, computed, watch, onMounted, toRefs } from 'vue';
 import deleteImage from '@/../assets/delete.svg';
+import ConfirmationModal from './ConfirmationModal.vue';
 
 export default {
   name: 'OrderBookLevels',
+  components: {
+    ConfirmationModal
+  },
   props: {
     tokenA: {
       type: Object,
@@ -178,6 +192,14 @@ export default {
       type: Number,
       default: 0.01 // 1% threshold for "close to trigger"
     },
+    priceDeviationPercentage: {
+      type: Number,
+      default: 20
+    },
+    existingOrders: {
+      type: Array,
+      default: () => []
+    },
     details: {
       type: Object,
     },
@@ -195,6 +217,12 @@ export default {
     const isPaused = ref(false);
     const isRandomMode = ref(false); // false = highest balance, true = random
     const minimumAmount = ref(0);
+    
+    // Modal state for price deviation warning
+    const showPriceDeviationModal = ref(false);
+    const pendingLevelUpdate = ref(null);
+    const priceDeviationMessage = ref('');
+    const priceDeviationDetails = ref(null);
 
     // Initialize 3 sell levels and 3 buy levels
     const sellLevels = reactive([
@@ -288,14 +316,210 @@ export default {
       emitOrderUpdate();
     };
     
+    // Price deviation check functions
+    const checkPriceDeviation = (userPrice, marketPrice, orderType) => {
+      if (!marketPrice || marketPrice === 0) return { needsConfirmation: false };
+      
+      const deviation = Math.abs((userPrice - marketPrice) / marketPrice * 100);
+      
+      if (deviation > props.priceDeviationPercentage) {
+        const isBuyOrder = orderType === 'buy';
+        const isUnfavorable = isBuyOrder ? userPrice > marketPrice : userPrice < marketPrice;
+        
+        if (isUnfavorable) {
+          return {
+            needsConfirmation: true,
+            deviation: deviation.toFixed(2),
+            isBuyOrder
+          };
+        }
+      }
+      
+      return { needsConfirmation: false };
+    };
+    
+    // Validate against existing orders from other OrderBookLevels instances
+    const validateAgainstExistingOrders = (userPrice, orderType) => {
+      try {
+        // Filter existing orders for the same token pair
+        const relevantOrders = props.existingOrders.filter(order => {
+          if (!order.tokenA || !order.tokenB) return false;
+          
+          const orderTokenA = order.tokenA.address.toLowerCase();
+          const orderTokenB = order.tokenB.address.toLowerCase();
+          const currentTokenA = tokenA.value.address.toLowerCase();
+          const currentTokenB = tokenB.value.address.toLowerCase();
+          
+          // Check if same token pair (either direction)
+          return (orderTokenA === currentTokenA && orderTokenB === currentTokenB) ||
+                 (orderTokenA === currentTokenB && orderTokenB === currentTokenA);
+        });
+        
+        if (relevantOrders.length === 0) return { isValid: true };
+        
+        for (const existingOrder of relevantOrders) {
+          // Get all buy and sell levels from existing order
+          const buyLevels = existingOrder.buyLevels || [];
+          const sellLevels = existingOrder.sellLevels || [];
+          
+          if (orderType === 'sell') {
+            // Current is sell - cannot be <= any active buy level
+            for (const buyLevel of buyLevels) {
+              if (buyLevel.triggerPrice && buyLevel.balancePercentage && buyLevel.status === 'active') {
+                let buyPrice = buyLevel.triggerPrice;
+                
+                // If tokens are swapped, invert the price for comparison
+                const orderTokenA = existingOrder.tokenA.address.toLowerCase();
+                const currentTokenA = tokenA.value.address.toLowerCase();
+                if (orderTokenA !== currentTokenA) {
+                  buyPrice = 1 / buyPrice;
+                }
+                
+                if (userPrice <= buyPrice) {
+                  return {
+                    isValid: false,
+                    reason: `Sell price ${userPrice.toFixed(6)} cannot be at or below existing buy level at ${buyPrice.toFixed(6)}`
+                  };
+                }
+              }
+            }
+          } else if (orderType === 'buy') {
+            // Current is buy - cannot be >= any active sell level
+            for (const sellLevel of sellLevels) {
+              if (sellLevel.triggerPrice && sellLevel.balancePercentage && sellLevel.status === 'active') {
+                let sellPrice = sellLevel.triggerPrice;
+                
+                // If tokens are swapped, invert the price for comparison
+                const orderTokenA = existingOrder.tokenA.address.toLowerCase();
+                const currentTokenA = tokenA.value.address.toLowerCase();
+                if (orderTokenA !== currentTokenA) {
+                  sellPrice = 1 / sellPrice;
+                }
+                
+                if (userPrice >= sellPrice) {
+                  return {
+                    isValid: false,
+                    reason: `Buy price ${userPrice.toFixed(6)} cannot be at or above existing sell level at ${sellPrice.toFixed(6)}`
+                  };
+                }
+              }
+            }
+          }
+        }
+        
+        // Also check within current component's levels
+        if (orderType === 'sell') {
+          // Check against current component's buy levels
+          for (const buyLevel of buyLevels) {
+            if (buyLevel.triggerPrice && buyLevel.balancePercentage) {
+              if (userPrice <= buyLevel.triggerPrice) {
+                return {
+                  isValid: false,
+                  reason: `Sell price ${userPrice.toFixed(6)} cannot be at or below buy level at ${buyLevel.triggerPrice.toFixed(6)}`
+                };
+              }
+            }
+          }
+        } else if (orderType === 'buy') {
+          // Check against current component's sell levels
+          for (const sellLevel of sellLevels) {
+            if (sellLevel.triggerPrice && sellLevel.balancePercentage) {
+              if (userPrice >= sellLevel.triggerPrice) {
+                return {
+                  isValid: false,
+                  reason: `Buy price ${userPrice.toFixed(6)} cannot be at or above sell level at ${sellLevel.triggerPrice.toFixed(6)}`
+                };
+              }
+            }
+          }
+        }
+        
+        return { isValid: true };
+      } catch (error) {
+        console.error('Error validating against existing orders:', error);
+        return { isValid: true }; // Allow on error
+      }
+    };
+    
+    const confirmPriceDeviationUpdate = () => {
+      showPriceDeviationModal.value = false;
+      if (pendingLevelUpdate.value) {
+        const { type, index } = pendingLevelUpdate.value;
+        updateLevelConfirmed(type, index);
+        pendingLevelUpdate.value = null;
+      }
+    };
+    
+    const cancelPriceDeviationUpdate = () => {
+      showPriceDeviationModal.value = false;
+      if (pendingLevelUpdate.value) {
+        const { type, index, originalPrice } = pendingLevelUpdate.value;
+        const levels = type === 'sell' ? sellLevels : buyLevels;
+        levels[index].triggerPrice = originalPrice; // Restore original price
+        pendingLevelUpdate.value = null;
+      }
+    };
+    
     const updateLevel = (type, index) => {
       const levels = type === 'sell' ? sellLevels : buyLevels;
       const level = levels[index];
+      
+      // Store original price for potential restoration
+      const originalPrice = level.triggerPrice;
       
       // Validate inputs
       if (level.triggerPrice < 0) level.triggerPrice = 0;
       if (level.balancePercentage < 0) level.balancePercentage = 0;
       if (level.balancePercentage > 100) level.balancePercentage = 100;
+      
+      // Check against existing orders (bid-ask spread validation)
+      if (level.triggerPrice) {
+        const bidAskValidation = validateAgainstExistingOrders(level.triggerPrice, type);
+        
+        if (!bidAskValidation.isValid) {
+          // Revert to original price and don't emit change
+          level.triggerPrice = originalPrice;
+          console.warn(`Order validation failed: ${bidAskValidation.reason}`);
+          // You could emit an error event here if needed
+          return;
+        }
+      }
+      
+      // Check for price deviation if we have a trigger price
+      if (level.triggerPrice && tokenAPrice.value && tokenBPrice.value) {
+        const marketPrice = tokenAPrice.value / tokenBPrice.value;
+        const deviationCheck = checkPriceDeviation(level.triggerPrice, marketPrice, type);
+        
+        if (deviationCheck.needsConfirmation) {
+          // Store pending update info
+          pendingLevelUpdate.value = {
+            type,
+            index,
+            originalPrice
+          };
+          
+          // Set modal data
+          priceDeviationMessage.value = deviationCheck.isBuyOrder 
+            ? `Your buy price is ${deviationCheck.deviation}% higher than the current market price. Are you sure you want to set this level?`
+            : `Your sell price is ${deviationCheck.deviation}% lower than the current market price. Are you sure you want to set this level?`;
+          
+          priceDeviationDetails.value = {
+            marketPrice: `1 ${tokenA.value.symbol} = ${marketPrice.toFixed(6)} ${tokenB.value.symbol}`,
+            userPrice: `1 ${tokenA.value.symbol} = ${level.triggerPrice.toFixed(6)} ${tokenB.value.symbol}`,
+            deviation: deviationCheck.deviation
+          };
+          
+          showPriceDeviationModal.value = true;
+          return; // Don't continue with update until confirmed
+        }
+      }
+      
+      updateLevelConfirmed(type, index);
+    };
+    
+    const updateLevelConfirmed = (type, index) => {
+      const levels = type === 'sell' ? sellLevels : buyLevels;
+      const level = levels[index];
       
       // Update status based on inputs - reset status when user modifies level
       if (level.triggerPrice && level.balancePercentage) {
@@ -497,6 +721,7 @@ export default {
       currentMarketPrice,
       togglePause,
       updateLevel,
+      updateLevelConfirmed,
       getLevelStatus,
       getLevelStatusClass,
       isCloseToTrigger,
@@ -506,6 +731,15 @@ export default {
       getUsdPrice,
       getPercentageTooltip,
       emitOrderUpdate,
+      
+      // Price deviation modal
+      showPriceDeviationModal,
+      priceDeviationMessage,
+      priceDeviationDetails,
+      checkPriceDeviation,
+      validateAgainstExistingOrders,
+      confirmPriceDeviationUpdate,
+      cancelPriceDeviationUpdate,
     };
   }
 };

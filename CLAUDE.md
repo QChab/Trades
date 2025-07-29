@@ -175,6 +175,6 @@ When working with this codebase, pay special attention to the order type determi
 - **Partial Execution**: Allows orders to execute at 97.5% of remaining amount
 - **Order Locking**: `orderExecutionLocks` Map prevents parallel execution of same order
 - **Test Mode**: Complete simulation without blockchain interaction or balance modifications
-- **20% Loss Protection**: USD value comparison before execution to prevent excessive losses
+- **Configurable Loss Protection**: USD value comparison before execution to prevent excessive losses (configurable percentage, default 20%)
 - **Automatic Order Logic**: Buy levels use `shouldSwitchTokensForLimit: false`, sell levels use `true`
 - **Execution Function**: `tryExecutePendingOrder()` handles all execution logic with proper error handling

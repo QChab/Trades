@@ -1,31 +1,56 @@
 <template>
   <div class="header">
     <div class="settings">
-      <div class="test-mode-container">
-        <label class="test-mode-label">
-          <input 
-            v-model="isTestMode" 
-            type="checkbox" 
-            class="test-mode-checkbox"
-          >
-          <span>Test limit&auto</span>
-        </label>
+      <!-- Settings toggle button (always visible) -->
+      <button 
+        @click="toggleSettings" 
+        class="settings-button"
+      >
+        {{ showSettings ? 'Close Settings' : 'Settings' }}
+      </button>
+      
+      <!-- Settings content (only shown when expanded) -->
+      <div v-if="showSettings" class="settings-content">
+        <div class="test-mode-container">
+          <label class="test-mode-label">
+            <input 
+              v-model="isTestMode" 
+              type="checkbox" 
+              class="test-mode-checkbox"
+            >
+            <span>Test limit&auto</span>
+          </label>
+          <div class="price-deviation-setting">
+            <label>
+              Max price deviation:
+              <input 
+                v-model.number="priceDeviationPercentage" 
+                type="number" 
+                min="1" 
+                max="100" 
+                class="small-number"
+              >%
+            </label>
+          </div>
+        </div>
       </div>
-      <!-- <label>Test mode: <input type="checkbox" v-model="isTestMode"/></label> -->
-      <div class="infura-keys">
-        <!-- The title that toggles the infura keys section -->
-        <p
-          class="title"
-          @click="toggleInfuraKeys"
-        >
-          RPCs ({{ infuraKeys.length }})
-          <!-- Icon that rotates when the section is toggled open/closed -->
-          <img
-            :src="chevronDownImage"
-            class="chevron-down"
-            :class="{ rotated: showInfuraKeys }"
+      
+      <!-- Other settings (hidden when Settings is expanded) -->
+      <div v-if="!showSettings" class="other-settings">
+        <div class="infura-keys">
+          <!-- The title that toggles the infura keys section -->
+          <p
+            class="title"
+            @click="toggleInfuraKeys"
           >
-        </p>
+            RPCs ({{ infuraKeys.length }})
+            <!-- Icon that rotates when the section is toggled open/closed -->
+            <img
+              :src="chevronDownImage"
+              class="chevron-down"
+              :class="{ rotated: showInfuraKeys }"
+            >
+          </p>
         <!-- The section that shows the list of Infura API keys and an input to add new keys -->
         <div
           v-if="showInfuraKeys"
@@ -73,7 +98,7 @@
             :src="chevronDownImage"
             class="chevron-down"
             :class="{ rotated : shouldShowPKForm }"
-          ></img>
+          />
         </p>
         <div v-if="shouldShowPKForm && !hasUnlockedPrivateKeys">
           <p
@@ -136,27 +161,28 @@
           >Import another file</span>
         </div>
       </div>
-      <!-- Max Gas Input -->
-      <div class="form-group">
-        <img
-          class="icon-line"
-          :src="gasImage"
-          width="30"
-        >
-        <label>
-          Max
-          <input
-            v-model.number="maxGasPrice"
-            class="medium-number"
-            type="number"
-            placeholder="Max Gas"
-          > gwei
-        </label>
-        <GasPrice 
-          :max-gas-price="maxGasPrice"
-          :provider="provider"
-          @update:gas-price="setGasPrice"
-        ></GasPrice>
+        <!-- Max Gas Input -->
+        <div class="form-group">
+          <img
+            class="icon-line"
+            :src="gasImage"
+            width="30"
+          >
+          <label>
+            Max
+            <input
+              v-model.number="maxGasPrice"
+              class="medium-number"
+              type="number"
+              placeholder="Max Gas"
+            > gwei
+          </label>
+          <GasPrice 
+            :max-gas-price="maxGasPrice"
+            :provider="provider"
+            @update:gas-price="setGasPrice"
+          ></GasPrice>
+        </div>
       </div>
     </div>
   </div>
@@ -177,6 +203,7 @@
           @update:trade="addTrade"
           @refresh-balance="refreshBalance"
           :is-test-mode="isTestMode"
+          :price-deviation-percentage="priceDeviationPercentage"
         ></ManualTrading>
       </div>
     </div>
@@ -237,6 +264,8 @@
 
       const isTestMode = ref(false);
       const confirmedTrade = ref({});
+      const priceDeviationPercentage = ref(20);
+      const showSettings = ref(false);
 
       const maxGasPrice = ref(3);
 
@@ -257,6 +286,30 @@
         window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
           ...currentSettings.value,
           maxGasPrice: maxGasPriceValue,
+        })));
+      })
+
+      // Watch and save test mode setting
+      watch(() => isTestMode.value, (testModeValue) => {
+        currentSettings.value = ({
+          ...currentSettings.value,
+          isTestMode: testModeValue,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          isTestMode: testModeValue,
+        })));
+      })
+
+      // Watch and save price deviation percentage setting
+      watch(() => priceDeviationPercentage.value, (deviationValue) => {
+        currentSettings.value = ({
+          ...currentSettings.value,
+          priceDeviationPercentage: deviationValue,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          priceDeviationPercentage: deviationValue,
         })));
       })
 
@@ -513,6 +566,10 @@
         const settings = await window.electronAPI.loadSettings();
         if (settings.maxGasPrice)
           maxGasPrice.value = settings.maxGasPrice;
+        if (settings.hasOwnProperty('isTestMode'))
+          isTestMode.value = settings.isTestMode;
+        if (settings.hasOwnProperty('priceDeviationPercentage'))
+          priceDeviationPercentage.value = settings.priceDeviationPercentage;
       
         isFileDetected.value = await window.electronAPI.isFileDetected();
         
@@ -536,6 +593,16 @@
       // Toggles the display of the Infura API keys section when the title is clicked
       const toggleInfuraKeys = () => {
         showInfuraKeys.value = !showInfuraKeys.value;
+      };
+      
+      // Toggles the settings section
+      const toggleSettings = () => {
+        showSettings.value = !showSettings.value;
+        // Close other sections when opening settings
+        if (showSettings.value) {
+          showInfuraKeys.value = false;
+          shouldShowPKForm.value = false;
+        }
       };
 
       const errorInfuraKey = ref('');
@@ -582,6 +649,9 @@
         gasPrice,
         setGasPrice,
         isTestMode,
+        priceDeviationPercentage,
+        showSettings,
+        toggleSettings,
         isProcessRunning,
         setIsProcessRunning,
         emptyTrades,
@@ -688,6 +758,72 @@
   .submit-button {
     display: block;
     margin: 15px auto;
+  }
+  
+  .test-mode-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+    gap: 30px;
+  }
+  
+  .price-deviation-setting {
+    margin-top: 0;
+  }
+  
+  .price-deviation-setting label {
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  
+  .price-deviation-setting input.small-number {
+    width: 50px;
+    padding: 2px 5px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    text-align: center;
+  }
+  
+  .settings-button {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 15px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  
+  .settings-button:hover {
+    background: #0056b3;
+  }
+  
+  .settings-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    flex: 1;
+    gap: 20px;
+  }
+  
+  .other-settings {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex: 1;
+    justify-content: space-around;
+  }
+  
+  .settings {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
   }
   </style>
 

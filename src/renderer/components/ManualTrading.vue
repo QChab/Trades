@@ -249,6 +249,8 @@
                     :balances="computedBalancesByAddress"
                     :price-threshold="0.01"
                     :details="token.details"
+                    :price-deviation-percentage="priceDeviationPercentage"
+                    :existing-orders="allExistingOrders"
                     @orderUpdate="(details) => updateDetailsOrder(i, j, details)"
                     @delete="deleteColumn(i, j)"
                   />
@@ -425,6 +427,20 @@
       </div>
     </div>
   </div>
+  
+  <!-- Price Deviation Confirmation Modal -->
+  <ConfirmationModal
+    :show="showPriceDeviationModal"
+    :title="priceDeviationModalData.title"
+    :message="priceDeviationModalData.message"
+    :details="{
+      marketPrice: priceDeviationModalData.marketPrice,
+      userPrice: priceDeviationModalData.userPrice,
+      deviation: priceDeviationModalData.deviation
+    }"
+    @confirm="confirmPriceDeviationAction"
+    @cancel="cancelPriceDeviationAction"
+  />
 </template>
 
 <script>
@@ -438,6 +454,7 @@ import { useUniswapV4 } from '../composables/useUniswap';
 import { useBalancerV3 } from '../composables/useBalancer';
 import spaceThousands from '../composables/spaceThousands';
 import OrderBookLevels from './OrderBookLevels.vue';
+import ConfirmationModal from './ConfirmationModal.vue';
 
 import list100CoinsEth from '../composables/list100CoinsEth';
 
@@ -445,6 +462,7 @@ export default {
   name: 'ManualTrading',
   components: {
     OrderBookLevels,
+    ConfirmationModal,
   },
   props: {
     addresses: { type: Array, default: () => ([]) },
@@ -455,6 +473,7 @@ export default {
     confirmedTrade: { type: Object },
     isInitialBalanceFetchDone: {type: Boolean, default: false},
     isTestMode: { type: Boolean, default: false },
+    priceDeviationPercentage: { type: Number, default: 20 },
   },
   emits: ['update:settings', 'update:trade', 'refreshBalance'],
   setup(props, { emit }) {
@@ -578,6 +597,53 @@ export default {
     const automaticOrders = ref([]);
     const automaticMessage= ref(null);
     const isGloballyPaused = ref(false);
+    
+    // Computed property to collect all existing order book levels and limit orders
+    const allExistingOrders = computed(() => {
+      const allOrders = [];
+      
+      // Add OrderBookLevels from automatic trading matrix
+      tokensInRow.forEach((tokenInRow, rowIndex) => {
+        if (tokenInRow.columns) {
+          tokenInRow.columns.forEach((token, colIndex) => {
+            if (token.details && token.address && tokenInRow.token?.address) {
+              allOrders.push({
+                tokenA: tokenInRow.token,
+                tokenB: token,
+                buyLevels: token.details.buyLevels || [],
+                sellLevels: token.details.sellLevels || [],
+                rowIndex,
+                colIndex,
+                source: 'orderbook'
+              });
+            }
+          });
+        }
+      });
+      
+      // Add pending limit orders
+      pendingLimitOrders.value.forEach(order => {
+        // Convert limit order to a format that matches OrderBookLevels validation
+        const level = {
+          triggerPrice: order.priceLimit,
+          balancePercentage: 100, // Assume full percentage for limit orders
+          status: 'active'
+        };
+        
+        const isBuyOrder = !order.shouldSwitchTokensForLimit;
+        
+        allOrders.push({
+          tokenA: order.fromToken,
+          tokenB: order.toToken,
+          buyLevels: isBuyOrder ? [level] : [],
+          sellLevels: isBuyOrder ? [] : [level],
+          source: 'limitorder',
+          orderId: order.id
+        });
+      });
+      
+      return allOrders;
+    });
 
     const shouldSelectTokenInRow = ref(false);
     const newTokenAddress = ref(null);
@@ -621,6 +687,18 @@ export default {
     // ETH balance monitoring for insufficient gas errors
     const isInsufficientEthError = ref(false);
     const ethBalanceCheckInterval = ref(null);
+    
+    // Price deviation modal state
+    const showPriceDeviationModal = ref(false);
+    const priceDeviationModalData = reactive({
+      title: '',
+      message: '',
+      marketPrice: '',
+      userPrice: '',
+      deviation: '',
+      action: null, // stores the function to execute if confirmed
+      args: null    // stores the arguments for the action
+    });
 
     const currentMode = ref('automatic'); // 'manual' or 'automatic'
 
@@ -2397,6 +2475,116 @@ export default {
       return displayedUsdValue
     }
 
+    // Price deviation modal functions
+    function checkPriceDeviation(userPrice, marketPrice, orderType) {
+      if (!marketPrice || marketPrice === 0) return true; // Skip check if no market price
+      
+      const deviation = Math.abs((userPrice - marketPrice) / marketPrice * 100);
+      
+      if (deviation > props.priceDeviationPercentage) {
+        const isBuyOrder = orderType === 'buy';
+        const isUnfavorable = isBuyOrder ? userPrice > marketPrice : userPrice < marketPrice;
+        
+        if (isUnfavorable) {
+          return {
+            needsConfirmation: true,
+            deviation: deviation.toFixed(2),
+            isBuyOrder
+          };
+        }
+      }
+      
+      return { needsConfirmation: false };
+    }
+    
+    // Validate against existing pending orders bid-ask spread
+    function validateAgainstPendingOrders(userPrice, orderType, fromTokenAddr, toTokenAddr, shouldInvert) {
+      try {
+        // Filter pending orders for the same token pair
+        const relevantOrders = pendingLimitOrders.value.filter(order => {
+          const orderFromAddr = order.fromToken.address.toLowerCase();
+          const orderToAddr = order.toToken.address.toLowerCase();
+          const currentFromAddr = fromTokenAddr.toLowerCase();
+          const currentToAddr = toTokenAddr.toLowerCase();
+          
+          // Check if same token pair (either direction)
+          return (orderFromAddr === currentFromAddr && orderToAddr === currentToAddr) ||
+                 (orderFromAddr === currentToAddr && orderToAddr === currentFromAddr);
+        });
+        
+        if (relevantOrders.length === 0) return { isValid: true };
+        
+        // Determine if current order is buy or sell based on shouldInvert
+        const isBuyOrder = shouldInvert ? false : (orderType === 'buy');
+        
+        for (const order of relevantOrders) {
+          // Determine if existing order is buy or sell
+          const orderIsBuy = order.shouldSwitchTokensForLimit ? false : true;
+          
+          // Get comparable prices (normalize to same direction)
+          let orderPrice = order.priceLimit;
+          let currentPrice = userPrice;
+          
+          // If tokens are swapped, need to invert one of the prices for comparison
+          const orderFromAddr = order.fromToken.address.toLowerCase();
+          const currentFromAddr = fromTokenAddr.toLowerCase();
+          const tokensSwapped = orderFromAddr !== currentFromAddr;
+          
+          if (tokensSwapped) {
+            orderPrice = 1 / orderPrice;
+          }
+          
+          // Check for bid-ask spread violations
+          if (isBuyOrder && !orderIsBuy) {
+            // Current: buy, Existing: sell - buy price cannot be >= sell price
+            if (currentPrice >= orderPrice) {
+              return {
+                isValid: false,
+                reason: `Cannot buy at ${currentPrice.toFixed(6)} - price is at or above existing sell order at ${orderPrice.toFixed(6)}`
+              };
+            }
+          } else if (!isBuyOrder && orderIsBuy) {
+            // Current: sell, Existing: buy - sell price cannot be <= buy price  
+            if (currentPrice <= orderPrice) {
+              return {
+                isValid: false,
+                reason: `Cannot sell at ${currentPrice.toFixed(6)} - price is at or below existing buy order at ${orderPrice.toFixed(6)}`
+              };
+            }
+          }
+        }
+        
+        return { isValid: true };
+      } catch (error) {
+        console.error('Error validating against pending orders:', error);
+        return { isValid: true }; // Allow on error
+      }
+    }
+    
+    function showPriceDeviationConfirmation(data) {
+      priceDeviationModalData.title = data.title;
+      priceDeviationModalData.message = data.message;
+      priceDeviationModalData.marketPrice = data.marketPrice;
+      priceDeviationModalData.userPrice = data.userPrice;
+      priceDeviationModalData.deviation = data.deviation;
+      priceDeviationModalData.action = data.action;
+      priceDeviationModalData.args = data.args;
+      showPriceDeviationModal.value = true;
+    }
+    
+    function confirmPriceDeviationAction() {
+      showPriceDeviationModal.value = false;
+      if (priceDeviationModalData.action && typeof priceDeviationModalData.action === 'function') {
+        priceDeviationModalData.action(...(priceDeviationModalData.args || []));
+      }
+    }
+    
+    function cancelPriceDeviationAction() {
+      showPriceDeviationModal.value = false;
+      priceDeviationModalData.action = null;
+      priceDeviationModalData.args = null;
+    }
+
     function placeLimitOrder() {
       if (!senderDetails.value.address) {
         swapMessage.value = 'Please select a sender address first';
@@ -2434,6 +2622,56 @@ export default {
         : toPrice / fromPrice;
 
       // Calculate expected output amount based on limit price
+      const expectedToAmount = !shouldSwitchTokensForLimit.value
+        ? (fromAmount.value * priceLimit.value).toFixed(6)
+        : (fromAmount.value / priceLimit.value).toFixed(6);
+
+      // Check against existing pending orders (bid-ask spread validation)
+      const orderType = shouldSwitchTokensForLimit.value ? 'sell' : 'buy';
+      const bidAskValidation = validateAgainstPendingOrders(
+        priceLimit.value, 
+        orderType, 
+        fromTokenAddress.value, 
+        toTokenAddress.value, 
+        shouldSwitchTokensForLimit.value
+      );
+      
+      if (!bidAskValidation.isValid) {
+        swapMessage.value = bidAskValidation.reason;
+        return;
+      }
+      
+      // Check for price deviation
+      const deviationCheck = checkPriceDeviation(priceLimit.value, currentMarketPrice, orderType);
+      
+      if (deviationCheck.needsConfirmation) {
+        // Show confirmation modal
+        showPriceDeviationConfirmation({
+          title: 'Price Deviation Warning',
+          message: deviationCheck.isBuyOrder 
+            ? `Your buy price is ${deviationCheck.deviation}% higher than the current market price. Are you sure you want to place this order?`
+            : `Your sell price is ${deviationCheck.deviation}% lower than the current market price. Are you sure you want to place this order?`,
+          marketPrice: currentMarketPrice.toFixed(6),
+          userPrice: priceLimit.value.toFixed(6),
+          deviation: deviationCheck.deviation,
+          action: placeLimitOrderConfirmed,
+          args: []
+        });
+        return;
+      }
+      
+      placeLimitOrderConfirmed();
+    }
+    
+    function placeLimitOrderConfirmed() {
+      // Recalculate values since this might be called from modal confirmation
+      const fromPrice = tokensByAddresses.value[fromTokenAddress.value]?.price;
+      const toPrice = tokensByAddresses.value[toTokenAddress.value]?.price;
+      
+      const currentMarketPrice = !shouldSwitchTokensForLimit.value
+        ? fromPrice / toPrice
+        : toPrice / fromPrice;
+        
       const expectedToAmount = !shouldSwitchTokensForLimit.value
         ? (fromAmount.value * priceLimit.value).toFixed(6)
         : (fromAmount.value / priceLimit.value).toFixed(6);
@@ -2651,19 +2889,19 @@ export default {
           shouldTrigger = exactExecutionPrice <= order.priceLimit;
         }
 
-        // Calculate 20% loss protection check
+        // Calculate loss protection check using configurable percentage
         const inputValueUSD = Number(executionAmount) * fromToken.price;
         const outputValueUSD = Number(bestTradeResult.totalHuman) * toToken.price;
         const lossPercentage = ((inputValueUSD - outputValueUSD) / inputValueUSD) * 100;
         
-        if (lossPercentage > 20) {
+        if (lossPercentage > props.priceDeviationPercentage) {
           return { 
             valid: false, 
             exactExecutionPrice,
             currentMarketPrice,
             priceDifference: 0,
             bestTradeResult,
-            reason: `Excessive loss: ${lossPercentage.toFixed(1)}% (max 20% allowed)` 
+            reason: `Excessive loss: ${lossPercentage.toFixed(1)}% (max ${props.priceDeviationPercentage}% allowed)` 
           };
         }
 
@@ -3183,12 +3421,12 @@ export default {
         return { meetsCondition: false, executionPrice: undefined, tradeResult: null, unprofitable: false };
       }
       
-      // Calculate 20% loss protection check
+      // Calculate loss protection check using configurable percentage
       const inputValueUSD = Number(testAmount) * fromTokenData.price;
       const outputValueUSD = Number(testResult.totalHuman) * toTokenData.price;
       const lossPercentage = ((inputValueUSD - outputValueUSD) / inputValueUSD) * 100;
       
-      if (lossPercentage > 20) {
+      if (lossPercentage > props.priceDeviationPercentage) {
         // Trade rejected due to excessive loss - treat as unprofitable
         return { meetsCondition: false, executionPrice: undefined, tradeResult: testResult, unprofitable: true };
       }
@@ -4143,9 +4381,19 @@ export default {
 
       pendingLimitOrders,
       placeLimitOrder,
+      placeLimitOrderConfirmed,
       cancelLimitOrder,
       formatUsdPrice,
       getCurrentMarketPrice,
+      
+      // Price deviation modal
+      showPriceDeviationModal,
+      priceDeviationModalData,
+      checkPriceDeviation,
+      validateAgainstPendingOrders,
+      showPriceDeviationConfirmation,
+      confirmPriceDeviationAction,
+      cancelPriceDeviationAction,
       
       currentMode,
       tokensInRow,
@@ -4160,6 +4408,7 @@ export default {
       addCellToRow,
       updateDetailsOrder,
       automaticOrders,
+      allExistingOrders,
       computedEthPrice,
       removeTrailingZeros,
       automaticMessage,
