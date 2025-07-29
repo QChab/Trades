@@ -75,7 +75,7 @@
               <span class="first-part-price">{{ tokenA?.symbol }} ≤ </span>
               <input
                 v-model.number="level.triggerPrice"
-                @input="updateLevel('buy', index)"
+                @change="updateLevel('buy', index)"
                 type="number"
                 step="0.000001"
                 placeholder="0.0"
@@ -119,7 +119,7 @@
               <span class="first-part-price">{{ tokenA?.symbol }} ≥ </span>
               <input
                 v-model.number="level.triggerPrice"
-                @input="updateLevel('sell', index)"
+                @change="updateLevel('sell', index)"
                 type="number"
                 step="0.000001"
                 placeholder="0.0"

@@ -36,9 +36,9 @@
                 </span>
                 <img :src="reverseImage" class="reverse-image" @click="shouldSwitchTokensForLimit = !shouldSwitchTokensForLimit"/>
               </p>
-              <span class="set-market-price" @click="setMarketPriceAsLimit()">
+              <!-- <span class="set-market-price" @click="setMarketPriceAsLimit()">
                 Set market price
-              </span>
+              </span> -->
               
             </div>
             <div v-else class="checkboxes">
@@ -635,6 +635,7 @@ export default {
     const computedBalancesByAddress = computed(() => {
       const result = {};
       for (const detail of props.addresses) {
+        if (!detail || !detail.address) continue; // Skip if detail or address is undefined
         const addr = detail.address.toLowerCase();
         if (!result[addr]) result[addr] = {};
 
@@ -2218,16 +2219,22 @@ export default {
     const approveSpending = async (localTrades, localTradeSummary) => {
       try {
         isSwapButtonDisabled.value = true;
-        const originalAddress = senderDetails.value.address;
         
         // Use local trade summary if provided, otherwise fall back to global tradeSummary
         const activeTradeSummary = localTradeSummary || tradeSummary;
+        
+        // Get the correct sender address from the trade summary or fallback to senderDetails
+        const senderAddress = activeTradeSummary.sender?.address || senderDetails.value.address;
+        
+        if (!senderAddress) {
+          throw new Error('No sender address available for approval');
+        }
 
         // Uniswap
         if (activeTradeSummary.protocol === 'Uniswap' || activeTradeSummary.protocol === 'Uniswap & Balancer') {
           const { success, error } = await window.electronAPI.approveSpender(
-            originalAddress,
-            localTradeSummary ? localTradeSummary.fromTokenAddress : fromTokenAddress.value,
+            senderAddress,
+            activeTradeSummary.fromTokenAddress || fromTokenAddress.value,
             PERMIT2_ADDRESS,
             UNIVERSAL_ROUTER_ADDRESS
           );
@@ -2241,15 +2248,15 @@ export default {
           );
           if (!balancerTradeV3) {
             const { success, error } = await window.electronAPI.approveSpender(
-              originalAddress,
-              localTradeSummary ? localTradeSummary.fromTokenAddress : fromTokenAddress.value,
+              senderAddress,
+              activeTradeSummary.fromTokenAddress || fromTokenAddress.value,
               BALANCER_VAULT_ADDRESS
             );
             if (!success) throw error;
           } else {
             const { success, error } = await window.electronAPI.approveSpender(
-              originalAddress,
-              localTradeSummary ? localTradeSummary.fromTokenAddress : fromTokenAddress.value,
+              senderAddress,
+              activeTradeSummary.fromTokenAddress || fromTokenAddress.value,
               PERMIT2_ADDRESS,
               balancerTradeV3.contractAddress
             );
@@ -2260,10 +2267,11 @@ export default {
         needsToApprove.value = false;
       } catch (err) {
         console.error(err);
-        if (err.message.includes('insufficient funds for intrinsic transaction cost')) {
-          swapMessage.value = 'Error: Not enough ETH on the address ' + senderDetails.value.address;
+        const errorMessage = err?.message || err?.toString() || 'Unknown error during approval';
+        if (errorMessage.includes('insufficient funds for intrinsic transaction cost')) {
+          swapMessage.value = 'Error: Not enough ETH on the address ' + (activeTradeSummary?.sender?.address || senderDetails.value.address);
         } else {
-          swapMessage.value = err.message || String(err);
+          swapMessage.value = errorMessage;
         }
       } finally {
         isSwapButtonDisabled.value = false;
@@ -2643,6 +2651,22 @@ export default {
           shouldTrigger = exactExecutionPrice <= order.priceLimit;
         }
 
+        // Calculate 20% loss protection check
+        const inputValueUSD = Number(executionAmount) * fromToken.price;
+        const outputValueUSD = Number(bestTradeResult.totalHuman) * toToken.price;
+        const lossPercentage = ((inputValueUSD - outputValueUSD) / inputValueUSD) * 100;
+        
+        if (lossPercentage > 20) {
+          return { 
+            valid: false, 
+            exactExecutionPrice,
+            currentMarketPrice,
+            priceDifference: 0,
+            bestTradeResult,
+            reason: `Excessive loss: ${lossPercentage.toFixed(1)}% (max 20% allowed)` 
+          };
+        }
+
         const priceDifference = Math.abs(exactExecutionPrice - order.priceLimit) / order.priceLimit;
         
         return {
@@ -3010,7 +3034,7 @@ export default {
             // Get current token prices from our updated token list
             const fromToken = tokensByAddresses.value[order.fromToken.address];
             if (!order.automatic) {
-              const senderD = props.addresses.find((a) => a.address.toLowerCase() === order.sender.address.toLowerCase());
+              const senderD = props.addresses.find((a) => a && a.address && order.sender && order.sender.address && a.address.toLowerCase() === order.sender.address.toLowerCase());
 
               if (senderD?.balances == null || !fromToken) {
                 console.log(`Skipping order ${order.id} due to missing token or sender data`);
@@ -3073,7 +3097,7 @@ export default {
             const bestTradeResult = await getBestTrades(
               order.fromToken.address,
               order.toToken.address,
-              (Number(order.fromAmount) * 0.1).toString(),
+              (Number(order.fromAmount) * 0.01).toString(),
               order?.sender?.address || senderDetails.value.address,
               true,
               true,
@@ -3083,7 +3107,7 @@ export default {
             // Calculate exact execution price (output amount per input amount)
             let exactExecutionPrice;
             // No gas cost adjustment - calculate base price and apply inversion if needed
-            exactExecutionPrice = Number(bestTradeResult.totalHuman) / (Number(order.fromAmount) * 0.1);
+            exactExecutionPrice = Number(bestTradeResult.totalHuman) / (Number(order.fromAmount) * 0.01);
             
             // For shouldSwitchTokensForLimit, invert the price to match limit format
             if (order.shouldSwitchTokensForLimit) {
@@ -3303,13 +3327,14 @@ export default {
           let lowPercentage = 0;
           let highPercentage = remainingPercentage;
           let bestPercentage = 0;
-          const marginError = 0.025; // 2.5% margin error
+          const marginError = 0.007; // 0.7% margin error
           const minPercentage = marginError; // Minimum percentage to consider
           // Binary search to find maximum executable percentage
           while ((highPercentage - lowPercentage) > minPercentage) {
             const midPercentage = (lowPercentage + highPercentage) / 2;
             const testAmount = originalFromAmount * midPercentage;
             
+            await new Promise(r => setTimeout(1000, r))
             const testResult = await testExecutableAmount(order, testAmount);
             
             if (testResult.unprofitable) {
@@ -3730,7 +3755,7 @@ export default {
       
       // Loop through all addresses
       for (const detail of props.addresses) {
-        if (!detail.balances) continue;
+        if (!detail || !detail.address || !detail.balances) continue;
         
         // For each token in the address's balance
         for (const tokenAddr in detail.balances) {

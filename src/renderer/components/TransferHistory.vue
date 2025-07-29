@@ -140,34 +140,61 @@ export default {
     }
 
     const checkTx = async (trade) => {
-      if (trade.isConfirmed) return;
+      // Validate input
+      if (!trade || !trade.txId || trade.isConfirmed) return;
 
       const providersList = [
         new ethers.providers.JsonRpcProvider('https://eth1.lava.build', { chainId: 1, name: 'homestead' }),
         new ethers.providers.JsonRpcProvider('https://mainnet.gateway.tenderly.co', { chainId: 1, name: 'homestead' }),
-        new ethers.providers.JsonRpcProvider('https://eth-pokt.nodies.app', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://0xrpc.io/eth', { chainId: 1, name: 'homestead' }),
       ];
 
       let i = 0;
-      while (!trade.isConfirmed && trade.txId && !trade.hasFailed) {
+      const maxRetries = 100; // Prevent infinite loop - ~5 minutes with 3s delay
+      
+      while (!trade.isConfirmed && trade.txId && !trade.hasFailed && i < maxRetries) {
         await new Promise((r) => setTimeout(r, 3000));
-        const receipt = await providersList[i % providersList.length].getTransactionReceipt(trade.txId)
-        if (receipt) {
-          emit('confirmedTrade', trade);
-          if (receipt.status === '1' || receipt.status === 1) {
-            trade.isConfirmed = true;
-            const {gas, tokens} = await analyseReceipt(trade, receipt, toRaw(props.provider))
-            trade.gasCost = gas.paidUsd + '';
-            trade.toAmount = tokens[0]?.amount || 'unknown';
-            window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, trade.toAmount);
-          } else {
-            const {gas} = await analyseReceipt(trade, receipt, toRaw(props.provider))
-            trade.hasFailed = true;
-            trade.gasCost = gas.paidUsd + '';
-            window.electronAPI.failTrade(trade.txId, trade.gasCost);
+        
+        try {
+          const receipt = await providersList[i % providersList.length].getTransactionReceipt(trade.txId)
+          if (receipt) {
+            emit('confirmedTrade', trade);
+            try {
+              if (receipt.status === '1' || receipt.status === 1) {
+                trade.isConfirmed = true;
+                const {gas, tokens} = await analyseReceipt(trade, receipt, toRaw(props.provider))
+                trade.gasCost = gas.paidUsd + '';
+                trade.toAmount = tokens[0]?.amount || 'unknown';
+                window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, trade.toAmount);
+              } else {
+                const {gas} = await analyseReceipt(trade, receipt, toRaw(props.provider))
+                trade.hasFailed = true;
+                trade.gasCost = gas.paidUsd + '';
+                window.electronAPI.failTrade(trade.txId, trade.gasCost);
+              }
+            } catch (analyseError) {
+              console.error('Error analyzing receipt:', analyseError);
+              // Still mark as confirmed/failed even if analysis fails
+              if (receipt.status === '1' || receipt.status === 1) {
+                trade.isConfirmed = true;
+                window.electronAPI.confirmTrade(trade.txId, 0, 'unknown');
+              } else {
+                trade.hasFailed = true;
+                window.electronAPI.failTrade(trade.txId, '0');
+              }
+            }
+            break; // Exit loop once receipt is found
           }
+        } catch (error) {
+          console.error(`Provider ${i % providersList.length} failed:`, error.message);
+          // Continue to next provider
         }
+        
         ++i;
+      }
+      
+      if (i >= maxRetries) {
+        console.error(`Transaction ${trade.txId} check timed out after ${maxRetries} attempts`);
       }
     }
 
