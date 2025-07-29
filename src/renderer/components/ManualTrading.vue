@@ -3467,7 +3467,7 @@ export default {
       const outputValueUSD = Number(testResult.totalHuman) * toTokenData.price;
       const lossPercentage = ((inputValueUSD - outputValueUSD) / inputValueUSD) * 100;
       
-      if (lossPercentage > props.priceDeviationPercentage) {
+      if (lossPercentage > 40) {
         // Trade rejected due to excessive loss - treat as unprofitable
         return { meetsCondition: false, executionPrice: undefined, tradeResult: testResult, unprofitable: true };
       }

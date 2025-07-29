@@ -154,13 +154,15 @@ export default {
         new ethers.providers.JsonRpcProvider('https://eth1.lava.build', { chainId: 1, name: 'homestead' }),
         new ethers.providers.JsonRpcProvider('https://mainnet.gateway.tenderly.co', { chainId: 1, name: 'homestead' }),
         new ethers.providers.JsonRpcProvider('https://0xrpc.io/eth', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://eth.drpc.org', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://ethereum.therpc.io', { chainId: 1, name: 'homestead' }),
       ];
 
       let i = 0;
       const maxRetries = 100; // Prevent infinite loop - ~5 minutes with 3s delay
       
       while (!trade.isConfirmed && trade.txId && !trade.hasFailed && i < maxRetries) {
-        await new Promise((r) => setTimeout(r, 3000));
+        await new Promise((r) => setTimeout(r, 4000));
         
         try {
           const receipt = await providersList[i % providersList.length].getTransactionReceipt(trade.txId)
