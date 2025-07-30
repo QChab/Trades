@@ -3,9 +3,9 @@
     <!-- Header with controls -->
     <div class="header">
       <button 
-        @click="togglePause" 
-        class="control-btn pause-btn"
+        class="control-btn pause-btn" 
         :class="{ active: isPaused }"
+        @click="togglePause"
       >
         {{ isPaused ? '▶️' : '⏸️' }}
       </button>
@@ -16,8 +16,8 @@
       </div>
       
       <button 
-        @click="$emit('delete')" 
-        class="control-btn delete-btn"
+        class="control-btn delete-btn" 
+        @click="$emit('delete')"
       >
         🗑️
       </button>
@@ -25,30 +25,51 @@
 
     <!-- Address selection and minimum amount controls -->
     <div class="address-controls">
-      <div class="address-selection">
-        <span class="slider-label left" :class="{'slider-selected': !isRandomMode}">Highest</span>
-        <label class="slider-toggle">
-          <input 
-            type="checkbox" 
-            v-model="isRandomMode"
-            @change="emitOrderUpdate"
-          />
-          <span class="slider"></span>
-        </label>
-        <span class="slider-label right"  :class="{'slider-selected': isRandomMode}">Random</span>
+      <div class="left-controls">
+        <div class="address-selection">
+          <label>
+            <input 
+              v-model="isRandomMode" 
+              type="checkbox"
+              @change="emitOrderUpdate"
+            >
+            <span
+              class="higher-label"
+              :class="{'slider-selected': isRandomMode}"
+            >Random</span>
+          </label>
+        </div>
+        <div class="price-unit-selection">
+          <span
+            class="slider-label left"
+            :class="{'slider-selected': !limitPriceInDollars}"
+          >{{ tokenB?.symbol }}</span>
+          <label class="slider-toggle">
+            <input 
+              v-model="limitPriceInDollars" 
+              type="checkbox"
+              @change="togglePriceUnit"
+            >
+            <span class="slider" />
+          </label>
+          <span
+            class="slider-label right"
+            :class="{'slider-selected': limitPriceInDollars}"
+          >$</span>
+        </div>
       </div>
       <div class="minimum-amount">
         <label class="amount-label">
           Min: 
           <input 
-            type="number" 
-            v-model.number="minimumAmount"
-            @input="emitOrderUpdate"
+            v-model.number="minimumAmount" 
+            type="number"
             step="0.000001"
             min="0"
             placeholder="0.0"
             class="min-amount-input"
-          />
+            @input="emitOrderUpdate"
+          >
           <span class="token-symbol">{{ tokenA?.symbol }}</span>
         </label>
       </div>
@@ -70,25 +91,48 @@
           :class="{ 'close-to-trigger': isCloseToTrigger('buy', level) }"
         >
           <div class="level-inputs">
-            <img :src="deleteImage" class="delete" @click="cleanLevel(level, index)" />
+            <img
+              :src="deleteImage"
+              class="delete"
+              @click="cleanLevel(level, index)"
+            >
             <label class="input-group">
-              <span class="first-part-price">{{ tokenA?.symbol }} ≤ </span>
+              <span
+                v-if="!limitPriceInDollars"
+                class="first-part-price"
+              >{{ tokenA?.symbol }} ≤ </span>
+              <span
+                v-else
+                class="first-part-price"
+              >{{ tokenA?.symbol }} ≤ $</span>
               <input
                 v-model.number="level.triggerPrice"
-                @change="updateLevel('buy', index)"
                 type="number"
                 step="0.000001"
                 placeholder="0.0"
                 class="price-input"
-              />
-              <span class="second-part-price">{{ tokenB?.symbol }}</span>
-              <span v-if="level.triggerPrice" class="usd-price">${{ getUsdPrice(level.triggerPrice) }}</span>
+                @change="updateLevel('buy', index)"
+              >
+              <span
+                v-if="!limitPriceInDollars"
+                class="second-part-price"
+              >{{ tokenB?.symbol }}</span>
+              <span
+                v-if="!limitPriceInDollars && level.triggerPrice"
+                class="usd-price"
+              >${{ getUsdPrice(level.triggerPrice) }}</span>
+              <span
+                v-if="limitPriceInDollars && level.triggerPrice"
+                class="token-price-below"
+              >{{ getTokenPriceFromDollar(level.triggerPrice) }} {{ tokenB?.symbol }}</span>
             </label>
-            <label class="input-group" v-if="level.triggerPrice">
+            <label
+              v-if="level.triggerPrice"
+              class="input-group"
+            >
               Buy
               <input
                 v-model.number="level.balancePercentage"
-                @input="updateLevel('buy', index)"
                 type="number"
                 min="0"
                 max="100"
@@ -96,9 +140,13 @@
                 placeholder="0"
                 class="percentage-input"
                 :title="getPercentageTooltip('buy', level.balancePercentage)"
-              />
+                @input="updateLevel('buy', index)"
+              >
               <span class="percentage-symbol">%</span>
-              <span class="level-status-inline" :class="getLevelStatusClass('buy', level)">
+              <span
+                class="level-status-inline"
+                :class="getLevelStatusClass('buy', level)"
+              >
                 {{ getLevelStatus('buy', level) }}
               </span>
             </label>
@@ -114,25 +162,49 @@
           :class="{ 'close-to-trigger': isCloseToTrigger('sell', level) }"
         >
           <div class="level-inputs">
-            <img :src="deleteImage" class="delete" @click="cleanLevel(level, index)" v-if="level.triggerPrice"/>
+            <img
+              v-if="level.triggerPrice"
+              :src="deleteImage"
+              class="delete"
+              @click="cleanLevel(level, index)"
+            >
             <label class="input-group">
-              <span class="first-part-price">{{ tokenA?.symbol }} ≥ </span>
+              <span
+                v-if="!limitPriceInDollars"
+                class="first-part-price"
+              >{{ tokenA?.symbol }} ≥ </span>
+              <span
+                v-else
+                class="first-part-price"
+              >{{ tokenA?.symbol }} ≥ $</span>
               <input
                 v-model.number="level.triggerPrice"
-                @change="updateLevel('sell', index)"
                 type="number"
                 step="0.000001"
                 placeholder="0.0"
                 class="price-input"
-              />
-              <span class="second-part-price">{{ tokenB?.symbol }}</span>
-              <span v-if="level.triggerPrice" class="usd-price">${{ getUsdPrice(level.triggerPrice) }}</span>
+                @change="updateLevel('sell', index)"
+              >
+              <span
+                v-if="!limitPriceInDollars"
+                class="second-part-price"
+              >{{ tokenB?.symbol }}</span>
+              <span
+                v-if="!limitPriceInDollars && level.triggerPrice"
+                class="usd-price"
+              >${{ getUsdPrice(level.triggerPrice) }}</span>
+              <span
+                v-if="limitPriceInDollars && level.triggerPrice"
+                class="token-price-below"
+              >{{ getTokenPriceFromDollar(level.triggerPrice) }} {{ tokenB?.symbol }}</span>
             </label>
-            <label class="input-group" v-if="level.triggerPrice">
+            <label
+              v-if="level.triggerPrice"
+              class="input-group"
+            >
               Sell
               <input
                 v-model.number="level.balancePercentage"
-                @input="updateLevel('sell', index)"
                 type="number"
                 min="0"
                 max="100"
@@ -140,9 +212,13 @@
                 placeholder="0"
                 class="percentage-input"
                 :title="getPercentageTooltip('sell', level.balancePercentage)"
-              />
+                @input="updateLevel('sell', index)"
+              >
               <span class="percentage-symbol">%</span>
-              <span class="level-status-inline" :class="getLevelStatusClass('sell', level)">
+              <span
+                class="level-status-inline"
+                :class="getLevelStatusClass('sell', level)"
+              >
                 {{ getLevelStatus('sell', level) }}
               </span>
             </label>
@@ -160,7 +236,7 @@
     :details="priceDeviationDetails"
     @confirm="confirmPriceDeviationUpdate"
     @cancel="cancelPriceDeviationUpdate"
-  />
+  ></ConfirmationModal>
 </template>
 
 <script>
@@ -217,6 +293,7 @@ export default {
     const isPaused = ref(false);
     const isRandomMode = ref(false); // false = highest balance, true = random
     const minimumAmount = ref(0);
+    const limitPriceInDollars = ref(false);
     
     // Modal state for price deviation warning
     const showPriceDeviationModal = ref(false);
@@ -315,16 +392,42 @@ export default {
       isPaused.value = !isPaused.value;
       emitOrderUpdate();
     };
+
+    const togglePriceUnit = () => {
+      // Clear all levels when switching modes
+      buyLevels.forEach((level) => {
+        level.triggerPrice = null;
+        level.balancePercentage = null;
+        level.status = 'inactive';
+      });
+      
+      sellLevels.forEach((level) => {
+        level.triggerPrice = null;
+        level.balancePercentage = null;
+        level.status = 'inactive';
+      });
+      
+      emitOrderUpdate();
+    };
     
     // Price deviation check functions
     const checkPriceDeviation = (userPrice, marketPrice, orderType) => {
       if (!marketPrice || marketPrice === 0) return { needsConfirmation: false };
       
-      const deviation = Math.abs((userPrice - marketPrice) / marketPrice * 100);
+      // Convert prices for comparison if in dollar mode
+      let compareUserPrice = userPrice;
+      let compareMarketPrice = marketPrice;
+      
+      if (limitPriceInDollars.value && tokenBPrice.value) {
+        // User entered dollar price, convert market price to dollars for comparison
+        compareMarketPrice = marketPrice * tokenBPrice.value;
+      }
+      
+      const deviation = Math.abs((compareUserPrice - compareMarketPrice) / compareMarketPrice * 100);
       
       if (deviation > props.priceDeviationPercentage) {
         const isBuyOrder = orderType === 'buy';
-        const isUnfavorable = isBuyOrder ? userPrice > marketPrice : userPrice < marketPrice;
+        const isUnfavorable = isBuyOrder ? compareUserPrice > compareMarketPrice : compareUserPrice < compareMarketPrice;
         
         if (isUnfavorable) {
           return {
@@ -336,6 +439,15 @@ export default {
       }
       
       return { needsConfirmation: false };
+    };
+    
+    // Helper function to convert prices for validation
+    const convertPriceForValidation = (price) => {
+      if (limitPriceInDollars.value && price && tokenBPrice.value) {
+        // Convert dollar price to token price for validation
+        return price / tokenBPrice.value;
+      }
+      return price;
     };
     
     // Validate against existing orders from other OrderBookLevels instances
@@ -412,10 +524,17 @@ export default {
           // Check against current component's buy levels
           for (const buyLevel of buyLevels) {
             if (buyLevel.triggerPrice && buyLevel.balancePercentage) {
-              if (userPrice <= buyLevel.triggerPrice) {
+              // Convert both prices to same unit for comparison
+              const buyPriceForComparison = limitPriceInDollars.value ? 
+                (buyLevel.triggerPrice * tokenBPrice.value) : buyLevel.triggerPrice;
+              const sellPriceForComparison = limitPriceInDollars.value ? 
+                (userPrice) : userPrice;
+              
+              if (sellPriceForComparison <= buyPriceForComparison) {
+                const unit = limitPriceInDollars.value ? '$' : tokenB.value?.symbol;
                 return {
                   isValid: false,
-                  reason: `Sell price ${userPrice.toFixed(6)} cannot be at or below buy level at ${buyLevel.triggerPrice.toFixed(6)}`
+                  reason: `Sell price ${sellPriceForComparison.toFixed(6)} ${unit} cannot be at or below buy level at ${buyPriceForComparison.toFixed(6)} ${unit}`
                 };
               }
             }
@@ -424,10 +543,17 @@ export default {
           // Check against current component's sell levels
           for (const sellLevel of sellLevels) {
             if (sellLevel.triggerPrice && sellLevel.balancePercentage) {
-              if (userPrice >= sellLevel.triggerPrice) {
+              // Convert both prices to same unit for comparison
+              const sellPriceForComparison = limitPriceInDollars.value ? 
+                (sellLevel.triggerPrice * tokenBPrice.value) : sellLevel.triggerPrice;
+              const buyPriceForComparison = limitPriceInDollars.value ? 
+                (userPrice) : userPrice;
+              
+              if (buyPriceForComparison >= sellPriceForComparison) {
+                const unit = limitPriceInDollars.value ? '$' : tokenB.value?.symbol;
                 return {
                   isValid: false,
-                  reason: `Buy price ${userPrice.toFixed(6)} cannot be at or above sell level at ${sellLevel.triggerPrice.toFixed(6)}`
+                  reason: `Buy price ${buyPriceForComparison.toFixed(6)} ${unit} cannot be at or above sell level at ${sellPriceForComparison.toFixed(6)} ${unit}`
                 };
               }
             }
@@ -474,7 +600,8 @@ export default {
       
       // Check against existing orders (bid-ask spread validation)
       if (level.triggerPrice) {
-        const bidAskValidation = validateAgainstExistingOrders(level.triggerPrice, type);
+        const priceForValidation = convertPriceForValidation(level.triggerPrice);
+        const bidAskValidation = validateAgainstExistingOrders(priceForValidation, type);
         
         if (!bidAskValidation.isValid) {
           // Clear the invalid price instead of reverting to original
@@ -650,6 +777,12 @@ export default {
       return removeTrailingZeros(usdPrice, 4);
     };
 
+    const getTokenPriceFromDollar = (dollarPrice) => {
+      if (!dollarPrice || !tokenBPrice.value) return '0.00';
+      const tokenPrice = dollarPrice / tokenBPrice.value;
+      return removeTrailingZeros(tokenPrice, 7);
+    };
+
     const getPercentageTooltip = (type, percentage) => {
       if (!percentage) return '';
       
@@ -690,6 +823,8 @@ export default {
           isRandomMode.value = props.details.isRandomMode
         if (props.details.minimumAmount !== undefined)
           minimumAmount.value = props.details.minimumAmount
+        if (props.details.limitPriceInDollars !== undefined)
+          limitPriceInDollars.value = props.details.limitPriceInDollars
       }
       
       // Initialize all rows
@@ -731,6 +866,12 @@ export default {
       getPercentageTooltip,
       emitOrderUpdate,
       
+      // Dollar mode functions
+      limitPriceInDollars,
+      togglePriceUnit,
+      getTokenPriceFromDollar,
+      convertPriceForValidation,
+      
       // Price deviation modal
       showPriceDeviationModal,
       priceDeviationMessage,
@@ -769,7 +910,19 @@ export default {
   font-size: 11px;
 }
 
+.left-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .address-selection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.price-unit-selection {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -779,6 +932,10 @@ export default {
   font-size: 10px;
   color: #666;
   font-weight: 500;
+}
+
+.higher-label {
+  margin-top: -4px;
 }
 
 .slider-label.left {
@@ -1103,6 +1260,13 @@ input:checked + .slider:before {
 }
 
 .usd-price {
+  font-size: 9px;
+  color: #666;
+  margin-left: 50px;
+  font-weight: 500;
+}
+
+.token-price-below {
   font-size: 9px;
   color: #666;
   margin-left: 50px;

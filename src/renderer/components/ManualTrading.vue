@@ -3348,33 +3348,57 @@ export default {
               // Inverted case: toToken price in terms of fromToken
               currentMarketPrice = toToken.price / fromToken.price;
             }
+            
+            // If order was created with dollar prices, convert current market price to dollars for comparison
+            let comparableMarketPrice = currentMarketPrice;
+            let comparablePriceLimit = order.priceLimit;
+            
+            if (order.limitPriceInDollars) {
+              // Convert market price to dollars for comparison
+              if (!order.shouldSwitchTokensForLimit) {
+                // For sell levels: selling fromToken, so we want dollar value per fromToken
+                // currentMarketPrice is fromToken/toToken ratio, multiply by toToken price to get fromToken dollar value
+                comparableMarketPrice = currentMarketPrice * toToken.price;
+                // Restore original dollar price for comparison
+                comparablePriceLimit = order.priceLimit * toToken.price;
+              } else {
+                // For buy levels: buying toToken, so we want dollar value per toToken
+                // Since currentMarketPrice is toToken/fromToken when inverted, and we want toToken dollar price
+                // We can directly use toToken.price
+                comparableMarketPrice = toToken.price;
+                // Restore original dollar price for comparison (original dollar price of toToken)
+                comparablePriceLimit = order.priceLimit * toToken.price;
+              }
+            }
 
             // Define price tolerance (e.g., within 1% of trigger price)
             const PRICE_TOLERANCE = 0.01; // 1%
-            const priceDifference = Math.abs(currentMarketPrice - order.priceLimit) / order.priceLimit;
+            const priceDifference = Math.abs(comparableMarketPrice - comparablePriceLimit) / comparablePriceLimit;
             
             // Only proceed with expensive getBestTrades call if we're close to trigger price
             let shouldCheckExactPrice = false;
             let shouldTrigger = false;
 
-            // New trigger logic based on price comparison
-            // If not inverted: trigger when fromTokenPrice >= limitPrice * toTokenPrice
-            // If inverted: trigger when toTokenPrice <= limitPrice * fromTokenPrice
+            // New trigger logic based on price comparison using comparable units
+            // If not inverted: trigger when market price >= limit price
+            // If inverted: trigger when market price <= limit price
             if (!order.shouldSwitchTokensForLimit) {
               // Normal case: check if we're close to trigger price (>=)
-              shouldCheckExactPrice = currentMarketPrice >= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
+              shouldCheckExactPrice = comparableMarketPrice >= comparablePriceLimit || priceDifference <= PRICE_TOLERANCE;
             } else {
               // Inverted case: check if we're close to trigger price (<=)
-              shouldCheckExactPrice = currentMarketPrice <= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
+              shouldCheckExactPrice = comparableMarketPrice <= comparablePriceLimit || priceDifference <= PRICE_TOLERANCE;
             }
 
             if (!shouldCheckExactPrice) {
               // Price is not close enough to trigger, log and continue
-              console.log(`Order ${order.id}: market price ${currentMarketPrice.toFixed(6)} not close to limit ${order.priceLimit} (diff: ${(priceDifference * 100).toFixed(2)}%) - skipping exact price check`);
+              const unit = order.limitPriceInDollars ? '$' : '';
+              console.log(`Order ${order.id}: market price ${unit}${comparableMarketPrice.toFixed(6)} not close to limit ${unit}${comparablePriceLimit.toFixed(6)} (diff: ${(priceDifference * 100).toFixed(2)}%) - skipping exact price check`);
               continue;
             }
 
-            console.log(`Order ${order.id}: market price ${currentMarketPrice.toFixed(6)} is close to limit ${order.priceLimit} - checking exact execution price`);
+            const unit = order.limitPriceInDollars ? '$' : '';
+            console.log(`Order ${order.id}: market price ${unit}${comparableMarketPrice.toFixed(6)} is close to limit ${unit}${comparablePriceLimit.toFixed(6)} - checking exact execution price`);
 
             // Get exact trade execution price by fetching best trades
             const bestTradeResult = await getBestTrades(
@@ -3948,6 +3972,7 @@ export default {
           isPaused: false,
           isRandomMode: false,
           minimumAmount: 0,
+          limitPriceInDollars: false,
           buyLevels: [
             { triggerPrice: null, balancePercentage: null },
             { triggerPrice: null, balancePercentage: null },
@@ -4169,7 +4194,11 @@ export default {
               if (minimumAmount > 0 && fromAmount > 0) {
                 // Calculate expected output amount using trigger price
                 // For buy levels: we're buying toToken with fromToken
-                const expectedOutputAmount = fromAmount * buyLevel.triggerPrice;
+                let effectiveTriggerPrice = buyLevel.triggerPrice;
+                if (col.details.limitPriceInDollars && toToken.price) {
+                  effectiveTriggerPrice = buyLevel.triggerPrice / toToken.price;
+                }
+                const expectedOutputAmount = fromAmount * effectiveTriggerPrice;
                 meetsMinimumRequirement = expectedOutputAmount >= minimumAmount;
                 
                 if (!meetsMinimumRequirement) {
@@ -4178,18 +4207,26 @@ export default {
               }
               
               if (fromAmount > 0 && meetsMinimumRequirement) {
+                // Convert dollar price to token price if needed
+                let effectivePriceLimit = buyLevel.triggerPrice;
+                if (col.details.limitPriceInDollars && toToken.price) {
+                  // Convert dollar price to token price: dollarPrice / toTokenPrice
+                  effectivePriceLimit = buyLevel.triggerPrice / toToken.price;
+                }
+                
                 orders.push({
                   id: Math.floor(Math.random() * 10000000000000),
                   fromAmount,
                   remainingAmount: fromAmount,
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
-                  priceLimit: buyLevel.triggerPrice,
+                  priceLimit: effectivePriceLimit,
                   // orderType removed - using shouldSwitchTokensForLimit instead
                   shouldSwitchTokensForLimit: true,
                   status: 'pending',
                   createdAt: new Date().toISOString(),
                   automatic: true,
+                  limitPriceInDollars: col.details.limitPriceInDollars || false,
                   sourceLocation: {
                     rowIndex: i,
                     colIndex: j,
@@ -4244,18 +4281,26 @@ export default {
               }
               
               if (fromAmount > 0 && meetsMinimumRequirement) {
+                // Convert dollar price to token price if needed
+                let effectivePriceLimit = sellLevel.triggerPrice;
+                if (col.details.limitPriceInDollars && toToken.price) {
+                  // Convert dollar price to token price: dollarPrice / toTokenPrice
+                  effectivePriceLimit = sellLevel.triggerPrice / toToken.price;
+                }
+                
                 orders.push({
                   id: Math.floor(Math.random() * 10000000000000),
                   fromAmount,
                   remainingAmount: fromAmount,
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
-                  priceLimit: sellLevel.triggerPrice,
+                  priceLimit: effectivePriceLimit,
                   // orderType removed - using shouldSwitchTokensForLimit instead
                   shouldSwitchTokensForLimit: false,
                   status: 'pending',
                   createdAt: new Date().toISOString(),
                   automatic: true,
+                  limitPriceInDollars: col.details.limitPriceInDollars || false,
                   sourceLocation: {
                     rowIndex: i,
                     colIndex: j,
