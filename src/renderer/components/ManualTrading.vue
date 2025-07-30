@@ -2654,11 +2654,6 @@ export default {
         ? fromPrice / toPrice
         : toPrice / fromPrice;
 
-      // Calculate expected output amount based on limit price
-      const expectedToAmount = !shouldSwitchTokensForLimit.value
-        ? (fromAmount.value * priceLimit.value).toFixed(6)
-        : (fromAmount.value / priceLimit.value).toFixed(6);
-
       // Check against existing pending orders (bid-ask spread validation)
       const orderType = shouldSwitchTokensForLimit.value ? 'sell' : 'buy';
       const bidAskValidation = validateAgainstPendingOrders(
@@ -2882,7 +2877,7 @@ export default {
         }
 
         // Get exact execution price from DEX
-        const bestTradeResult = await getBestTrades(
+        let bestTradeResult = await getBestTrades(
           order.fromToken.address,
           order.toToken.address,
           executionAmount,
