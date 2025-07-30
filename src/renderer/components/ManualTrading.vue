@@ -3128,7 +3128,7 @@ export default {
         }
         
         
-        const bestTradeResult = await getBestTrades(
+        let bestTradeResult = await getBestTrades(
           fromToken.address,
           toToken.address,
           amount,
