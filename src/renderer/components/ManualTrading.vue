@@ -1030,7 +1030,7 @@ export default {
         // Check if both outputs are zero (unprofitable trades)
         if (outputU.eq(0) && outputB.eq(0) && negativeOutputUniswap && negativeOutputBalancer) {
           // Both trades are unprofitable - choose the less negative one
-          if (negativeOutputUniswap.lt(negativeOutputBalancer) && shouldUseUniswapValue) {
+          if (negativeOutputUniswap.lte(negativeOutputBalancer) && shouldUseUniswapValue) {
             bestOutputLessGas = outputU; // Will be 0
             bestNegativeOutput = negativeOutputUniswap;
             isUsingUniswap = true;
@@ -1043,7 +1043,7 @@ export default {
           }
         } else {
           // Normal comparison when at least one is profitable
-          if (outputU.gt(outputB) && shouldUseUniswapValue) {
+          if (outputU.gte(outputB) && shouldUseUniswapValue) {
             bestOutputLessGas = outputU;
             isUsingUniswap = true;
             // console.log('Using Uniswap')
@@ -1053,7 +1053,10 @@ export default {
             // console.log('Using Balancer')
           }
         }
+      } if (!outputB) {
+        isUsingUniswap = true;
       }
+
       if (shouldUseUniswapValue && !shouldUseBalancerValue)
         isUsingUniswap = true
       if (shouldUseBalancerValue && !shouldUseUniswapValue)
@@ -1119,7 +1122,7 @@ export default {
 
         let bestMixedOption = mixedOptions[0];
 
-        if (mixedOptions.length === 0 || (bestMixedOption.fraction === 90)) {
+        if (!bestMixedOption || (bestMixedOption?.fraction === 90)) {
           console.log('No mixed trades found');
           const resultsSmaller = await Promise.allSettled([
             getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .01, senderAddr, false),
