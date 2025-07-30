@@ -178,3 +178,9 @@ When working with this codebase, pay special attention to the order type determi
 - **Configurable Loss Protection**: USD value comparison before execution to prevent excessive losses (configurable percentage, default 20%)
 - **Automatic Order Logic**: Buy levels use `shouldSwitchTokensForLimit: false`, sell levels use `true`
 - **Execution Function**: `tryExecutePendingOrder()` handles all execution logic with proper error handling
+
+### Dollar-Based Price Limits (`limitPriceInDollars`)
+- **Storage**: `triggerPrice` stores user input (dollars when true, token ratios when false)
+- **Conversion**: Dollar prices converted to token ratios for DEX execution (`dollarPrice / tokenBPrice`)
+- **Trigger Logic**: All price comparisons convert to same units - prevents mixing dollars with token ratios
+- **Critical**: Applied across all execution paths to ensure coherent unit comparisons

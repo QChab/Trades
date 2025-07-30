@@ -27,7 +27,7 @@
     <div class="address-controls">
       <div class="left-controls">
         <div class="address-selection">
-          <label>
+          <label class="middle-label">
             <input 
               v-model="isRandomMode" 
               type="checkbox"
@@ -70,14 +70,17 @@
             class="min-amount-input"
             @input="emitOrderUpdate"
           >
-          <span class="token-symbol">{{ tokenA?.symbol }}</span>
+          <!-- <span class="token-symbol">{{ tokenA?.symbol }}</span> -->
         </label>
       </div>
     </div>
 
     <!-- Current market price -->
     <div class="market-price">
-      <span class="price-value">1 {{ tokenA?.symbol }} = {{ currentMarketPrice.toFixed(7) }} {{ tokenB?.symbol }}</span>
+      <span class="price-value">
+        1 {{ tokenA?.symbol }} = 
+        <span>{{ currentMarketPrice.toFixed(7) }} {{ tokenB?.symbol }}</span>
+      </span>
     </div>
 
     <!-- Order levels grid -->
@@ -96,36 +99,47 @@
               class="delete"
               @click="cleanLevel(level, index)"
             >
-            <label class="input-group">
-              <span
-                v-if="!limitPriceInDollars"
-                class="first-part-price"
-              >{{ tokenA?.symbol }} ≤ </span>
-              <span
-                v-else
-                class="first-part-price"
-              >{{ tokenA?.symbol }} ≤ $</span>
-              <input
-                v-model.number="level.triggerPrice"
-                type="number"
-                step="0.000001"
-                placeholder="0.0"
-                class="price-input"
-                @change="updateLevel('buy', index)"
+            <div class="price-input-container">
+              <label class="input-group">
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="first-part-price"
+                >{{ tokenA?.symbol }} ≤ </span>
+                <span
+                  v-else
+                  class="first-part-price"
+                >{{ tokenA?.symbol }} ≤</span>
+                <input
+                  v-model.number="level.triggerPrice"
+                  type="number"
+                  step="0.000001"
+                  placeholder="0.0"
+                  class="price-input"
+                  @change="updateLevel('buy', index)"
+                >
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="second-part-price"
+                >{{ tokenB?.symbol }}</span>
+                <span
+                  v-else
+                  class="second-part-price"
+                >$</span>
+              </label>
+              <div
+                v-if="level.triggerPrice"
+                class="secondary-price"
               >
-              <span
-                v-if="!limitPriceInDollars"
-                class="second-part-price"
-              >{{ tokenB?.symbol }}</span>
-              <span
-                v-if="!limitPriceInDollars && level.triggerPrice"
-                class="usd-price"
-              >${{ getUsdPrice(level.triggerPrice) }}</span>
-              <span
-                v-if="limitPriceInDollars && level.triggerPrice"
-                class="token-price-below"
-              >{{ getTokenPriceFromDollar(level.triggerPrice) }} {{ tokenB?.symbol }}</span>
-            </label>
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="usd-price"
+                >${{ getUsdPrice(level.triggerPrice) }}</span>
+                <span
+                  v-if="limitPriceInDollars"
+                  class="token-price-below"
+                >{{ getTokenPriceFromDollar(level.triggerPrice) }} {{ tokenB?.symbol }}</span>
+              </div>
+            </div>
             <label
               v-if="level.triggerPrice"
               class="input-group"
@@ -168,36 +182,47 @@
               class="delete"
               @click="cleanLevel(level, index)"
             >
-            <label class="input-group">
-              <span
-                v-if="!limitPriceInDollars"
-                class="first-part-price"
-              >{{ tokenA?.symbol }} ≥ </span>
-              <span
-                v-else
-                class="first-part-price"
-              >{{ tokenA?.symbol }} ≥ $</span>
-              <input
-                v-model.number="level.triggerPrice"
-                type="number"
-                step="0.000001"
-                placeholder="0.0"
-                class="price-input"
-                @change="updateLevel('sell', index)"
+            <div class="price-input-container">
+              <label class="input-group">
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="first-part-price"
+                >{{ tokenA?.symbol }} ≥ </span>
+                <span
+                  v-else
+                  class="first-part-price"
+                >{{ tokenA?.symbol }} ≥ </span>
+                <input
+                  v-model.number="level.triggerPrice"
+                  type="number"
+                  step="0.000001"
+                  placeholder="0.0"
+                  class="price-input"
+                  @change="updateLevel('sell', index)"
+                >
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="second-part-price"
+                >{{ tokenB?.symbol }}</span>
+                <span
+                  v-else
+                  class="second-part-price"
+                >$</span>
+              </label>
+              <div
+                v-if="level.triggerPrice"
+                class="secondary-price"
               >
-              <span
-                v-if="!limitPriceInDollars"
-                class="second-part-price"
-              >{{ tokenB?.symbol }}</span>
-              <span
-                v-if="!limitPriceInDollars && level.triggerPrice"
-                class="usd-price"
-              >${{ getUsdPrice(level.triggerPrice) }}</span>
-              <span
-                v-if="limitPriceInDollars && level.triggerPrice"
-                class="token-price-below"
-              >{{ getTokenPriceFromDollar(level.triggerPrice) }} {{ tokenB?.symbol }}</span>
-            </label>
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="usd-price"
+                >${{ getUsdPrice(level.triggerPrice) }}</span>
+                <span
+                  v-if="limitPriceInDollars"
+                  class="token-price-below"
+                >{{ getTokenPriceFromDollar(level.triggerPrice) }} {{ tokenB?.symbol }}</span>
+              </div>
+            </div>
             <label
               v-if="level.triggerPrice"
               class="input-group"
@@ -630,8 +655,12 @@ export default {
             : `Your sell price is ${deviationCheck.deviation}% lower than the current market price. Are you sure you want to set this level?`;
           
           priceDeviationDetails.value = {
-            marketPrice: `1 ${tokenA.value.symbol} = ${marketPrice.toFixed(6)} ${tokenB.value.symbol}`,
-            userPrice: `1 ${tokenA.value.symbol} = ${level.triggerPrice.toFixed(6)} ${tokenB.value.symbol}`,
+            marketPrice: limitPriceInDollars.value 
+              ? `1 ${tokenA.value.symbol} = $${(marketPrice * tokenBPrice.value).toFixed(2)}`
+              : `1 ${tokenA.value.symbol} = ${marketPrice.toFixed(6)} ${tokenB.value.symbol}`,
+            userPrice: limitPriceInDollars.value 
+              ? `1 ${tokenA.value.symbol} = $${level.triggerPrice.toFixed(2)}`
+              : `1 ${tokenA.value.symbol} = ${level.triggerPrice.toFixed(6)} ${tokenB.value.symbol}`,
             deviation: deviationCheck.deviation
           };
           
@@ -934,8 +963,17 @@ export default {
   font-weight: 500;
 }
 
+.middle-label {
+  display: flex;
+  align-items: center;
+  width: 75px;
+}
+
 .higher-label {
-  margin-top: -4px;
+  font-size: 10px;
+  color: #666;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .slider-label.left {
@@ -1202,8 +1240,8 @@ input:checked + .slider:before {
   gap: 1px; /* Reduced from 8px */
   margin-left: auto;
   margin-right: auto;
-  flex-wrap: wrap;
-  min-width: 135px;
+  flex-wrap: nowrap;
+  min-width: 145px;
 }
 
 .input-group span {
@@ -1213,12 +1251,13 @@ input:checked + .slider:before {
 
 .price-input {
   flex: 1;
-  padding: 4px 6px; /* Reduced from 6px 8px */
+  padding: 1px;
   border: 1px solid #eee;
   border-radius: 3px; /* Reduced from 4px */
   font-size: 12px; /* Reduced from 14px */
   transition: all 0.2s ease;
   text-align: center;
+  max-width: 65px;
 }
 
 .price-input:focus, .percentage-input:focus {
@@ -1251,7 +1290,7 @@ input:checked + .slider:before {
 
 .level-status-inline {
   padding: 2px 4px;
-  margin-left: 4px;
+  margin-left: auto;
   border-radius: 3px;
   font-size: 9px;
   font-weight: 500;
@@ -1260,16 +1299,22 @@ input:checked + .slider:before {
 }
 
 .usd-price {
-  font-size: 9px;
+  font-size: 10px;
   color: #666;
-  margin-left: 50px;
   font-weight: 500;
 }
 
 .token-price-below {
+  font-size: 10px;
+  color: #666;
+  font-weight: 500;
+}
+
+.secondary-price {
+  text-align: center;
+  margin-top: 2px;
   font-size: 9px;
   color: #666;
-  margin-left: 50px;
   font-weight: 500;
 }
 
@@ -1350,7 +1395,7 @@ input.percentage-input {
   margin-left: 2px;
 }
 .first-part-price {
-  width: 38px;
+  width: 35px;
 }
 
 .token-price {

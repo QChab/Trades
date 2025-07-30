@@ -2912,14 +2912,32 @@ export default {
           }
         }
 
+        // Convert prices to comparable units if order was created with dollar prices
+        let comparableExecutionPrice = exactExecutionPrice;
+        let comparablePriceLimit = order.priceLimit;
+        
+        if (order.limitPriceInDollars) {
+          if (!order.shouldSwitchTokensForLimit) {
+            // For sell levels: convert execution price to dollars
+            comparableExecutionPrice = exactExecutionPrice * toToken.price;
+            // priceLimit is already in dollars, no conversion needed
+            comparablePriceLimit = order.priceLimit;
+          } else {
+            // For buy levels: convert execution price to dollars
+            comparableExecutionPrice = toToken.price / exactExecutionPrice;
+            // priceLimit is already in dollars, no conversion needed
+            comparablePriceLimit = order.priceLimit;
+          }
+        }
+        
         // Check if trigger condition is still valid based on new logic
         let shouldTrigger = false;
         if (!order.shouldSwitchTokensForLimit) {
           // Normal case: trigger when execution price >= limit price
-          shouldTrigger = exactExecutionPrice >= order.priceLimit;
+          shouldTrigger = comparableExecutionPrice >= comparablePriceLimit;
         } else {
           // Inverted case: trigger when execution price <= limit price
-          shouldTrigger = exactExecutionPrice <= order.priceLimit;
+          shouldTrigger = comparableExecutionPrice <= comparablePriceLimit;
         }
 
         // Calculate loss protection check using configurable percentage
@@ -2938,7 +2956,7 @@ export default {
           };
         }
 
-        const priceDifference = Math.abs(exactExecutionPrice - order.priceLimit) / order.priceLimit;
+        const priceDifference = Math.abs(comparableExecutionPrice - comparablePriceLimit) / comparablePriceLimit;
         
         return {
           valid: shouldTrigger,
@@ -2946,7 +2964,7 @@ export default {
           currentMarketPrice,
           priceDifference: priceDifference * 100, // Convert to percentage
           bestTradeResult, // Return the updated bestTradeResult
-          reason: shouldTrigger ? 'Trigger condition met' : `Price condition not met: ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit}`
+          reason: shouldTrigger ? 'Trigger condition met' : `Price condition not met: ${order.limitPriceInDollars ? '$' : ''}${comparableExecutionPrice.toFixed(9)} vs limit ${order.limitPriceInDollars ? '$' : ''}${comparablePriceLimit.toFixed(9)}`
         };
       } catch (error) {
         console.error('Error during price re-validation:', error);
@@ -2979,7 +2997,8 @@ export default {
             
             if (!validation.valid) {
               console.log(`⚠️ Trigger condition no longer valid for address ${address.name}: ${validation.reason}`);
-              console.log(`Market price: ${validation.currentMarketPrice?.toFixed(9) || 'N/A'}, Execution price: ${validation.exactExecutionPrice?.toFixed(9) || 'N/A'}, Limit: ${order.priceLimit}`);
+              const unit = order.limitPriceInDollars ? '$' : '';
+              console.log(`Market price: ${validation.currentMarketPrice?.toFixed(9) || 'N/A'}, Execution price: ${validation.exactExecutionPrice?.toFixed(9) || 'N/A'}, Limit: ${unit}${order.priceLimit}`);
               
               validationFailures++;
               
@@ -3128,7 +3147,7 @@ export default {
         }
         
         
-        const bestTradeResult = await getBestTrades(
+        let bestTradeResult = await getBestTrades(
           fromToken.address,
           toToken.address,
           amount,
@@ -3167,22 +3186,42 @@ export default {
           }
         }
         
+        // Convert prices to comparable units if order was created with dollar prices
+        let comparableExecutionPrice = exactExecutionPrice;
+        let comparablePriceLimit = order.priceLimit;
+        
+        if (order.limitPriceInDollars) {
+          if (!order.shouldSwitchTokensForLimit) {
+            // For sell levels: convert execution price to dollars
+            comparableExecutionPrice = exactExecutionPrice * toToken.price;
+            // priceLimit is already in dollars, no conversion needed
+            comparablePriceLimit = order.priceLimit;
+          } else {
+            // For buy levels: convert execution price to dollars
+            comparableExecutionPrice = toToken.price / exactExecutionPrice;
+            // priceLimit is already in dollars, no conversion needed
+            comparablePriceLimit = order.priceLimit;
+          }
+        }
+        
         // Validate price condition still holds after first trade impact
         let shouldExecute = false;
         if (!order.shouldSwitchTokensForLimit) {
           // Normal case: trigger when execution price >= limit price
-          shouldExecute = exactExecutionPrice >= order.priceLimit;
+          shouldExecute = comparableExecutionPrice >= comparablePriceLimit;
         } else {
           // Inverted case: trigger when execution price <= limit price
-          shouldExecute = exactExecutionPrice <= order.priceLimit;
+          shouldExecute = comparableExecutionPrice <= comparablePriceLimit;
         }
         
         if (!shouldExecute) {
-          console.log(`Price condition no longer valid. Execution price: ${exactExecutionPrice.toFixed(9)} vs limit: ${order.priceLimit} (inverted: ${order.shouldSwitchTokensForLimit})`);
+          const unit = order.limitPriceInDollars ? '$' : '';
+          console.log(`Price condition no longer valid. Execution price: ${unit}${comparableExecutionPrice.toFixed(9)} vs limit: ${unit}${comparablePriceLimit.toFixed(9)} (inverted: ${order.shouldSwitchTokensForLimit})`);
           return { success: false, error: 'Price condition no longer valid after market impact' };
         }
         
-        console.log(`Price validation passed. Execution price: ${exactExecutionPrice.toFixed(9)} vs limit: ${order.priceLimit} (inverted: ${order.shouldSwitchTokensForLimit})`);
+        const unit = order.limitPriceInDollars ? '$' : '';
+        console.log(`Price validation passed. Execution price: ${unit}${comparableExecutionPrice.toFixed(9)} vs limit: ${unit}${comparablePriceLimit.toFixed(9)} (inverted: ${order.shouldSwitchTokensForLimit})`);
         
         
         const limitOrderTradeSummary = {
@@ -3421,17 +3460,36 @@ export default {
             }
             console.log({exactExecutionPrice})
 
+            // Convert prices to comparable units if order was created with dollar prices
+            let comparableExecutionPrice = exactExecutionPrice;
+            comparablePriceLimit = order.priceLimit;
+            
+            if (order.limitPriceInDollars) {
+              if (!order.shouldSwitchTokensForLimit) {
+                // For sell levels: convert execution price to dollars
+                comparableExecutionPrice = exactExecutionPrice * toToken.price;
+                // Restore original dollar price for comparison
+                comparablePriceLimit = order.priceLimit * toToken.price;
+              } else {
+                // For buy levels: convert execution price to dollars
+                comparableExecutionPrice = toToken.price / exactExecutionPrice;
+                // Restore original dollar price for comparison
+                comparablePriceLimit = order.priceLimit * toToken.price;
+              }
+            }
+            
             // Determine if order should be triggered based on new logic
             if (!order.shouldSwitchTokensForLimit) {
               // Normal case: trigger when execution price >= limit price
-              shouldTrigger = exactExecutionPrice >= order.priceLimit;
+              shouldTrigger = comparableExecutionPrice >= comparablePriceLimit;
             } else {
               // Inverted case: trigger when execution price <= limit price
-              shouldTrigger = exactExecutionPrice <= order.priceLimit;
+              shouldTrigger = comparableExecutionPrice <= comparablePriceLimit;
             }
 
             if (!shouldTrigger) {
-              console.log(`Order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit} - not triggered`);
+              const unit = order.limitPriceInDollars ? '$' : '';
+              console.log(`Order ${order.id}: exact execution price ${unit}${comparableExecutionPrice.toFixed(9)} vs limit ${unit}${comparablePriceLimit.toFixed(9)} - not triggered`);
               continue
             }
           
@@ -3530,12 +3588,33 @@ export default {
         }
       }
       
+      // Convert prices to comparable units if order was created with dollar prices
+      let comparableTestPrice = testExecutionPrice;
+      let comparablePriceLimit = order.priceLimit;
+      
+      if (order.limitPriceInDollars) {
+        const fromToken = tokensByAddresses.value[order.fromToken.address];
+        const toToken = tokensByAddresses.value[order.toToken.address];
+        
+        if (!order.shouldSwitchTokensForLimit) {
+          // For sell levels: convert execution price to dollars
+          comparableTestPrice = testExecutionPrice * toToken.price;
+          // Restore original dollar price for comparison
+          comparablePriceLimit = order.priceLimit * toToken.price;
+        } else {
+          // For buy levels: execution price is already in the right ratio, just convert limit back to dollars
+          comparableTestPrice = toToken.price / testExecutionPrice;
+          // Restore original dollar price for comparison
+          comparablePriceLimit = order.priceLimit * toToken.price;
+        }
+      }
+      
       // Check if this amount meets the limit condition
       let meetsCondition;
       if (!order.shouldSwitchTokensForLimit) {
-        meetsCondition = testExecutionPrice >= order.priceLimit;
+        meetsCondition = comparableTestPrice >= comparablePriceLimit;
       } else {
-        meetsCondition = testExecutionPrice <= order.priceLimit;
+        meetsCondition = comparableTestPrice <= comparablePriceLimit;
       }
 
       // Check minimum amount requirement for automatic orders
