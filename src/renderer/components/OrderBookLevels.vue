@@ -776,6 +776,7 @@ export default {
         isPaused: isPaused.value,
         isRandomMode: isRandomMode.value,
         minimumAmount: minimumAmount.value,
+        limitPriceInDollars: limitPriceInDollars.value,
         sellLevels: sellLevels.map((level, index) => ({
           ...level,
           index,

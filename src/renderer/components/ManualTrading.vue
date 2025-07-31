@@ -1652,10 +1652,13 @@ export default {
     }
 
     const getTradesBalancer = async (_newFrom, _newTo, _newAmt, _newSenderAddress, shouldFetchGasLimit) => {
-      const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, _newSenderAddress);
+      // Extract address string if _newSenderAddress is an object
+      const senderAddressString = typeof _newSenderAddress === 'string' ? _newSenderAddress : _newSenderAddress.address;
+      
+      const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, senderAddressString);
 
       const txData = {
-        from: _newSenderAddress,
+        from: senderAddressString,
         to: result.contractAddress,
         data: result.callData,
         value: result.value,
@@ -2833,7 +2836,8 @@ export default {
         
         if (availableFromAddress > 0) {
           selectedAddresses.push({
-            address,
+            address: address.address,
+            name: address.name,
             amount: availableFromAddress
           });
           totalAmount += availableFromAddress;
@@ -2853,6 +2857,46 @@ export default {
       // Use minimum of 0.003 ETH or calculated gas cost + 50% safety margin
       const calculatedReserve = gasCostEth * 1.5;
       return Math.max(0.003, calculatedReserve);
+    }
+
+    // Helper function to calculate execution price with gas cost adjustments
+    function calculateExecutionPrice(order, tradeResult, amount, toTokenPrice, deductGasCost = true) {
+      let executionPrice;
+      
+      // Base calculation
+      executionPrice = Number(tradeResult.totalHuman) / Number(amount);
+      
+      // Apply gas cost adjustment only if deductGasCost is true
+      if (deductGasCost && props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
+        const gasCostInToToken = tradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toTokenPrice;
+        
+        if (Number(tradeResult.totalHuman) <= gasCostInToToken) {
+          return { executionPrice: null, comparableExecutionPrice: null, unprofitable: true };
+        }
+        
+        if (order.shouldSwitchTokensForLimit) {
+          executionPrice = Number(amount) / (Number(tradeResult.totalHuman) - gasCostInToToken);
+        } else {
+          executionPrice = (Number(tradeResult.totalHuman) - gasCostInToToken) / Number(amount);
+        }
+      } else if (order.shouldSwitchTokensForLimit) {
+        // Invert price for shouldSwitchTokensForLimit orders
+        executionPrice = 1 / executionPrice;
+      }
+      
+      // Calculate comparable price for dollar-based orders
+      let comparableExecutionPrice = executionPrice;
+      if (order.limitPriceInDollars) {
+        if (!order.shouldSwitchTokensForLimit) {
+          // Sell levels: convert execution price to dollars (fromToken price)
+          comparableExecutionPrice = executionPrice * toTokenPrice;
+        } else {
+          // Buy levels: convert execution price to dollars (toToken price)
+          comparableExecutionPrice = toTokenPrice / executionPrice;
+        }
+      }
+      
+      return { executionPrice, comparableExecutionPrice, unprofitable: false };
     }
 
     // Async function to handle multi-address execution without blocking main loop
@@ -2880,7 +2924,7 @@ export default {
         let bestTradeResult = await getBestTrades(
           order.fromToken.address,
           order.toToken.address,
-          executionAmount,
+          executionAmount.toString(),
           order?.sender?.address || senderDetails.value.address,
           true,
           true,
@@ -2891,48 +2935,26 @@ export default {
           return { valid: false, reason: 'Unable to get execution quote' };
         }
 
-        // Calculate exact execution price
-        let exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(executionAmount);
+        // Calculate execution price using the helper
+        const { executionPrice: exactExecutionPrice, comparableExecutionPrice, unprofitable } = calculateExecutionPrice(
+          order, 
+          bestTradeResult, 
+          executionAmount, 
+          toToken.price
+        );
         
-        // Apply gas cost adjustment if needed
-        if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
-          const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toToken.price;
-          
-          if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
-            // For inverted prices (buy levels), gas cost reduces the received amount
-            exactExecutionPrice = Number(executionAmount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
-          } else {
-            // For non-inverted prices (sell levels), gas cost reduces the received amount
-            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(executionAmount);
-          }
-        }
-
-        // Convert prices to comparable units if order was created with dollar prices
-        let comparableExecutionPrice = exactExecutionPrice;
-        let comparablePriceLimit = order.priceLimit;
-        
-        if (order.limitPriceInDollars) {
-          if (!order.shouldSwitchTokensForLimit) {
-            // For sell levels: convert execution price to dollars
-            comparableExecutionPrice = exactExecutionPrice * toToken.price;
-            // priceLimit is already in dollars, no conversion needed
-            comparablePriceLimit = order.priceLimit;
-          } else {
-            // For buy levels: convert execution price to dollars
-            comparableExecutionPrice = toToken.price / exactExecutionPrice;
-            // priceLimit is already in dollars, no conversion needed
-            comparablePriceLimit = order.priceLimit;
-          }
+        if (unprofitable) {
+          return { valid: false, reason: 'Trade unprofitable due to gas costs' };
         }
         
         // Check if trigger condition is still valid based on new logic
         let shouldTrigger = false;
         if (!order.shouldSwitchTokensForLimit) {
           // Normal case: trigger when execution price >= limit price
-          shouldTrigger = comparableExecutionPrice >= comparablePriceLimit;
+          shouldTrigger = comparableExecutionPrice >= order.priceLimit;
         } else {
           // Inverted case: trigger when execution price <= limit price
-          shouldTrigger = comparableExecutionPrice <= comparablePriceLimit;
+          shouldTrigger = comparableExecutionPrice <= order.priceLimit;
         }
 
         // Calculate loss protection check using configurable percentage
@@ -2944,6 +2966,7 @@ export default {
           return { 
             valid: false, 
             exactExecutionPrice,
+            comparableExecutionPrice,
             currentMarketPrice,
             priceDifference: 0,
             bestTradeResult,
@@ -2951,15 +2974,16 @@ export default {
           };
         }
 
-        const priceDifference = Math.abs(comparableExecutionPrice - comparablePriceLimit) / comparablePriceLimit;
+        const priceDifference = Math.abs(comparableExecutionPrice - order.priceLimit) / order.priceLimit;
         
         return {
           valid: shouldTrigger,
           exactExecutionPrice,
+          comparableExecutionPrice, // Add this to the return object
           currentMarketPrice,
           priceDifference: priceDifference * 100, // Convert to percentage
           bestTradeResult, // Return the updated bestTradeResult
-          reason: shouldTrigger ? 'Trigger condition met' : `Price condition not met: ${order.limitPriceInDollars ? '$' : ''}${comparableExecutionPrice.toFixed(9)} vs limit ${order.limitPriceInDollars ? '$' : ''}${comparablePriceLimit.toFixed(9)}`
+          reason: shouldTrigger ? 'Trigger condition met' : `Price condition not met: ${order.limitPriceInDollars ? '$' : ''}${comparableExecutionPrice.toFixed(9)} vs limit ${order.limitPriceInDollars ? '$' : ''}${order.priceLimit.toFixed(9)}`
         };
       } catch (error) {
         console.error('Error during price re-validation:', error);
@@ -2978,7 +3002,8 @@ export default {
         
         // Execute trades sequentially with each address
         for (let i = 0; i < addressSelection.addresses.length; i++) {
-          const { address, amount } = addressSelection.addresses[i];
+          const addressInfo = addressSelection.addresses[i];
+          const { address, amount, name } = addressInfo;
           
           if (totalExecuted >= targetAmount) break;
           
@@ -2986,12 +3011,12 @@ export default {
           
           // Re-validate trigger conditions before each address execution (except first)
           if (i > 0) {
-            console.log(`Re-validating trigger conditions before executing with address ${address.name} (${i + 1}/${addressSelection.addresses.length})`);
+            console.log(`Re-validating trigger conditions before executing with address ${name} (${i + 1}/${addressSelection.addresses.length})`);
             
             const validation = await revalidateTriggerCondition(order, executeAmount);
             
             if (!validation.valid) {
-              console.log(`⚠️ Trigger condition no longer valid for address ${address.name}: ${validation.reason}`);
+              console.log(`⚠️ Trigger condition no longer valid for address ${name}: ${validation.reason}`);
               const unit = order.limitPriceInDollars ? '$' : '';
               console.log(`Market price: ${validation.currentMarketPrice?.toFixed(9) || 'N/A'}, Execution price: ${validation.exactExecutionPrice?.toFixed(9) || 'N/A'}, Limit: ${unit}${order.priceLimit}`);
               
@@ -3012,13 +3037,13 @@ export default {
             }
           }
           
-          console.log(`Executing ${executeAmount} ${order.fromToken.symbol} from address ${address.name} (${i + 1}/${addressSelection.addresses.length})`);
+          console.log(`Executing ${executeAmount} ${order.fromToken.symbol} from address ${name} (${i + 1}/${addressSelection.addresses.length})`);
           
-          const execution = await executeTradeWithAddress(order, { address }, executeAmount);
+          const execution = await executeTradeWithAddress(order, addressInfo, executeAmount);
           
           if (execution.success) {
             totalExecuted += execution.executedAmount;
-            console.log(`✅ Successfully executed ${execution.executedAmount} ${order.fromToken.symbol} from ${address.name}. Total executed: ${totalExecuted}/${order.remainingAmount}`);
+            console.log(`✅ Successfully executed ${execution.executedAmount} ${order.fromToken.symbol} from ${name}. Total executed: ${totalExecuted}/${order.remainingAmount}`);
             
             // Add delay before next address (except for last address)
             if (i < addressSelection.addresses.length - 1 && totalExecuted < order.remainingAmount) {
@@ -3117,132 +3142,90 @@ export default {
         
         console.log(`Multi-address execution completed. Order ${order.id}: ${order.status}, executed: ${totalExecuted}/${order.originalAmount}`);
         
+        // Update database with final order status
+        await window.electronAPI.updatePendingOrder({
+          ...JSON.parse(JSON.stringify(order)),
+          status: order.status,
+          remainingAmount: order.remainingAmount?.toString() || '0',
+          completedAt: order.completedAt,
+          executionPrice: order.executionPrice
+        });
+        
+        // Remove from pending orders if completed
+        if (order.status === 'completed') {
+          pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
+        }
+        
       } catch (error) {
         console.error('Multi-address execution failed:', error);
         order.status = 'failed';
         order.completedAt = new Date().toISOString();
+        
+        // Update database with failed status
+        await window.electronAPI.updatePendingOrder({
+          ...JSON.parse(JSON.stringify(order)),
+          status: 'failed',
+          completedAt: order.completedAt,
+          errorMessage: error.message || String(error)
+        });
       }
     }
 
     // Helper function to execute trade with specific address and amount
     async function executeTradeWithAddress(order, addressInfo, amount) {
       try {
+        console.log('executeTradeWithAddress called with addressInfo:', addressInfo);
         const modifiedOrder = {
           ...order,
           fromAmount: amount,
-          sender: addressInfo.address
+          sender: addressInfo
         };
         
-        // Execute the trade logic here
-        const fromToken = tokensByAddresses.value[order.fromToken.address];
-        const toToken = tokensByAddresses.value[order.toToken.address];
-                // Get current market price for validation
-        if (!fromToken?.price || !toToken?.price) {
-          throw new Error('Missing current price data for validation');
+        // Use revalidateTriggerCondition to get trade result and validate
+        const validation = await revalidateTriggerCondition(modifiedOrder, amount);
+        
+        if (!validation.valid) {
+          throw new Error(`Trade condition not met: ${validation.reason}`);
         }
         
-        
-        let bestTradeResult = await getBestTrades(
-          fromToken.address,
-          toToken.address,
-          amount,
-          modifiedOrder?.sender?.address,
-          true,
-          true,
-          true
-        );
-        
-        if (!bestTradeResult) {
-          throw new Error('No trade routes found');
-        }
+        let bestTradeResult = validation.bestTradeResult;
 
-        
-        // Calculate exact execution price for this specific trade
-        let exactExecutionPrice;
-        
-        // Apply gas cost adjustment if needed (same logic as main execution)
-        if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
-          const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toToken.price;
-          
-          if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
-            // For inverted prices (buy levels), gas cost reduces the received amount
-            exactExecutionPrice = Number(amount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
-          } else {
-            // For non-inverted prices (sell levels), gas cost reduces the received amount
-            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(amount);
-          }
-        } else {
-          // No gas cost adjustment needed - calculate base price and apply inversion if needed
-          exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(amount);
-          
-          // For buy levels with shouldSwitchTokensForLimit, invert the price to match limit format
-          if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
-            exactExecutionPrice = 1 / exactExecutionPrice;
-          }
-        }
-        
-        // Convert prices to comparable units if order was created with dollar prices
-        let comparableExecutionPrice = exactExecutionPrice;
-        let comparablePriceLimit = order.priceLimit;
-        
-        if (order.limitPriceInDollars) {
-          if (!order.shouldSwitchTokensForLimit) {
-            // For sell levels: convert execution price to dollars
-            comparableExecutionPrice = exactExecutionPrice * toToken.price;
-            // priceLimit is already in dollars, no conversion needed
-            comparablePriceLimit = order.priceLimit;
-          } else {
-            // For buy levels: convert execution price to dollars
-            comparableExecutionPrice = toToken.price / exactExecutionPrice;
-            // priceLimit is already in dollars, no conversion needed
-            comparablePriceLimit = order.priceLimit;
-          }
-        }
-        
-        // Validate price condition still holds after first trade impact
-        let shouldExecute = false;
-        if (!order.shouldSwitchTokensForLimit) {
-          // Normal case: trigger when execution price >= limit price
-          shouldExecute = comparableExecutionPrice >= comparablePriceLimit;
-        } else {
-          // Inverted case: trigger when execution price <= limit price
-          shouldExecute = comparableExecutionPrice <= comparablePriceLimit;
-        }
-        
-        if (!shouldExecute) {
-          const unit = order.limitPriceInDollars ? '$' : '';
-          console.log(`Price condition no longer valid. Execution price: ${unit}${comparableExecutionPrice.toFixed(9)} vs limit: ${unit}${comparablePriceLimit.toFixed(9)} (inverted: ${order.shouldSwitchTokensForLimit})`);
-          return { success: false, error: 'Price condition no longer valid after market impact' };
-        }
-        
+        // Log validation result
         const unit = order.limitPriceInDollars ? '$' : '';
-        console.log(`Price validation passed. Execution price: ${unit}${comparableExecutionPrice.toFixed(9)} vs limit: ${unit}${comparablePriceLimit.toFixed(9)} (inverted: ${order.shouldSwitchTokensForLimit})`);
-        
+        console.log(`Price validation passed. Execution price: ${unit}${validation.comparableExecutionPrice.toFixed(9)} vs limit: ${unit}${order.priceLimit.toFixed(9)} (inverted: ${order.shouldSwitchTokensForLimit})`);        
         
         const limitOrderTradeSummary = {
           protocol: bestTradeResult.protocol,
-          sender: modifiedOrder.sender,
+          sender: addressInfo,
           fromAmount: amount.toString(),
           toAmount: bestTradeResult.totalHuman,
           expectedToAmount: bestTradeResult.totalHuman,
-          fromTokenSymbol: fromToken.symbol,
-          toTokenSymbol: toToken.symbol,
-          fromAddressName: modifiedOrder.sender.name,
-          fromToken: fromToken,
-          fromTokenAddress: fromToken.address,
-          toToken: toToken,
-          toTokenAddress: toToken.address,
+          fromTokenSymbol: bestTradeResult.fromToken.symbol,
+          toTokenSymbol: bestTradeResult.toToken.symbol,
+          fromAddressName: addressInfo.name,
+          fromToken: bestTradeResult.fromToken,
+          fromTokenAddress: bestTradeResult.fromToken.address,
+          toToken: bestTradeResult.toToken,
+          toTokenAddress: bestTradeResult.toToken.address,
           gasLimit: bestTradeResult.gasLimit,
-          // orderType removed - using shouldSwitchTokensForLimit instead
           automatic: order.automatic,
-          priceLimit: order.priceLimit, // Add priceLimit to enable correct type detection
+          priceLimit: order.priceLimit,
           type: order.automatic ? 'automatic' : 'limit',
         };
+
+        
+        // Handle mixed trades if applicable
+        if (bestTradeResult.bestMixed) {
+          limitOrderTradeSummary.fromAmountU = (Number(amount) * bestTradeResult.fractionMixed / 100).toFixed(7);
+          limitOrderTradeSummary.fromAmountB = (Number(amount) - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
+          limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
+          limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
+        }
 
 
         // 🕐 Time the approval process and re-validate if it takes too long
         const approvalStartTime = Date.now();
-        await approveSpending(bestTradeResult.trades, limitOrderTradeSummary);
+        await approveSpending(limitOrderTradeSummary);
         const approvalDuration = (Date.now() - approvalStartTime) / 1000; // Convert to seconds
         
         console.log(`Approval completed in ${approvalDuration.toFixed(2)} seconds`);
@@ -3383,26 +3366,20 @@ export default {
               currentMarketPrice = toToken.price / fromToken.price;
             }
             
-            // If order was created with dollar prices, convert current market price to dollars for comparison
+            // Convert to comparable units
             let comparableMarketPrice = currentMarketPrice;
             let comparablePriceLimit = order.priceLimit;
             
             if (order.limitPriceInDollars) {
-              // Convert market price to dollars for comparison
               if (!order.shouldSwitchTokensForLimit) {
-                // For sell levels: selling fromToken, so we want dollar value per fromToken
-                // currentMarketPrice is fromToken/toToken ratio, multiply by toToken price to get fromToken dollar value
-                comparableMarketPrice = currentMarketPrice * toToken.price;
-                // Restore original dollar price for comparison
-                comparablePriceLimit = order.priceLimit * toToken.price;
+                // Sell levels: monitor fromToken price in dollars
+                comparableMarketPrice = fromToken.price;
               } else {
-                // For buy levels: buying toToken, so we want dollar value per toToken
-                // Since currentMarketPrice is toToken/fromToken when inverted, and we want toToken dollar price
-                // We can directly use toToken.price
+                // Buy levels: monitor toToken price in dollars
                 comparableMarketPrice = toToken.price;
-                // Restore original dollar price for comparison (original dollar price of toToken)
-                comparablePriceLimit = order.priceLimit * toToken.price;
               }
+              // For dollar-based orders, the priceLimit is already in dollars
+              comparablePriceLimit = order.priceLimit;
             }
 
             // Define price tolerance (e.g., within 1% of trigger price)
@@ -3445,32 +3422,22 @@ export default {
               tokensByAddresses.value[order.fromToken.address].price * Number(order.fromAmount) >= 100,
             );
 
-            // Calculate exact execution price (output amount per input amount)
-            let exactExecutionPrice;
-            // No gas cost adjustment - calculate base price and apply inversion if needed
-            exactExecutionPrice = Number(bestTradeResult.totalHuman) / (Number(order.fromAmount) * 0.01);
-            // For shouldSwitchTokensForLimit, invert the price to match limit format
-            if (order.shouldSwitchTokensForLimit) {
-              exactExecutionPrice = 1 / exactExecutionPrice;
-            }
-            console.log({exactExecutionPrice})
+            // Calculate exact execution price using the helper (with small test amount)
+            // No gas deduction for initial price check
+            const { executionPrice: exactExecutionPrice, comparableExecutionPrice } = calculateExecutionPrice(
+              order, 
+              bestTradeResult, 
+              Number(order.fromAmount) * 0.01,
+              toToken.price,
+              false  // Don't deduct gas cost for initial check
+            );
+            console.log({exactExecutionPrice, comparableExecutionPrice})
 
-            // Convert prices to comparable units if order was created with dollar prices
-            let comparableExecutionPrice = exactExecutionPrice;
+            // Get the comparable price limit
             comparablePriceLimit = order.priceLimit;
-            
             if (order.limitPriceInDollars) {
-              if (!order.shouldSwitchTokensForLimit) {
-                // For sell levels: convert execution price to dollars
-                comparableExecutionPrice = exactExecutionPrice * toToken.price;
-                // Restore original dollar price for comparison
-                comparablePriceLimit = order.priceLimit * toToken.price;
-              } else {
-                // For buy levels: convert execution price to dollars
-                comparableExecutionPrice = toToken.price / exactExecutionPrice;
-                // Restore original dollar price for comparison
-                comparablePriceLimit = order.priceLimit * toToken.price;
-              }
+              // For dollar-based orders, the priceLimit is already in dollars
+              comparablePriceLimit = order.priceLimit;
             }
             
             // Determine if order should be triggered based on new logic
@@ -3552,57 +3519,20 @@ export default {
         return { meetsCondition: false, executionPrice: undefined, tradeResult: testResult, unprofitable: true };
       }
       
-      // Calculate execution price for this amount
-      let testExecutionPrice;
-      if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
-        const gasCostInToToken = testResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toTokenData.price;
-        const totalReceived = Number(testResult.totalHuman);
-        
-        if (totalReceived <= gasCostInToToken) {
-          // This amount is unprofitable due to gas costs
-          return { meetsCondition: false, executionPrice: undefined, tradeResult: testResult, unprofitable: true };
-        }
-        
-        if (order.shouldSwitchTokensForLimit) {
-          testExecutionPrice = testAmount / (totalReceived - gasCostInToToken);
-        } else {
-          testExecutionPrice = (totalReceived - gasCostInToToken) / testAmount;
-        }
-      } else {
-        // Calculate execution price consistently with gas-deducted case
-        if (order.shouldSwitchTokensForLimit) {
-          // For inverted price: fromAmount / toAmount
-          if (Number(testResult.totalHuman) === 0) {
-            console.error(`Invalid output amount (0) for order ${order.id}`);
-            return { meetsCondition: false, executionPrice: undefined, tradeResult: testResult, unprofitable: true };
-          }
-          testExecutionPrice = testAmount / Number(testResult.totalHuman);
-        } else {
-          // Normal price: toAmount / fromAmount
-          testExecutionPrice = Number(testResult.totalHuman) / testAmount;
-        }
+      // Calculate execution price using the helper
+      const { executionPrice: testExecutionPrice, comparableExecutionPrice: comparableTestPrice, unprofitable } = calculateExecutionPrice(
+        order,
+        testResult,
+        testAmount,
+        toTokenData.price
+      );
+      
+      if (unprofitable) {
+        return { meetsCondition: false, executionPrice: undefined, tradeResult: testResult, unprofitable: true };
       }
       
-      // Convert prices to comparable units if order was created with dollar prices
-      let comparableTestPrice = testExecutionPrice;
+      // Get the comparable price limit
       let comparablePriceLimit = order.priceLimit;
-      
-      if (order.limitPriceInDollars) {
-        const fromToken = tokensByAddresses.value[order.fromToken.address];
-        const toToken = tokensByAddresses.value[order.toToken.address];
-        
-        if (!order.shouldSwitchTokensForLimit) {
-          // For sell levels: convert execution price to dollars
-          comparableTestPrice = testExecutionPrice * toToken.price;
-          // Restore original dollar price for comparison
-          comparablePriceLimit = order.priceLimit * toToken.price;
-        } else {
-          // For buy levels: execution price is already in the right ratio, just convert limit back to dollars
-          comparableTestPrice = toToken.price / testExecutionPrice;
-          // Restore original dollar price for comparison
-          comparablePriceLimit = order.priceLimit * toToken.price;
-        }
-      }
       
       // Check if this amount meets the limit condition
       let meetsCondition;
@@ -3844,10 +3774,11 @@ export default {
           // Execute multi-address trade asynchronously without blocking main loop
           order.status = 'processing';
           console.log(`Executing multi-address trade for order ${order.id} with amount ${executableAmount}`);
+          console.log({addressSelection})
           await executeMultiAddressTrade(order, addressSelection, exactExecutionPrice, executableAmount);
         } else {
           // Limit order: Single address execution
-          const singleAddress = { address: order.sender };
+          const singleAddress = order.sender;
           
           // Update status to running before execution
           await window.electronAPI.updatePendingOrder({
@@ -3870,36 +3801,51 @@ export default {
               order.completedAt = new Date().toISOString();
               order.executionPrice = exactExecutionPrice;
               
-              // Update UI for automatic orders
+              // Update UI for automatic orders BEFORE database update
               if (order.automatic && order.sourceLocation) {
                 const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
-                if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                // Validate indices are still valid
+                if (tokensInRow[rowIndex] && tokensInRow[rowIndex].columns[colIndex] && tokensInRow[rowIndex].columns[colIndex].details) {
                   const levels = levelType === 'sell' 
                     ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
                     : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
                     
-                  if (levels[levelIndex]) {
+                  if (levels && levels[levelIndex]) {
                     levels[levelIndex].status = 'processed';
                     levels[levelIndex].executionPrice = exactExecutionPrice;
                     levels[levelIndex].executionDate = new Date().toISOString();
+                    // Force immediate UI update
+                    await nextTick();
                     updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                  } else {
+                    console.warn(`Level ${levelIndex} not found in ${levelType}Levels for order ${order.id}`);
                   }
+                } else {
+                  console.warn(`Invalid row/column indices for order ${order.id}: row=${rowIndex}, col=${colIndex}`);
                 }
               }
               
+              // Update database AFTER UI update
+              await window.electronAPI.updatePendingOrder({
+                ...JSON.parse(JSON.stringify(order)),
+                remainingAmount: newRemainingAmount.toString(),
+                status: order.status
+              });
+              
+              // Remove from pending orders AFTER database update
               pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
               console.log(`Order ${order.id} completed - filled ${fillPercentage.toFixed(1)}%`);
             } else {
               // Order partially filled, set back to pending for future executions
               order.status = 'pending';
               console.log(`Order ${order.id} partially filled - ${fillPercentage.toFixed(1)}% complete, remaining: ${newRemainingAmount}`);
+              
+              await window.electronAPI.updatePendingOrder({
+                ...JSON.parse(JSON.stringify(order)),
+                remainingAmount: newRemainingAmount.toString(),
+                status: order.status
+              });
             }
-            
-            await window.electronAPI.updatePendingOrder({
-              ...JSON.parse(JSON.stringify(order)),
-              remainingAmount: newRemainingAmount.toString(),
-              status: order.status
-            });
           } else {
             // Trade failed, restore the remaining amount
             const restoredAmount = Number(order.remainingAmount || order.fromAmount);
@@ -4281,20 +4227,13 @@ export default {
               }
               
               if (fromAmount > 0 && meetsMinimumRequirement) {
-                // Convert dollar price to token price if needed
-                let effectivePriceLimit = buyLevel.triggerPrice;
-                if (col.details.limitPriceInDollars && toToken.price) {
-                  // Convert dollar price to token price: dollarPrice / toTokenPrice
-                  effectivePriceLimit = buyLevel.triggerPrice / toToken.price;
-                }
-                
                 orders.push({
                   id: Math.floor(Math.random() * 10000000000000),
                   fromAmount,
                   remainingAmount: fromAmount,
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
-                  priceLimit: effectivePriceLimit,
+                  priceLimit: buyLevel.triggerPrice,
                   // orderType removed - using shouldSwitchTokensForLimit instead
                   shouldSwitchTokensForLimit: true,
                   status: 'pending',
@@ -4354,21 +4293,14 @@ export default {
                 }
               }
               
-              if (fromAmount > 0 && meetsMinimumRequirement) {
-                // Convert dollar price to token price if needed
-                let effectivePriceLimit = sellLevel.triggerPrice;
-                if (col.details.limitPriceInDollars && toToken.price) {
-                  // Convert dollar price to token price: dollarPrice / toTokenPrice
-                  effectivePriceLimit = sellLevel.triggerPrice / toToken.price;
-                }
-                
+              if (fromAmount > 0 && meetsMinimumRequirement) {             
                 orders.push({
                   id: Math.floor(Math.random() * 10000000000000),
                   fromAmount,
                   remainingAmount: fromAmount,
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
-                  priceLimit: effectivePriceLimit,
+                  priceLimit: sellLevel.triggerPrice,
                   // orderType removed - using shouldSwitchTokensForLimit instead
                   shouldSwitchTokensForLimit: false,
                   status: 'pending',
