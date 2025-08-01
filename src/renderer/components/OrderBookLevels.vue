@@ -405,13 +405,29 @@ export default {
       const marketPrice = currentMarketPrice.value;
       if (!marketPrice || marketPrice <= 0) return false;
       
-      if (type === 'sell' && level.triggerPrice < marketPrice) {
+      // Convert prices to same unit for comparison
+      let levelPriceInTokenRatio;
+      let marketPriceForComparison;
+      
+      if (limitPriceInDollars.value) {
+        // Level price is in dollars, convert to token ratio for comparison
+        levelPriceInTokenRatio = level.triggerPrice / tokenBPrice.value;
+        marketPriceForComparison = marketPrice;
+      } else {
+        // Both are already in token ratios
+        levelPriceInTokenRatio = level.triggerPrice;
+        marketPriceForComparison = marketPrice;
+      }
+      
+      // Check if far from trigger point (not close)
+      if (type === 'sell' && levelPriceInTokenRatio < marketPriceForComparison) {
         return true; // Not close to trigger
-      } else if (type === 'buy' && level.triggerPrice > marketPrice) {
+      } else if (type === 'buy' && levelPriceInTokenRatio > marketPriceForComparison) {
         return true; // Not close to trigger
       }
 
-      const priceDifference = Math.abs(marketPrice - level.triggerPrice) / level.triggerPrice;
+      // Calculate price difference as percentage
+      const priceDifference = Math.abs(marketPriceForComparison - levelPriceInTokenRatio) / levelPriceInTokenRatio;
       return priceDifference <= props.priceThreshold;
     };
 
@@ -459,15 +475,6 @@ export default {
       return { needsConfirmation: false };
     };
     
-    // Helper function to convert prices for validation
-    const convertPriceForValidation = (price) => {
-      if (limitPriceInDollars.value && price && tokenBPrice.value) {
-        // Convert dollar price to token price for validation
-        return price / tokenBPrice.value;
-      }
-      return price;
-    };
-    
     // Validate against existing orders from other OrderBookLevels instances
     const validateAgainstExistingOrders = (userPrice, orderType) => {
       try {
@@ -495,6 +502,8 @@ export default {
           if (orderType === 'sell') {
             // Current is sell - cannot be <= any active buy level
             for (const buyLevel of buyLevels) {
+              if (buyLevel.status === 'processed') continue;
+              if (buyLevel.status === 'paused') continue;
               if (buyLevel.triggerPrice && buyLevel.balancePercentage && buyLevel.status === 'active') {
                 let buyPrice = buyLevel.triggerPrice;
                 
@@ -539,6 +548,8 @@ export default {
           } else if (orderType === 'buy') {
             // Current is buy - cannot be >= any active sell level
             for (const sellLevel of sellLevels) {
+              if (sellLevel.status === 'processed') continue;
+              if (sellLevel.status === 'paused') continue;
               if (sellLevel.triggerPrice && sellLevel.balancePercentage && sellLevel.status === 'active') {
                 let sellPrice = sellLevel.triggerPrice;
                 
@@ -587,18 +598,22 @@ export default {
         if (orderType === 'sell') {
           // Check against current component's buy levels
           for (const buyLevel of buyLevels) {
+            if (buyLevel.status === 'processed') continue;
+            if (buyLevel.status === 'paused') continue;
             if (buyLevel.triggerPrice && buyLevel.balancePercentage) {
-              // Convert both prices to same unit for comparison
-              const buyPriceForComparison = limitPriceInDollars.value ? 
-                (buyLevel.triggerPrice * tokenBPrice.value) : buyLevel.triggerPrice;
-              const sellPriceForComparison = limitPriceInDollars.value ? 
-                (userPrice) : userPrice;
+              // Convert both prices to token ratios for comparison
+              const buyPriceInTokenRatio = limitPriceInDollars.value ? 
+                (buyLevel.triggerPrice / tokenBPrice.value) : buyLevel.triggerPrice;
+              const sellPriceInTokenRatio = limitPriceInDollars.value ? 
+                (userPrice / tokenBPrice.value) : userPrice;
               
-              if (sellPriceForComparison <= buyPriceForComparison) {
+              if (sellPriceInTokenRatio <= buyPriceInTokenRatio) {
                 const unit = limitPriceInDollars.value ? '$' : tokenB.value?.symbol;
+                const displayBuyPrice = limitPriceInDollars.value ? buyLevel.triggerPrice : buyLevel.triggerPrice;
+                const displaySellPrice = limitPriceInDollars.value ? userPrice : userPrice;
                 return {
                   isValid: false,
-                  reason: `Sell price ${sellPriceForComparison.toFixed(6)} ${unit} cannot be at or below buy level at ${buyPriceForComparison.toFixed(6)} ${unit}`
+                  reason: `Sell price ${unit}${displaySellPrice.toFixed(6)} cannot be at or below buy level at ${unit}${displayBuyPrice.toFixed(6)}`
                 };
               }
             }
@@ -606,18 +621,22 @@ export default {
         } else if (orderType === 'buy') {
           // Check against current component's sell levels
           for (const sellLevel of sellLevels) {
+            if (sellLevel.status === 'processed') continue;
+            if (sellLevel.status === 'paused') continue;
             if (sellLevel.triggerPrice && sellLevel.balancePercentage) {
-              // Convert both prices to same unit for comparison
-              const sellPriceForComparison = limitPriceInDollars.value ? 
-                (sellLevel.triggerPrice * tokenBPrice.value) : sellLevel.triggerPrice;
-              const buyPriceForComparison = limitPriceInDollars.value ? 
-                (userPrice) : userPrice;
+              // Convert both prices to token ratios for comparison
+              const sellPriceInTokenRatio = limitPriceInDollars.value ? 
+                (sellLevel.triggerPrice / tokenBPrice.value) : sellLevel.triggerPrice;
+              const buyPriceInTokenRatio = limitPriceInDollars.value ? 
+                (userPrice / tokenBPrice.value) : userPrice;
               
-              if (buyPriceForComparison >= sellPriceForComparison) {
+              if (buyPriceInTokenRatio >= sellPriceInTokenRatio) {
                 const unit = limitPriceInDollars.value ? '$' : tokenB.value?.symbol;
+                const displaySellPrice = limitPriceInDollars.value ? sellLevel.triggerPrice : sellLevel.triggerPrice;
+                const displayBuyPrice = limitPriceInDollars.value ? userPrice : userPrice;
                 return {
                   isValid: false,
-                  reason: `Buy price ${buyPriceForComparison.toFixed(6)} ${unit} cannot be at or above sell level at ${sellPriceForComparison.toFixed(6)} ${unit}`
+                  reason: `Buy price ${unit}${displayBuyPrice.toFixed(6)} cannot be at or above sell level at ${unit}${displaySellPrice.toFixed(6)}`
                 };
               }
             }
@@ -663,29 +682,30 @@ export default {
       if (level.balancePercentage > 100) level.balancePercentage = 100;
       
       // Check against existing orders (bid-ask spread validation)
-      if (level.triggerPrice) {
-        const priceForValidation = convertPriceForValidation(level.triggerPrice);
-        const bidAskValidation = validateAgainstExistingOrders(priceForValidation, type);
+      if (!level.triggerPrice)
+        return updateLevelConfirmed(type, index);
+
+      const bidAskValidation = validateAgainstExistingOrders(level.triggerPrice, type);
+      
+      if (!bidAskValidation.isValid) {
+        // Show modal for order conflicts
+        showPriceDeviationModal.value = true;
+        priceDeviationMessage.value = `Order aborted: ${bidAskValidation.reason}`;
+        priceDeviationDetails.value = null;
+        pendingLevelUpdate.value = null; // No action needed
         
-        if (!bidAskValidation.isValid) {
-          // Show modal for order conflicts
-          showPriceDeviationModal.value = true;
-          priceDeviationMessage.value = `Order aborted: ${bidAskValidation.reason}`;
-          priceDeviationDetails.value = null;
-          pendingLevelUpdate.value = null; // No action needed
-          
-          // Clear the invalid price
-          level.triggerPrice = null;
-          return;
-        }
+        // Clear the invalid price
+        level.triggerPrice = null;
+        return;
       }
       
       // Check for price deviation if we have a trigger price
-      if (level.triggerPrice && tokenAPrice.value && tokenBPrice.value) {
+      if (tokenAPrice.value && tokenBPrice.value) {
         const marketPrice = tokenAPrice.value / tokenBPrice.value;
-        // Pass the converted price for comparison if in dollar mode
-        const priceForComparison = convertPriceForValidation(level.triggerPrice);
-        const deviationCheck = checkPriceDeviation(priceForComparison, marketPrice, type);
+        // Convert user price to token ratio if in dollar mode
+        const priceForDeviation = limitPriceInDollars.value ? 
+          (level.triggerPrice / tokenBPrice.value) : level.triggerPrice;
+        const deviationCheck = checkPriceDeviation(priceForDeviation, marketPrice, type);
         
         if (deviationCheck.needsConfirmation) {
           // Store pending update info
@@ -714,8 +734,6 @@ export default {
           return; // Don't continue with update until confirmed
         }
       }
-      
-      updateLevelConfirmed(type, index);
     };
     
     const updateLevelConfirmed = (type, index) => {
@@ -728,10 +746,8 @@ export default {
         // BUT preserve 'processed' status - don't reset processed levels
         if (level.status === 'processed') {
           // Keep processed status - do nothing
-        } else if (level.status === 'processing' || level.status === 'failed') {
-          level.status = 'active';
         } else {
-          level.status = 'waiting';
+          level.status = 'active';
         }
       } else {
         // Even if invalid inputs, preserve processed status
@@ -740,7 +756,7 @@ export default {
         }
       }
       
-      updateLevelStatus(type, index);
+      // updateLevelStatus(type, index);
       
       if (level.triggerPrice && level.balancePercentage)
         emitOrderUpdate();
@@ -764,8 +780,6 @@ export default {
         // If already processed, keep processed status (but allow processing to be reset)
         return;
       }
-      // Check if price conditions are met
-      const marketPrice = currentMarketPrice.value;
       
       // Only update status if not already set or if it's in a state that should be updated
       if (level.status === 'inactive' || level.status === 'waiting' || level.status === undefined) {
@@ -842,8 +856,8 @@ export default {
       level.triggerPrice = null;
       level.balancePercentage = null;
       level.status = 'inactive'; // Reset status when cleaning
-      updateLevelStatus('sell', index);
-      updateLevelStatus('buy', index);
+      // updateLevelStatus('sell', index);
+      // updateLevelStatus('buy', index);
       emitOrderUpdate();
     };
 
@@ -904,8 +918,8 @@ export default {
       }
       
       // Initialize all rows
-      sellLevels.forEach((level, index) => updateLevelStatus('sell', index));
-      buyLevels.forEach((level, index) => updateLevelStatus('buy', index));
+      // sellLevels.forEach((level, index) => updateLevelStatus('sell', index));
+      // buyLevels.forEach((level, index) => updateLevelStatus('buy', index));
     });
 
     // Watch for market price changes to update price validity
@@ -913,12 +927,12 @@ export default {
       () => currentMarketPrice.value,
       () => {
         // Update all price validations when market price changes
-        sellLevels.forEach((level, index) => {
-          updateLevelStatus('sell', index);
-        });
-        buyLevels.forEach((level, index) => {
-          updateLevelStatus('buy', index);
-        });
+        // sellLevels.forEach((level, index) => {
+        //   updateLevelStatus('sell', index);
+        // });
+        // buyLevels.forEach((level, index) => {
+        //   updateLevelStatus('buy', index);
+        // });
       }
     );
 
@@ -946,9 +960,9 @@ export default {
       limitPriceInDollars,
       togglePriceUnit,
       getTokenPriceFromDollar,
-      convertPriceForValidation,
       
       // Price deviation modal
+      pendingLevelUpdate,
       showPriceDeviationModal,
       priceDeviationMessage,
       priceDeviationDetails,

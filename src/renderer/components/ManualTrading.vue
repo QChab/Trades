@@ -2731,6 +2731,12 @@ export default {
           let orderPrice = order.priceLimit;
           let currentPrice = userPrice;
           
+          // Handle dollar-based prices in existing orders
+          if (order.limitPriceInDollars && order.toToken.price) {
+            // Convert dollar price to token ratio
+            orderPrice = orderPrice / order.toToken.price;
+          }
+          
           // If tokens are swapped, need to invert one of the prices for comparison
           const orderFromAddr = order.fromToken.address.toLowerCase();
           const currentFromAddr = fromTokenAddr.toLowerCase();
@@ -2744,17 +2750,23 @@ export default {
           if (isBuyOrder && !orderIsBuy) {
             // Current: buy, Existing: sell - buy price cannot be >= sell price
             if (currentPrice >= orderPrice) {
+              const orderDisplayPrice = order.limitPriceInDollars ? 
+                `$${order.priceLimit.toFixed(6)}` : 
+                `${(tokensSwapped ? (1/order.priceLimit) : order.priceLimit).toFixed(6)}`;
               return {
                 isValid: false,
-                reason: `Cannot buy at ${currentPrice.toFixed(6)} - price is at or above existing sell order at ${orderPrice.toFixed(6)}`
+                reason: `Cannot buy at ${currentPrice.toFixed(6)} - price is at or above existing sell order at ${orderDisplayPrice}`
               };
             }
           } else if (!isBuyOrder && orderIsBuy) {
             // Current: sell, Existing: buy - sell price cannot be <= buy price  
             if (currentPrice <= orderPrice) {
+              const orderDisplayPrice = order.limitPriceInDollars ? 
+                `$${order.priceLimit.toFixed(6)}` : 
+                `${(tokensSwapped ? (1/order.priceLimit) : order.priceLimit).toFixed(6)}`;
               return {
                 isValid: false,
-                reason: `Cannot sell at ${currentPrice.toFixed(6)} - price is at or below existing buy order at ${orderPrice.toFixed(6)}`
+                reason: `Cannot sell at ${currentPrice.toFixed(6)} - price is at or below existing buy order at ${orderDisplayPrice}`
               };
             }
           }
