@@ -4,52 +4,87 @@
     <div class="form-group">
       <div class="top-nav-bar">
         <div 
-          @click="currentMode='manual'"
           :class="{'active-tab': currentMode === 'manual'}"
+          @click="currentMode='manual'"
         > 
           <h3> Manual trade </h3>
         </div>
         <div 
-          @click="currentMode='automatic'"
           :class="{'active-tab': currentMode === 'automatic'}"
+          @click="currentMode='automatic'"
         >
           <h3> Automatic trade</h3>
         </div>
       </div>
-      <button @click="toggleEditingTokens" class="edit-button">
+      <button
+        class="edit-button"
+        @click="toggleEditingTokens"
+      >
         {{ isEditingTokens ? 'Stop editing' : 'Edit tokens' }}
       </button>
       <div>
         <div v-if="!isEditingTokens && currentMode === 'manual'">
           <div class="price-form">
             <div class="tabs-price">
-              <div :class="{active: tabOrder === 'market'}" @click="tabOrder = 'market'">Market order</div>
-              <div :class="{active: tabOrder === 'limit'}" @click="tabOrder = 'limit'">Limit order</div>
+              <div
+                :class="{active: tabOrder === 'market'}"
+                @click="tabOrder = 'market'"
+              >
+                Market order
+              </div>
+              <div
+                :class="{active: tabOrder === 'limit'}"
+                @click="tabOrder = 'limit'"
+              >
+                Limit order
+              </div>
             </div>
             <div v-if="tabOrder === 'limit'">
               <p>
                 when 1 {{ !shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }} = 
-                <input v-model.number="priceLimit" type="number" placeholder="0"/> 
+                <input
+                  v-model.number="priceLimit"
+                  type="number"
+                  placeholder="0"
+                > 
                 {{ shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }}
-                <span v-if="priceLimit && tokensByAddresses[fromTokenAddress]?.price && tokensByAddresses[toTokenAddress]?.price" class="usd-price-quote">
+                <span
+                  v-if="priceLimit && tokensByAddresses[fromTokenAddress]?.price && tokensByAddresses[toTokenAddress]?.price"
+                  class="usd-price-quote"
+                >
                   (${{ formatUsdPrice(priceLimit) }})
                 </span>
-                <img :src="reverseImage" class="reverse-image" @click="shouldSwitchTokensForLimit = !shouldSwitchTokensForLimit"/>
+                <img
+                  :src="reverseImage"
+                  class="reverse-image"
+                  @click="shouldSwitchTokensForLimit = !shouldSwitchTokensForLimit"
+                >
               </p>
               <!-- <span class="set-market-price" @click="setMarketPriceAsLimit()">
                 Set market price
               </span> -->
-              
             </div>
-            <div v-else class="checkboxes">
+            <div
+              v-else
+              class="checkboxes"
+            >
               <label>
-                <input type="checkbox" v-model="shouldUseUniswap"/> Uniswap
+                <input
+                  v-model="shouldUseUniswap"
+                  type="checkbox"
+                > Uniswap
               </label>
               <label>
-                <input type="checkbox" v-model="shouldUseBalancer"/> Balancer
+                <input
+                  v-model="shouldUseBalancer"
+                  type="checkbox"
+                > Balancer
               </label>
               <label>
-                <input type="checkbox" v-model="shouldUseUniswapAndBalancer"/> Uniswap & Balancer
+                <input
+                  v-model="shouldUseUniswapAndBalancer"
+                  type="checkbox"
+                > Uniswap & Balancer
               </label>
             </div>
           </div>
@@ -62,8 +97,11 @@
                 inputmode="decimal"
                 step="any"
                 placeholder="0"
-              />
-              <select id="from-token" v-model="fromTokenAddress">
+              >
+              <select
+                id="from-token"
+                v-model="fromTokenAddress"
+              >
                 <option 
                   v-for="(token, index) in filteredTokens" 
                   :key="'fromToken-' + index" 
@@ -76,19 +114,35 @@
                 @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[fromTokenAddress]?.price)) }}
               </span>
             </div>
-            <span v-if="fromAmount" class="usd-amount">
+            <span
+              v-if="fromAmount"
+              class="usd-amount"
+            >
               ${{ spaceThousands((fromAmount * tokensByAddresses[fromTokenAddress]?.price).toFixed(1)) }}
             </span>
           </div>
 
           <div class="to-swap">
-            <img :src="downArrowImage" class="down-arrow-image" @click="switchTokens"/>
+            <img
+              :src="downArrowImage"
+              class="down-arrow-image"
+              @click="switchTokens"
+            >
             <p>Buy</p>
-            <div class="amount-token" v-if="tabOrder === 'market'">
-              <span class="amount-out" :class="{'fetching-price': isFetchingPrice}">
+            <div
+              v-if="tabOrder === 'market'"
+              class="amount-token"
+            >
+              <span
+                class="amount-out"
+                :class="{'fetching-price': isFetchingPrice}"
+              >
                 {{ spaceThousands(tradeSummary.toAmount) }}
               </span>
-              <select id="to-token" v-model="toTokenAddress">
+              <select
+                id="to-token"
+                v-model="toTokenAddress"
+              >
                 <option 
                   v-for="(token, index) in filteredTokens" 
                   :key="'toToken-' + index" 
@@ -98,11 +152,21 @@
                 </option>
               </select>
             </div>
-            <div class="amount-token" v-else>
-              <input class="amount-out" :class="{'fetching-price': isFetchingPrice}" v-model="tradeSummary.toAmount"/>
-                <!-- {{ spaceThousands(tradeSummary.toAmount) }}
+            <div
+              v-else
+              class="amount-token"
+            >
+              <input
+                v-model="tradeSummary.toAmount"
+                class="amount-out"
+                :class="{'fetching-price': isFetchingPrice}"
+              >
+              <!-- {{ spaceThousands(tradeSummary.toAmount) }}
               </input> -->
-              <select id="to-token" v-model="toTokenAddress">
+              <select
+                id="to-token"
+                v-model="toTokenAddress"
+              >
                 <option 
                   v-for="(token, index) in filteredTokens" 
                   :key="'toToken-' + index" 
@@ -112,7 +176,10 @@
                 </option>
               </select>
             </div>
-            <span v-if="tradeSummary.toAmount && !isFetchingPrice" class="usd-amount">
+            <span
+              v-if="tradeSummary.toAmount && !isFetchingPrice"
+              class="usd-amount"
+            >
               <span v-if="tokensByAddresses[toTokenAddress]?.price">
                 ${{ spaceThousands((Number(tradeSummary.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1)) }}
               </span>
@@ -125,7 +192,9 @@
             </p>
           </div>
 
-          <p class="details-message">{{ priceFetchingMessage }}</p>
+          <p class="details-message">
+            {{ priceFetchingMessage }}
+          </p>
           
           <!-- Effective Price Display -->
           <div
@@ -134,18 +203,23 @@
             style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 14px; color: #111; text-align: center;"
           >
             <div>1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.usdValue }}</div>
-            <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{effectivePrice.usdValueInverse }}</div>
+            <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{ effectivePrice.usdValueInverse }}</div>
           </div>
           
           <div class="address-form">
-            <p><span v-if="tradeSummary.protocol && tabOrder === 'market'">
-              On {{ tradeSummary.protocol === 'Uniswap & Balancer' ?  (`Uniswap ${tradeSummary.fraction}% & Balancer ${100 - tradeSummary.fraction}%`) : tradeSummary.protocol}}
-            </span> with</p>
-            <select id="sender-address" v-model="senderDetails">
+            <p>
+              <span v-if="tradeSummary.protocol && tabOrder === 'market'">
+                On {{ tradeSummary.protocol === 'Uniswap & Balancer' ? (`Uniswap ${tradeSummary.fraction}% & Balancer ${100 - tradeSummary.fraction}%`) : tradeSummary.protocol }}
+              </span> with
+            </p>
+            <select
+              id="sender-address"
+              v-model="senderDetails"
+            >
               <option 
                 v-for="(address, index) in addresses" 
-                :value="address" 
-                :key="'sender-' + address.address"
+                :key="'sender-' + address.address" 
+                :value="address"
               >
                 {{ address.name }} - 0x{{ address.address.substring(2, 6) }}:
                 {{ balanceString(address.address, fromTokenAddress) }} {{ tokensByAddresses[fromTokenAddress]?.symbol }}
@@ -153,25 +227,37 @@
             </select>
           </div>
 
-          <p class="details-message">{{ swapMessage }}</p>
-          <div v-if="tabOrder === 'market' && !isEditingTokens" class="swap-buttons">
+          <p class="details-message">
+            {{ swapMessage }}
+          </p>
+          <div
+            v-if="tabOrder === 'market' && !isEditingTokens"
+            class="swap-buttons"
+          >
             <div v-if="!needsToApprove">
-              <p class="details-message" v-if="tradeSummary?.gasLimit">Gas cost ~ ${{ (tradeSummary.gasLimit * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
+              <p
+                v-if="tradeSummary?.gasLimit"
+                class="details-message"
+              >
+                Gas cost ~ ${{ (tradeSummary.gasLimit * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}
+              </p>
               <button
                 v-if="!needsToApprove"
-                @click="isSwapButtonDisabled=true; triggerTrade()"
                 :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
                 class="swap-button"
+                @click="isSwapButtonDisabled=true; triggerTrade()"
               >
                 {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : 'Swap' }}
               </button>
             </div>
             <div v-else>
-              <p class="details-message">Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 100000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
+              <p class="details-message">
+                Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 100000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}
+              </p>
               <button
-                @click="approveSpending()"
                 :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
                 class="swap-button"
+                @click="approveSpending()"
               >
                 {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
               </button>
@@ -181,19 +267,21 @@
             <div v-if="!needsToApprove">
               <button
                 v-if="!needsToApprove"
-                @click="placeLimitOrder()"
                 :disabled="!priceLimit || !fromAmount || senderDetails?.address === ''"
                 class="swap-button"
+                @click="placeLimitOrder()"
               >
                 {{ 'Place order' }}
               </button>
             </div>
             <div v-else>
-              <p class="details-message">Gas cost ~ ${{ (150000 * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
+              <p class="details-message">
+                Gas cost ~ ${{ (150000 * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}
+              </p>
               <button
-                @click="approveSpending()"
                 :disabled="maxGasPrice < gasPrice"
                 class="swap-button"
+                @click="approveSpending()"
               >
                 {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
               </button>
@@ -208,34 +296,47 @@
         >
           <div class="automatic-header">
             <button 
-              @click="toggleGlobalPause" 
-              class="global-pause-btn"
+              class="global-pause-btn" 
               :class="{ 'paused': isGloballyPaused }"
               :title="isGloballyPaused ? 'Unpause' : 'Pause'"
+              @click="toggleGlobalPause"
             >
               {{ isGloballyPaused ? '▶️ Unpause' : '⏸️ Pause' }}
             </button>
             <div class="automatic-info">
-              <h3 v-if="isInitialBalanceFetchDone">{{ automaticOrders.length }} buy/sell levels</h3>
-              <h3 v-else>Initializing balances...</h3>
+              <h3 v-if="isInitialBalanceFetchDone">
+                {{ automaticOrders.length }} buy/sell levels
+              </h3>
+              <h3 v-else>
+                Initializing balances...
+              </h3>
               <p>{{ automaticMessage }}</p>
             </div>
           </div>
           <div class="matrix">
-            <div v-for="(tokenInRow, i) in tokensInRow" class="token-row">
+            <div
+              v-for="(tokenInRow, i) in tokensInRow"
+              class="token-row"
+            >
               <div
-                class="token-details"
                 v-if="tokenInRow?.token?.symbol"
+                class="token-details"
               >
-                <p class="token-symbol">{{ tokenInRow.token.symbol || 'Select Token' }}</p>
+                <p class="token-symbol">
+                  {{ tokenInRow.token.symbol || 'Select Token' }}
+                </p>
                 <p class="token-price">
                   ${{ spaceThousands(removeTrailingZeros(tokenInRow.token.price)) }}
                 </p>
-                <img :src="deleteImage" class="delete-row" @click="deleteRow(i)" />
+                <img
+                  :src="deleteImage"
+                  class="delete-row"
+                  @click="deleteRow(i)"
+                >
               </div>
               <div 
-                class="horizontal-scroll"
                 v-if="tokenInRow?.token?.symbol"
+                class="horizontal-scroll"
               >
                 <div
                   v-for="(token, j) in tokenInRow.columns"
@@ -243,17 +344,17 @@
                 >
                   <OrderBookLevels
                     v-if="token?.address && token.decimals"
-                    :tokenA="tokenInRow.token"
-                    :tokenB="token"
-                    :tokensByAddresses="tokensByAddresses"
+                    :token-a="tokenInRow.token"
+                    :token-b="token"
+                    :tokens-by-addresses="tokensByAddresses"
                     :balances="computedBalancesByAddress"
                     :price-threshold="0.01"
                     :details="token.details"
                     :price-deviation-percentage="priceDeviationPercentage"
                     :existing-orders="allExistingOrders"
-                    @orderUpdate="(details) => updateDetailsOrder(i, j, details)"
+                    @order-update="(details) => updateDetailsOrder(i, j, details)"
                     @delete="deleteColumn(i, j)"
-                  />
+                  ></OrderBookLevels>
                 </div>
                 <div 
                   v-if="tokenInRow?.token?.address && !shouldSelectTokenInCell"
@@ -294,9 +395,9 @@
                 +
               </div>
               <select
+                v-if="shouldSelectTokenInRow"
                 id="new-token"
                 v-model="newTokenAddress"
-                v-if="shouldSelectTokenInRow"
                 @change="addRowToMatrix"
               >
                 <option 
@@ -312,21 +413,36 @@
         </div>
 
         <!-- EDITING TOKENS -->
-        <div v-else class="editing-tokens">
-          <p class="text-center">Editing Tokens</p>
+        <div
+          v-else
+          class="editing-tokens"
+        >
+          <p class="text-center">
+            Editing Tokens
+          </p>
           <ul class="two-column-list">
-            <li v-for="(token, index) in tokens" :key="index">
+            <li
+              v-for="(token, index) in tokens"
+              :key="index"
+            >
               <span v-if="token.symbol === 'ETH'">ETH</span>
-              <label v-else class="checkbox-label edit-label">
+              <label
+                v-else
+                class="checkbox-label edit-label"
+              >
                 <!-- First line: Token address and delete icon -->
                 <div class="line">
                   <input
                     v-model.trim="token.address"
-                    @input="findSymbol(index, token.address)"
                     placeholder="Address"
-                  />
-                  <img :src="deleteImage" class="delete" @click="deleteToken(index)" />
-                  <div class="compensate-delete"></div>
+                    @input="findSymbol(index, token.address)"
+                  >
+                  <img
+                    :src="deleteImage"
+                    class="delete"
+                    @click="deleteToken(index)"
+                  >
+                  <div class="compensate-delete" />
                 </div>
               </label>
               <div v-if="token.address">
@@ -335,7 +451,12 @@
                   <div class="line">
                     <span>Symbol:</span>
                     <span v-if="token.symbol === 'ETH'">ETH</span>
-                    <input v-else v-model="token.symbol" placeholder="Token Name" class="token-name" />
+                    <input
+                      v-else
+                      v-model="token.symbol"
+                      placeholder="Token Name"
+                      class="token-name"
+                    >
                   </div>
                 </label>
                 <label>
@@ -362,7 +483,10 @@
         {{ (new Date(tradeSummary.sentDate)).toLocaleString() }} …
       </p>
       
-      <div v-if="pendingLimitOrders.length" class="pending-orders">
+      <div
+        v-if="pendingLimitOrders.length"
+        class="pending-orders"
+      >
         <h4>Pending Limit Orders</h4>
         <ul>
           <li 
@@ -371,7 +495,10 @@
             class="pending-order"
             :class="{'is-waiting-balance': order.isWaitingBalance, 'check-if-trigger': order.status === 'processing'}"
           >
-            <div class="order-info" v-if="tokensByAddresses[order.fromToken?.address] && tokensByAddresses[order.toToken?.address]">
+            <div
+              v-if="tokensByAddresses[order.fromToken?.address] && tokensByAddresses[order.toToken?.address]"
+              class="order-info"
+            >
               <div class="order-details">
                 <div class="trade-info">
                   <span class="left">
@@ -401,7 +528,10 @@
                     <span v-if="order.currentMarketPrice">
                       at {{ order.currentMarketPrice.toFixed(5) }}
                     </span>
-                    <span class="current-market-price" style="color: #888; font-size: 1em;">
+                    <span
+                      class="current-market-price"
+                      style="color: #888; font-size: 1em;"
+                    >
                       ( 
                       <span v-if="!order.shouldSwitchTokensForLimit">
                         {{ getCurrentMarketPrice(order.fromToken, order.toToken, false) }} {{ order.toToken.symbol }}/{{ order.fromToken.symbol }}
@@ -411,7 +541,10 @@
                       </span>
                       )
                     </span>
-                    <span class="current-market-price" style="margin-left: 10px; color: #888; font-size: 1em;">
+                    <span
+                      class="current-market-price"
+                      style="margin-left: 10px; color: #888; font-size: 1em;"
+                    >
                       Sum: ${{ (Number(tokensByAddresses[order.fromToken.address]?.price) * Number(order.fromAmount)).toFixed(2) }}
                     </span>
                   </span>
@@ -421,7 +554,10 @@
                 </div>
               </div>
             </div>
-            <span class="cancel-order" @click="cancelLimitOrder(order.id)">❌ Cancel</span>
+            <span
+              class="cancel-order"
+              @click="cancelLimitOrder(order.id)"
+            >❌ Cancel</span>
           </li>
         </ul>
       </div>
@@ -438,11 +574,11 @@
       userPrice: priceDeviationModalData.userPrice,
       deviation: priceDeviationModalData.deviation
     }"
-    :showConfirmButton="!!priceDeviationModalData.action"
-    :cancelText="priceDeviationModalData.action ? 'Cancel' : 'OK'"
+    :show-confirm-button="!!priceDeviationModalData.action"
+    :cancel-text="priceDeviationModalData.action ? 'Cancel' : 'OK'"
     @confirm="confirmPriceDeviationAction"
     @cancel="cancelPriceDeviationAction"
-  />
+  ></ConfirmationModal>
 </template>
 
 <script>
