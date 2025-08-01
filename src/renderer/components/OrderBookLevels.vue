@@ -441,20 +441,11 @@ export default {
     const checkPriceDeviation = (userPrice, marketPrice, orderType) => {
       if (!marketPrice || marketPrice === 0) return { needsConfirmation: false };
       
-      // Convert prices for comparison if in dollar mode
-      let compareUserPrice = userPrice;
-      let compareMarketPrice = marketPrice;
-      
-      if (limitPriceInDollars.value && tokenBPrice.value) {
-        // User entered dollar price, convert market price to dollars for comparison
-        compareMarketPrice = marketPrice * tokenBPrice.value;
-      }
-      
-      const deviation = Math.abs((compareUserPrice - compareMarketPrice) / compareMarketPrice * 100);
+      const deviation = Math.abs((userPrice - marketPrice) / marketPrice * 100);
       
       if (deviation > props.priceDeviationPercentage) {
         const isBuyOrder = orderType === 'buy';
-        const isUnfavorable = isBuyOrder ? compareUserPrice > compareMarketPrice : compareUserPrice < compareMarketPrice;
+        const isUnfavorable = isBuyOrder ? userPrice > marketPrice : userPrice < marketPrice;
         
         if (isUnfavorable) {
           return {
@@ -692,7 +683,9 @@ export default {
       // Check for price deviation if we have a trigger price
       if (level.triggerPrice && tokenAPrice.value && tokenBPrice.value) {
         const marketPrice = tokenAPrice.value / tokenBPrice.value;
-        const deviationCheck = checkPriceDeviation(level.triggerPrice, marketPrice, type);
+        // Pass the converted price for comparison if in dollar mode
+        const priceForComparison = convertPriceForValidation(level.triggerPrice);
+        const deviationCheck = checkPriceDeviation(priceForComparison, marketPrice, type);
         
         if (deviationCheck.needsConfirmation) {
           // Store pending update info

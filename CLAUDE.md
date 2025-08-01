@@ -176,7 +176,7 @@ When working with this codebase, pay special attention to the order type determi
 - **Order Locking**: `orderExecutionLocks` Map prevents parallel execution of same order
 - **Test Mode**: Complete simulation without blockchain interaction or balance modifications
 - **Configurable Loss Protection**: USD value comparison before execution to prevent excessive losses (configurable percentage, default 20%)
-- **Automatic Order Logic**: Buy levels use `shouldSwitchTokensForLimit: false`, sell levels use `true`
+- **Automatic Order Logic**: Buy levels use `shouldSwitchTokensForLimit: true`, sell levels use `false`
 - **Execution Function**: `tryExecutePendingOrder()` handles all execution logic with proper error handling
 
 ### Dollar-Based Price Limits (`limitPriceInDollars`)

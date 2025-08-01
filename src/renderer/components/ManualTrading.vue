@@ -217,7 +217,7 @@
               v-model="senderDetails"
             >
               <option 
-                v-for="(address, index) in addresses" 
+                v-for="(address) in addresses" 
                 :key="'sender-' + address.address" 
                 :value="address"
               >
@@ -502,13 +502,12 @@
               <div class="order-details">
                 <div class="trade-info">
                   <span class="left">
-                    <!-- If
                     <span v-if="!order.shouldSwitchTokensForLimit">
                       {{ order.fromToken.symbol }} ≥ {{ order.priceLimit }} {{ order.toToken.symbol }}
                     </span>
                     <span v-else>
                       {{ order.toToken.symbol }} ≤ {{ order.priceLimit }} {{ order.fromToken.symbol }}
-                    </span> -->
+                    </span>
                     <div>
                       <span style="font-size:16px;color:rgb(223,81,81);">
                         Sell <span style="font-size:16px;font-weight:800;text-decoration:underline;">{{ order.fromAmount }} {{ order.fromToken.symbol }} </span>
@@ -2674,9 +2673,23 @@ export default {
       
       const deviation = Math.abs((userPrice - marketPrice) / marketPrice * 100);
       
+      console.log('checkPriceDeviation:', {
+        userPrice,
+        marketPrice,
+        deviation,
+        threshold: props.priceDeviationPercentage,
+        orderType
+      });
+      
       if (deviation > props.priceDeviationPercentage) {
         const isBuyOrder = orderType === 'buy';
         const isUnfavorable = isBuyOrder ? userPrice > marketPrice : userPrice < marketPrice;
+        
+        console.log('Deviation check:', {
+          isBuyOrder,
+          isUnfavorable,
+          condition: isBuyOrder ? 'userPrice > marketPrice' : 'userPrice < marketPrice'
+        });
         
         if (isUnfavorable) {
           return {
@@ -2835,6 +2848,14 @@ export default {
       }
       
       // Check for price deviation
+      console.log('Price deviation check:', {
+        priceLimit: priceLimit.value,
+        currentMarketPrice,
+        orderType,
+        shouldSwitchTokensForLimit: shouldSwitchTokensForLimit.value,
+        fromPrice,
+        toPrice
+      });
       const deviationCheck = checkPriceDeviation(priceLimit.value, currentMarketPrice, orderType);
       
       if (deviationCheck.needsConfirmation) {
