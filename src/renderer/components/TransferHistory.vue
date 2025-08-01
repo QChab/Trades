@@ -29,7 +29,6 @@
           <span v-else> {{ t.toAmount || t.expectedToAmount }} </span>
           {{ t.toTokenSymbol || t.toToken?.symbol }}
         </span>
-        {{ t }}
         <span class="from">{{ t.senderName || t.sender?.name }} | {{ t.protocol }}</span>
         <span class="date">{{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}</span>
         <span class="gas">{{ t.txId && t.txId.toString().startsWith('TEST') ? 'TEST' : '$' + (t.gasCost?.substring(0, 4) || '0') }}</span>

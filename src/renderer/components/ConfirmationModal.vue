@@ -11,7 +11,7 @@
       </div>
       <div class="modal-actions">
         <button @click="$emit('cancel')" class="modal-cancel">{{ cancelText }}</button>
-        <button @click="$emit('confirm')" class="modal-confirm">{{ confirmText }}</button>
+        <button v-if="showConfirmButton" @click="$emit('confirm')" class="modal-confirm">{{ confirmText }}</button>
       </div>
     </div>
   </div>
@@ -44,6 +44,10 @@ export default {
     cancelText: {
       type: String,
       default: 'Cancel'
+    },
+    showConfirmButton: {
+      type: Boolean,
+      default: true
     }
   },
   emits: ['confirm', 'cancel']

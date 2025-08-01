@@ -438,6 +438,8 @@
       userPrice: priceDeviationModalData.userPrice,
       deviation: priceDeviationModalData.deviation
     }"
+    :showConfirmButton="!!priceDeviationModalData.action"
+    :cancelText="priceDeviationModalData.action ? 'Cancel' : 'OK'"
     @confirm="confirmPriceDeviationAction"
     @cancel="cancelPriceDeviationAction"
   />
@@ -612,6 +614,7 @@ export default {
                 tokenB: token,
                 buyLevels: token.details.buyLevels || [],
                 sellLevels: token.details.sellLevels || [],
+                limitPriceInDollars: token.details.limitPriceInDollars || false,
                 rowIndex,
                 colIndex,
                 source: 'orderbook'
@@ -637,6 +640,7 @@ export default {
           tokenB: order.toToken,
           buyLevels: isBuyOrder ? [level] : [],
           sellLevels: isBuyOrder ? [] : [level],
+          limitPriceInDollars: order.limitPriceInDollars || false,
           source: 'limitorder',
           orderId: order.id
         });
@@ -846,7 +850,19 @@ export default {
       ([_fromAddr, _toAddr, _tabOrder]) => {
         if (_tabOrder === 'limit') {
           setMarketPriceAsLimit(_fromAddr, _toAddr);
+          isFetchingPrice.value = false;
         }
+        tradeSummary.toAmount = null;
+        tradeSummary.protocol = null;
+        tradeSummary.fromAmount = null;
+        tradeSummary.expectedToAmount = null;
+        tradeSummary.fromTokenSymbol = null;
+        tradeSummary.toTokenSymbol = null;
+        tradeSummary.priceLimit = null;
+        trades.value = [];
+        swapMessage.value = '';
+        priceFetchingMessage.value = '';
+        needsToApprove.value = false;
     });
 
     // Refresh balances
@@ -1405,6 +1421,11 @@ export default {
             if (_newAmt !== fromAmount.value) {
               console.log('Outdated input amount in first check');
               return 'outdated';
+            }
+
+            if (tabOrderValue === 'limit' || currentModeValue === 'automatic') {
+              console.log('not in market order anymore')
+              return;
             }
 
             // Update reactive state with results
@@ -2513,7 +2534,7 @@ export default {
 
     // Price deviation modal functions
     function checkPriceDeviation(userPrice, marketPrice, orderType) {
-      if (!marketPrice || marketPrice === 0) return true; // Skip check if no market price
+      if (!marketPrice || marketPrice === 0) return { needsConfirmation: false }; // Skip check if no market price
       
       const deviation = Math.abs((userPrice - marketPrice) / marketPrice * 100);
       
@@ -2658,7 +2679,7 @@ export default {
         : toPrice / fromPrice;
 
       // Check against existing pending orders (bid-ask spread validation)
-      const orderType = shouldSwitchTokensForLimit.value ? 'sell' : 'buy';
+      const orderType = shouldSwitchTokensForLimit.value ? 'buy' : 'sell';
       const bidAskValidation = validateAgainstPendingOrders(
         priceLimit.value, 
         orderType, 
@@ -2668,7 +2689,12 @@ export default {
       );
       
       if (!bidAskValidation.isValid) {
-        swapMessage.value = bidAskValidation.reason;
+        // Show simple informational modal for order conflicts
+        showPriceDeviationModal.value = true;
+        priceDeviationModalData.title = 'Order Conflict';
+        priceDeviationModalData.message = `Order aborted: ${bidAskValidation.reason}`;
+        priceDeviationModalData.action = null; // No action, just close
+        priceDeviationModalData.args = null;
         return;
       }
       

@@ -256,9 +256,11 @@
   <!-- Price Deviation Confirmation Modal -->
   <ConfirmationModal
     :show="showPriceDeviationModal"
-    title="Price Deviation Warning"
+    :title="pendingLevelUpdate ? 'Price Deviation Warning' : 'Order Conflict'"
     :message="priceDeviationMessage"
     :details="priceDeviationDetails"
+    :showConfirmButton="!!pendingLevelUpdate"
+    :cancelText="pendingLevelUpdate ? 'Cancel' : 'OK'"
     @confirm="confirmPriceDeviationUpdate"
     @cancel="cancelPriceDeviationUpdate"
   ></ConfirmationModal>
@@ -505,17 +507,40 @@ export default {
               if (buyLevel.triggerPrice && buyLevel.balancePercentage && buyLevel.status === 'active') {
                 let buyPrice = buyLevel.triggerPrice;
                 
-                // If tokens are swapped, invert the price for comparison
-                const orderTokenA = existingOrder.tokenA.address.toLowerCase();
-                const currentTokenA = tokenA.value.address.toLowerCase();
-                if (orderTokenA !== currentTokenA) {
-                  buyPrice = 1 / buyPrice;
+                // Convert existing order's price to comparable units
+                if (existingOrder.limitPriceInDollars) {
+                  // Existing order uses dollar prices
+                  if (limitPriceInDollars.value) {
+                    // Both use dollars - direct comparison
+                    buyPrice = buyLevel.triggerPrice;
+                  } else {
+                    // Convert existing dollar price to token ratio
+                    const existingTokenBPrice = existingOrder.tokenB.price || tokenBPrice.value;
+                    buyPrice = buyLevel.triggerPrice / existingTokenBPrice;
+                  }
+                } else {
+                  // Existing order uses token ratios
+                  if (limitPriceInDollars.value) {
+                    // Convert existing token ratio to dollars
+                    const existingTokenBPrice = existingOrder.tokenB.price || tokenBPrice.value;
+                    buyPrice = buyLevel.triggerPrice * existingTokenBPrice;
+                  } else {
+                    // Both use token ratios - check if tokens are swapped
+                    const orderTokenA = existingOrder.tokenA.address.toLowerCase();
+                    const currentTokenA = tokenA.value.address.toLowerCase();
+                    if (orderTokenA !== currentTokenA) {
+                      buyPrice = 1 / buyLevel.triggerPrice;
+                    } else {
+                      buyPrice = buyLevel.triggerPrice;
+                    }
+                  }
                 }
                 
                 if (userPrice <= buyPrice) {
+                  const unit = limitPriceInDollars.value ? '$' : '';
                   return {
                     isValid: false,
-                    reason: `Sell price ${userPrice.toFixed(6)} cannot be at or below existing buy level at ${buyPrice.toFixed(6)}`
+                    reason: `Sell price ${unit}${userPrice.toFixed(6)} cannot be at or below existing buy level at ${unit}${buyPrice.toFixed(6)}`
                   };
                 }
               }
@@ -526,17 +551,40 @@ export default {
               if (sellLevel.triggerPrice && sellLevel.balancePercentage && sellLevel.status === 'active') {
                 let sellPrice = sellLevel.triggerPrice;
                 
-                // If tokens are swapped, invert the price for comparison
-                const orderTokenA = existingOrder.tokenA.address.toLowerCase();
-                const currentTokenA = tokenA.value.address.toLowerCase();
-                if (orderTokenA !== currentTokenA) {
-                  sellPrice = 1 / sellPrice;
+                // Convert existing order's price to comparable units
+                if (existingOrder.limitPriceInDollars) {
+                  // Existing order uses dollar prices
+                  if (limitPriceInDollars.value) {
+                    // Both use dollars - direct comparison
+                    sellPrice = sellLevel.triggerPrice;
+                  } else {
+                    // Convert existing dollar price to token ratio
+                    const existingTokenBPrice = existingOrder.tokenB.price || tokenBPrice.value;
+                    sellPrice = sellLevel.triggerPrice / existingTokenBPrice;
+                  }
+                } else {
+                  // Existing order uses token ratios
+                  if (limitPriceInDollars.value) {
+                    // Convert existing token ratio to dollars
+                    const existingTokenBPrice = existingOrder.tokenB.price || tokenBPrice.value;
+                    sellPrice = sellLevel.triggerPrice * existingTokenBPrice;
+                  } else {
+                    // Both use token ratios - check if tokens are swapped
+                    const orderTokenA = existingOrder.tokenA.address.toLowerCase();
+                    const currentTokenA = tokenA.value.address.toLowerCase();
+                    if (orderTokenA !== currentTokenA) {
+                      sellPrice = 1 / sellLevel.triggerPrice;
+                    } else {
+                      sellPrice = sellLevel.triggerPrice;
+                    }
+                  }
                 }
                 
                 if (userPrice >= sellPrice) {
+                  const unit = limitPriceInDollars.value ? '$' : '';
                   return {
                     isValid: false,
-                    reason: `Buy price ${userPrice.toFixed(6)} cannot be at or above existing sell level at ${sellPrice.toFixed(6)}`
+                    reason: `Buy price ${unit}${userPrice.toFixed(6)} cannot be at or above existing sell level at ${unit}${sellPrice.toFixed(6)}`
                   };
                 }
               }
@@ -629,9 +677,14 @@ export default {
         const bidAskValidation = validateAgainstExistingOrders(priceForValidation, type);
         
         if (!bidAskValidation.isValid) {
-          // Clear the invalid price instead of reverting to original
+          // Show modal for order conflicts
+          showPriceDeviationModal.value = true;
+          priceDeviationMessage.value = `Order aborted: ${bidAskValidation.reason}`;
+          priceDeviationDetails.value = null;
+          pendingLevelUpdate.value = null; // No action needed
+          
+          // Clear the invalid price
           level.triggerPrice = null;
-          console.warn(`Order validation failed: ${bidAskValidation.reason}`);
           return;
         }
       }
@@ -738,14 +791,14 @@ export default {
       if (isPaused.value) return 'Paused';
       
       // Check if level is being processed or has completed
-      if (level.status === 'processing') return 'Processed';
+      if (level.status === 'processing') return 'Processing';
       if (level.status === 'processed') return 'Processed';
       if (level.status === 'partially_filled') return 'Partial';
       if (level.status === 'failed') return 'Failed ✗';
       
-      if (level.status === 'active') return 'Active';
       if (level.status === 'triggered') return 'Triggered';
       if (isCloseToTrigger(type, level)) return 'Close';
+      if (level.status === 'active') return 'Active';
       return 'Waiting';
     };
 
@@ -764,10 +817,10 @@ export default {
       if (level.triggerPrice !== null) {
         return 'status-invalid';
       }
-      
+
+      if (isCloseToTrigger(type, level)) return 'status-close-trigger';
       if (level.status === 'active') return 'status-active';
       if (level.status === 'triggered') return 'status-triggered';
-      if (isCloseToTrigger(type, level)) return 'status-close-trigger';
       return 'status-waiting';
     };
 
