@@ -93,6 +93,7 @@
           class="level-row buy-row"
           :class="{ 'close-to-trigger': isCloseToTrigger('buy', level) }"
         >
+        {{ level }}
           <div class="level-inputs">
             <img
               :src="deleteImage"
@@ -681,7 +682,7 @@ export default {
       if (level.triggerPrice < 0) level.triggerPrice = 0;
       if (level.balancePercentage < 0) level.balancePercentage = 0;
       if (level.balancePercentage > 100) level.balancePercentage = 100;
-      
+
       // Check against existing orders (bid-ask spread validation)
       if (!level.triggerPrice)
         return updateLevelConfirmed(type, index);
@@ -694,7 +695,7 @@ export default {
         priceDeviationMessage.value = `Order aborted: ${bidAskValidation.reason}`;
         priceDeviationDetails.value = null;
         pendingLevelUpdate.value = null; // No action needed
-        
+
         // Clear the invalid price
         level.triggerPrice = null;
         return;
@@ -708,32 +709,34 @@ export default {
           (level.triggerPrice / tokenBPrice.value) : level.triggerPrice;
         const deviationCheck = checkPriceDeviation(priceForDeviation, marketPrice, type);
         
-        if (deviationCheck.needsConfirmation) {
-          // Store pending update info
-          pendingLevelUpdate.value = {
-            type,
-            index,
-            originalPrice
-          };
-          
-          // Set modal data
-          priceDeviationMessage.value = deviationCheck.isBuyOrder 
-            ? `Your buy price is ${deviationCheck.deviation}% higher than the current market price. Are you sure you want to set this level?`
-            : `Your sell price is ${deviationCheck.deviation}% lower than the current market price. Are you sure you want to set this level?`;
-          
-          priceDeviationDetails.value = {
-            marketPrice: limitPriceInDollars.value 
-              ? `1 ${tokenA.value.symbol} = $${(marketPrice * tokenBPrice.value).toFixed(2)}`
-              : `1 ${tokenA.value.symbol} = ${marketPrice.toFixed(6)} ${tokenB.value.symbol}`,
-            userPrice: limitPriceInDollars.value 
-              ? `1 ${tokenA.value.symbol} = $${level.triggerPrice.toFixed(2)}`
-              : `1 ${tokenA.value.symbol} = ${level.triggerPrice.toFixed(6)} ${tokenB.value.symbol}`,
-            deviation: deviationCheck.deviation
-          };
-          
-          showPriceDeviationModal.value = true;
-          return; // Don't continue with update until confirmed
-        }
+        if (!deviationCheck.needsConfirmation)
+          return updateLevelConfirmed(type, index);
+
+        // Store pending update info
+        pendingLevelUpdate.value = {
+          type,
+          index,
+          originalPrice
+        };
+        
+        // Set modal data
+        priceDeviationMessage.value = deviationCheck.isBuyOrder 
+          ? `Your buy price is ${deviationCheck.deviation}% higher than the current market price. Are you sure you want to set this level?`
+          : `Your sell price is ${deviationCheck.deviation}% lower than the current market price. Are you sure you want to set this level?`;
+        
+        priceDeviationDetails.value = {
+          marketPrice: limitPriceInDollars.value 
+            ? `1 ${tokenA.value.symbol} = $${(marketPrice * tokenBPrice.value).toFixed(2)}`
+            : `1 ${tokenA.value.symbol} = ${marketPrice.toFixed(6)} ${tokenB.value.symbol}`,
+          userPrice: limitPriceInDollars.value 
+            ? `1 ${tokenA.value.symbol} = $${level.triggerPrice.toFixed(2)}`
+            : `1 ${tokenA.value.symbol} = ${level.triggerPrice.toFixed(6)} ${tokenB.value.symbol}`,
+          deviation: deviationCheck.deviation
+        };
+        
+        console.log('should show modal')
+        showPriceDeviationModal.value = true;
+        return; // Don't continue with update until confirmed
       }
     };
     
@@ -753,7 +756,8 @@ export default {
       } else {
         // Even if invalid inputs, preserve processed status
         if (level.status !== 'processed') {
-          level.status = 'invalid';
+          console.log('set inactive')
+          level.status = 'inactive';
         }
       }
             
@@ -787,10 +791,6 @@ export default {
       if (level.status === 'partially_filled') return 'status-partially-filled';
       if (level.status === 'failed') return 'status-failed';
       
-      // Check price validity
-      if (level.triggerPrice !== null) {
-        return 'status-invalid';
-      }
 
       if (isCloseToTrigger(type, level)) return 'status-close-trigger';
       if (level.status === 'active') return 'status-active';
@@ -822,6 +822,9 @@ export default {
       level.triggerPrice = null;
       level.balancePercentage = null;
       level.status = 'inactive'; // Reset status when cleaning
+      level.failedTxId = null;
+      level.confirmedTxId = null;
+      level.lastFailureDate = null;
       emitOrderUpdate();
     };
 

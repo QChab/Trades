@@ -1967,6 +1967,12 @@ export default {
     }
 
     const getTradesUniswap = async (_newFrom, _newTo, _newAmt) => {
+      // Validate amount is not zero or invalid
+      if (!_newAmt || Number(_newAmt) <= 0) {
+        console.warn('getTradesUniswap: Invalid amount', _newAmt);
+        return 'no swap found';
+      }
+      
       const pools = await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo]);
       
       // FINDING TRADES
@@ -1976,6 +1982,52 @@ export default {
         formattedAmount,
         tokenDecimals
       );
+      
+      // Check if the parsed amount is zero
+      if (fromAmtRaw.isZero()) {
+        console.warn('getTradesUniswap: Parsed amount is zero', { _newAmt, formattedAmount, tokenDecimals });
+        return 'no swap found';
+      }
+
+      // Helper to safely calculate percentage amounts
+      const calculatePercentageAmount = (percentage) => {
+        const percentAmount = (_newAmt * percentage) / 100;
+        const formatted = percentAmount.toFixed(tokensByAddresses.value[_newFrom].decimals);
+        const parsed = ethers.utils.parseUnits(formatted, tokensByAddresses.value[_newFrom].decimals);
+        
+        // If the percentage amount rounds to zero, return null to skip
+        if (parsed.isZero()) {
+          console.warn(`Percentage ${percentage}% of ${_newAmt} rounds to zero`);
+          return null;
+        }
+        return parsed;
+      };
+
+      // Calculate all percentage amounts and filter out nulls
+      const percentageAmounts = {
+        10: calculatePercentageAmount(10),
+        15: calculatePercentageAmount(15),
+        20: calculatePercentageAmount(20),
+        25: calculatePercentageAmount(25),
+        30: calculatePercentageAmount(30),
+        35: calculatePercentageAmount(35),
+        40: calculatePercentageAmount(40),
+        45: calculatePercentageAmount(45),
+        50: calculatePercentageAmount(50),
+        55: calculatePercentageAmount(55),
+        60: calculatePercentageAmount(60),
+        65: calculatePercentageAmount(65),
+        70: calculatePercentageAmount(70),
+        75: calculatePercentageAmount(75),
+        80: calculatePercentageAmount(80),
+        85: calculatePercentageAmount(85),
+        90: calculatePercentageAmount(90),
+        93: calculatePercentageAmount(93),
+        95: calculatePercentageAmount(95),
+        97: calculatePercentageAmount(97),
+        98: calculatePercentageAmount(98),
+        99: calculatePercentageAmount(99)
+      };
 
       const [
         bestTrades,
@@ -2003,94 +2055,28 @@ export default {
         bestTrades99
       ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 10 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 15 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 20 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 25 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 30 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 35 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 40 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 45 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 50 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 55 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 60 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 65 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 70 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 75 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 80 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 85 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 90 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 93 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 95 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 97 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 98 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
-        selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, ethers.utils.parseUnits(
-          ((_newAmt * 99 ) / 100).toFixed(tokensByAddresses.value[_newFrom].decimals),
-          tokensByAddresses.value[_newFrom].decimals
-        )),
+        percentageAmounts[10] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[10]) : Promise.resolve(null),
+        percentageAmounts[15] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[15]) : Promise.resolve(null),
+        percentageAmounts[20] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[20]) : Promise.resolve(null),
+        percentageAmounts[25] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[25]) : Promise.resolve(null),
+        percentageAmounts[30] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[30]) : Promise.resolve(null),
+        percentageAmounts[35] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[35]) : Promise.resolve(null),
+        percentageAmounts[40] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[40]) : Promise.resolve(null),
+        percentageAmounts[45] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[45]) : Promise.resolve(null),
+        percentageAmounts[50] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[50]) : Promise.resolve(null),
+        percentageAmounts[55] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[55]) : Promise.resolve(null),
+        percentageAmounts[60] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[60]) : Promise.resolve(null),
+        percentageAmounts[65] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[65]) : Promise.resolve(null),
+        percentageAmounts[70] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[70]) : Promise.resolve(null),
+        percentageAmounts[75] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[75]) : Promise.resolve(null),
+        percentageAmounts[80] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[80]) : Promise.resolve(null),
+        percentageAmounts[85] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[85]) : Promise.resolve(null),
+        percentageAmounts[90] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[90]) : Promise.resolve(null),
+        percentageAmounts[93] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[93]) : Promise.resolve(null),
+        percentageAmounts[95] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[95]) : Promise.resolve(null),
+        percentageAmounts[97] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[97]) : Promise.resolve(null),
+        percentageAmounts[98] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[98]) : Promise.resolve(null),
+        percentageAmounts[99] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[99]) : Promise.resolve(null),
       ])
 
       const tradesByPercent = {
@@ -2146,6 +2132,11 @@ export default {
     }
 
     const processBestTrades = (bestTrades, _newFrom, _newTo) => {
+      // Early return if bestTrades is null or undefined
+      if (!bestTrades) {
+        return { validTrades: [], totalHuman: '0', totalBig: BigNumber.from(0) };
+      }
+      
       // Filter out any null/undefined
       const validTrades = bestTrades.filter(t => t && t.outputAmount);
       if (validTrades.length === 0) {
@@ -3794,6 +3785,12 @@ export default {
      */
     // Helper function to test if an amount can be executed at the required price
     async function testExecutableAmount(order, testAmount) {
+      // Validate amount is not zero or invalid
+      if (!testAmount || Number(testAmount) <= 0) {
+        console.warn(`testExecutableAmount: Invalid amount ${testAmount} for order ${order.id}`);
+        return { meetsCondition: false, executionPrice: undefined, tradeResult: null, unprofitable: false };
+      }
+      
       // Validate token data exists
       const fromTokenData = tokensByAddresses.value[order.fromToken.address];
       const toTokenData = tokensByAddresses.value[order.toToken.address];
