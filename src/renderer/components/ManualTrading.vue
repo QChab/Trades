@@ -1038,7 +1038,7 @@ export default {
     );
 
     // Whenever props.confirmedTrade changes, adjust our offset map
-    watch(() => props.confirmedTrade, (confirmed) => {
+    watch(() => props.confirmedTrade, async (confirmed) => {
       if (!confirmed) return;
       const sender = confirmed.sender?.address?.toLowerCase();
       const tok    = confirmed.fromToken?.address.toLowerCase();
@@ -1063,44 +1063,107 @@ export default {
             : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
             
           if (levels[levelIndex]) {
-            // Find the order to check execution percentage
-            const order = automaticOrders.value.find(o => o.id === confirmed.orderId);
+            // Find the order by source location instead of ID (since orders get regenerated)
+            let order = null;
             
-            if (order) {
-              const originalAmount = Number(order.fromAmount);
+            // First try to find by orderId (in case it still exists)
+            order = automaticOrders.value.find(o => o.id === confirmed.orderId);
+            
+            // If not found by ID, try to find by matching source location
+            if (!order && confirmed.orderSourceLocation) {
+              const { rowIndex: confRowIndex, colIndex: confColIndex, levelIndex: confLevelIndex, levelType: confLevelType } = confirmed.orderSourceLocation;
+              order = automaticOrders.value.find(o => 
+                o.sourceLocation &&
+                o.sourceLocation.rowIndex === confRowIndex &&
+                o.sourceLocation.colIndex === confColIndex &&
+                o.sourceLocation.levelIndex === confLevelIndex &&
+                o.sourceLocation.levelType === confLevelType
+              );
+            }
+            
+            // If still not found, we can still update the level status based on the confirmed trade data
+            if (order || confirmed.orderSourceLocation) {
+              // Use order data if available, otherwise use confirmed trade data
+              const originalAmount = order ? Number(order.fromAmount) : Number(confirmed.fromAmount);
               const executedAmount = Number(confirmed.fromAmount);
-              const remainingAmount = Number(order.remainingAmount || 0);
-              const fillPercentage = (executedAmount / originalAmount) * 100;
               
-              console.log(`Transaction confirmed for order ${confirmed.orderId}, execution: ${fillPercentage.toFixed(1)}%`);
-              
-              // Check if order is 97.5% or more filled
-              if (fillPercentage >= 97.5 || remainingAmount < originalAmount * 0.025) {
-                levels[levelIndex].status = 'processed';
-                console.log(`Level ${levelIndex} marked as processed (${fillPercentage.toFixed(1)}% filled)`);
+              // Check if transaction was successful
+              if (confirmed.receiptStatus === true) {
+                // Transaction succeeded
+                const remainingAmount = order ? Number(order.remainingAmount || 0) : 0;
+                const fillPercentage = (executedAmount / originalAmount) * 100;
+                
+                console.log(`Transaction confirmed SUCCESSFUL for order ${confirmed.orderId}, execution: ${fillPercentage.toFixed(1)}%`);
+                
+                // Check if order is 97.5% or more filled
+                if (fillPercentage >= 97.5 || remainingAmount < originalAmount * 0.025) {
+                  levels[levelIndex].status = 'processed';
+                  console.log(`Level ${levelIndex} marked as processed (${fillPercentage.toFixed(1)}% filled)`);
+                } else {
+                  levels[levelIndex].status = 'partially_filled';
+                  levels[levelIndex].partialExecutionDate = new Date().toISOString();
+                  levels[levelIndex].executedAmount = executedAmount;
+                  levels[levelIndex].originalPercentage = levels[levelIndex].balancePercentage;
+                  
+                  // Calculate new percentage based on remaining amount
+                  const executedRatio = executedAmount / originalAmount;
+                  const remainingRatio = 1 - executedRatio;
+                  const newPercentage = levels[levelIndex].originalPercentage * remainingRatio;
+                  levels[levelIndex].balancePercentage = Number(newPercentage.toFixed(2));
+                  
+                  console.log(`Level ${levelIndex} marked as partially_filled (${fillPercentage.toFixed(1)}% filled, new percentage: ${newPercentage.toFixed(2)}%)`);
+                }
+                
+                levels[levelIndex].executionPrice = confirmed.executionPrice || null;
+                levels[levelIndex].executionDate = new Date().toISOString();
+                levels[levelIndex].confirmedTxId = confirmed.txId;
               } else {
-                levels[levelIndex].status = 'partially_filled';
-                levels[levelIndex].partialExecutionDate = new Date().toISOString();
-                levels[levelIndex].executedAmount = executedAmount;
-                levels[levelIndex].originalPercentage = levels[levelIndex].balancePercentage;
+                // Transaction failed - revert the order
+                console.log(`Transaction FAILED for order ${confirmed.orderId}, reverting...`);
                 
-                // Calculate new percentage based on remaining amount
-                const executedRatio = executedAmount / originalAmount;
-                const remainingRatio = 1 - executedRatio;
-                const newPercentage = levels[levelIndex].originalPercentage * remainingRatio;
-                levels[levelIndex].balancePercentage = Number(newPercentage.toFixed(2));
+                // Reset level status to previous state (active or partially_filled)
+                // Check if there were previous successful executions
+                if (levels[levelIndex].executedAmount && levels[levelIndex].executedAmount > 0) {
+                  // There were previous executions, go back to partially_filled
+                  levels[levelIndex].status = 'partially_filled';
+                  console.log(`Level ${levelIndex} reverted to partially_filled status (previous executions exist)`);
+                } else {
+                  // No previous executions, go back to active
+                  levels[levelIndex].status = 'active';
+                  console.log(`Level ${levelIndex} reverted to active status (no previous executions)`);
+                }
+                levels[levelIndex].failedTxId = confirmed.txId;
+                levels[levelIndex].lastFailureDate = new Date().toISOString();
                 
-                console.log(`Level ${levelIndex} marked as partially_filled (${fillPercentage.toFixed(1)}% filled, new percentage: ${newPercentage.toFixed(2)}%)`);
+                // If we have the order object, update it
+                if (order) {
+                  // Restore the remaining amount
+                  if (order.remainingAmount !== undefined) {
+                    order.remainingAmount = Number(order.remainingAmount) + executedAmount;
+                  } else {
+                    order.remainingAmount = order.fromAmount;
+                  }
+                  
+                  // Update order status back to pending
+                  order.status = 'pending';
+                  
+                  // Update the order in the database
+                  await window.electronAPI.updatePendingOrder({
+                    ...JSON.parse(JSON.stringify(order)),
+                    remainingAmount: order.remainingAmount.toString(),
+                    status: 'pending'
+                  });
+                  
+                  console.log(`Order ${order.id} reverted: remaining amount restored to ${order.remainingAmount}`);
+                } else {
+                  console.log(`Order not found in current automaticOrders, but level status was reverted`);
+                }
               }
-              
-              levels[levelIndex].executionPrice = confirmed.executionPrice || null;
-              levels[levelIndex].executionDate = new Date().toISOString();
-              levels[levelIndex].confirmedTxId = confirmed.txId;
               
               // Force UI update
               updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
             } else {
-              console.warn(`Order ${confirmed.orderId} not found in automaticOrders`);
+              console.warn(`Could not find matching order for confirmed trade at location: row=${rowIndex}, col=${colIndex}, level=${levelIndex}, type=${levelType}`);
             }
           }
         }

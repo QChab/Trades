@@ -167,9 +167,11 @@ export default {
         try {
           const receipt = await providersList[i % providersList.length].getTransactionReceipt(trade.txId)
           if (receipt) {
-            emit('confirmedTrade', trade);
+            // Include receipt status in the event
+            const isSuccessful = receipt.status === '1' || receipt.status === 1;
+            emit('confirmedTrade', { ...trade, receiptStatus: isSuccessful });
             try {
-              if (receipt.status === '1' || receipt.status === 1) {
+              if (isSuccessful) {
                 trade.isConfirmed = true;
                 const {gas, tokens} = await analyseReceipt(trade, receipt, toRaw(props.provider))
                 trade.gasCost = gas.paidUsd + '';

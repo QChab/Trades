@@ -175,7 +175,6 @@
           class="level-row sell-row"
           :class="{ 'close-to-trigger': isCloseToTrigger('sell', level) }"
         >
-        {{ level }}
           <div class="level-inputs">
             <img
               v-if="level.triggerPrice"
