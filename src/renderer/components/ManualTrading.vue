@@ -2721,11 +2721,11 @@ export default {
         if (relevantOrders.length === 0) return { isValid: true };
         
         // Determine if current order is buy or sell based on shouldInvert
-        const isBuyOrder = shouldInvert ? false : (orderType === 'buy');
+        const isBuyOrder = false;
         
         for (const order of relevantOrders) {
           // Determine if existing order is buy or sell
-          const orderIsBuy = order.shouldSwitchTokensForLimit ? false : true;
+          const orderIsBuy = order.automatic ? (order.shouldSwitchTokensForLimit ? false : true) : false;
           
           // Get comparable prices (normalize to same direction)
           let orderPrice = order.priceLimit;
