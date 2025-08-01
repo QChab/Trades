@@ -401,6 +401,7 @@ export default {
 
     const isCloseToTrigger = (type, level) => {
       if (!level.triggerPrice || !level.balancePercentage || isPaused.value) return false;
+      if (level.status === 'processed') return false;
       
       const marketPrice = currentMarketPrice.value;
       if (!marketPrice || marketPrice <= 0) return false;
