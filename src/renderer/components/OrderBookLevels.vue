@@ -175,6 +175,7 @@
           class="level-row sell-row"
           :class="{ 'close-to-trigger': isCloseToTrigger('sell', level) }"
         >
+        {{ level }}
           <div class="level-inputs">
             <img
               v-if="level.triggerPrice"
@@ -761,7 +762,7 @@ export default {
         emitOrderUpdate();
     };
 
-    const getLevelStatus = (type, level) => {
+    const getLevelStatus = computed(() => (type, level) => {
       if (!level.triggerPrice || !level.balancePercentage) return 'Not set';
       if (isPaused.value) return 'Paused';
       
@@ -771,14 +772,13 @@ export default {
       if (level.status === 'partially_filled') return 'Partial';
       if (level.status === 'failed') return 'Failed ✗';
       
-      if (level.status === 'triggered') return 'Triggered';
       if (isCloseToTrigger(type, level)) return 'Close';
       if (level.status === 'active') return 'Active';
       return 'Waiting';
-    };
+    });
 
     // Also update the getLevelStatusClass method
-    const getLevelStatusClass = (type, level) => {
+    const getLevelStatusClass = computed(() => (type, level) => {
       if (!level.triggerPrice || !level.balancePercentage) return 'status-inactive';
       if (isPaused.value) return 'status-paused';
       
@@ -795,9 +795,8 @@ export default {
 
       if (isCloseToTrigger(type, level)) return 'status-close-trigger';
       if (level.status === 'active') return 'status-active';
-      if (level.status === 'triggered') return 'status-triggered';
       return 'status-waiting';
-    };
+    });
 
     const emitOrderUpdate = () => {
       const orderData = {
@@ -1349,12 +1348,6 @@ input:checked + .slider:before {
   background-color: #dca380;
   color: #d17b45;
   border: 1px solid #f5c6cb;
-}
-
-.status-triggered {
-  background-color: #d1ecf1;
-  color: #0c5460;
-  border: 1px solid #bee5eb;
 }
 
 .status-close-trigger {
