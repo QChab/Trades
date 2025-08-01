@@ -756,42 +756,9 @@ export default {
           level.status = 'invalid';
         }
       }
-      
-      // updateLevelStatus(type, index);
-      
+            
       if (level.triggerPrice && level.balancePercentage)
         emitOrderUpdate();
-    };
-
-    const updateLevelStatus = (type, index) => {
-      const levels = type === 'sell' ? sellLevels : buyLevels;
-      const level = levels[index];
-      
-      if (!level.triggerPrice || !level.balancePercentage) {
-        level.status = 'inactive';
-        return;
-      }
-      
-      if (isPaused.value) {
-        level.status = 'paused';
-        return;
-      }
-      
-      if (level.status === 'processed') {
-        // If already processed, keep processed status (but allow processing to be reset)
-        return;
-      }
-      
-      // Only update status if not already set or if it's in a state that should be updated
-      if (level.status === 'inactive' || level.status === 'waiting' || level.status === undefined) {
-        if (type === 'sell') {
-          // Sell when market price goes below trigger (stop loss) or above trigger (take profit)
-          level.status = 'active';
-        } else {
-          // Buy when market price goes above trigger (momentum) or below trigger (dip buying)
-          level.status = 'active';
-        }
-      }
     };
 
     const getLevelStatus = (type, level) => {
@@ -857,8 +824,6 @@ export default {
       level.triggerPrice = null;
       level.balancePercentage = null;
       level.status = 'inactive'; // Reset status when cleaning
-      // updateLevelStatus('sell', index);
-      // updateLevelStatus('buy', index);
       emitOrderUpdate();
     };
 
@@ -917,25 +882,7 @@ export default {
         if (props.details.limitPriceInDollars !== undefined)
           limitPriceInDollars.value = props.details.limitPriceInDollars
       }
-      
-      // Initialize all rows
-      // sellLevels.forEach((level, index) => updateLevelStatus('sell', index));
-      // buyLevels.forEach((level, index) => updateLevelStatus('buy', index));
     });
-
-    // Watch for market price changes to update price validity
-    watch(
-      () => currentMarketPrice.value,
-      () => {
-        // Update all price validations when market price changes
-        // sellLevels.forEach((level, index) => {
-        //   updateLevelStatus('sell', index);
-        // });
-        // buyLevels.forEach((level, index) => {
-        //   updateLevelStatus('buy', index);
-        // });
-      }
-    );
 
     return {
       isPaused,
