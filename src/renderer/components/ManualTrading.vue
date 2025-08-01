@@ -4,52 +4,87 @@
     <div class="form-group">
       <div class="top-nav-bar">
         <div 
-          @click="currentMode='manual'"
           :class="{'active-tab': currentMode === 'manual'}"
+          @click="currentMode='manual'"
         > 
           <h3> Manual trade </h3>
         </div>
         <div 
-          @click="currentMode='automatic'"
           :class="{'active-tab': currentMode === 'automatic'}"
+          @click="currentMode='automatic'"
         >
           <h3> Automatic trade</h3>
         </div>
       </div>
-      <button @click="toggleEditingTokens" class="edit-button">
+      <button
+        class="edit-button"
+        @click="toggleEditingTokens"
+      >
         {{ isEditingTokens ? 'Stop editing' : 'Edit tokens' }}
       </button>
       <div>
         <div v-if="!isEditingTokens && currentMode === 'manual'">
           <div class="price-form">
             <div class="tabs-price">
-              <div :class="{active: tabOrder === 'market'}" @click="tabOrder = 'market'">Market order</div>
-              <div :class="{active: tabOrder === 'limit'}" @click="tabOrder = 'limit'">Limit order</div>
+              <div
+                :class="{active: tabOrder === 'market'}"
+                @click="tabOrder = 'market'"
+              >
+                Market order
+              </div>
+              <div
+                :class="{active: tabOrder === 'limit'}"
+                @click="tabOrder = 'limit'"
+              >
+                Limit order
+              </div>
             </div>
             <div v-if="tabOrder === 'limit'">
               <p>
                 when 1 {{ !shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }} = 
-                <input v-model.number="priceLimit" type="number" placeholder="0"/> 
+                <input
+                  v-model.number="priceLimit"
+                  type="number"
+                  placeholder="0"
+                > 
                 {{ shouldSwitchTokensForLimit ? tokensByAddresses[fromTokenAddress]?.symbol : tokensByAddresses[toTokenAddress]?.symbol }}
-                <span v-if="priceLimit && tokensByAddresses[fromTokenAddress]?.price && tokensByAddresses[toTokenAddress]?.price" class="usd-price-quote">
+                <span
+                  v-if="priceLimit && tokensByAddresses[fromTokenAddress]?.price && tokensByAddresses[toTokenAddress]?.price"
+                  class="usd-price-quote"
+                >
                   (${{ formatUsdPrice(priceLimit) }})
                 </span>
-                <img :src="reverseImage" class="reverse-image" @click="shouldSwitchTokensForLimit = !shouldSwitchTokensForLimit"/>
+                <img
+                  :src="reverseImage"
+                  class="reverse-image"
+                  @click="shouldSwitchTokensForLimit = !shouldSwitchTokensForLimit"
+                >
               </p>
               <!-- <span class="set-market-price" @click="setMarketPriceAsLimit()">
                 Set market price
               </span> -->
-              
             </div>
-            <div v-else class="checkboxes">
+            <div
+              v-else
+              class="checkboxes"
+            >
               <label>
-                <input type="checkbox" v-model="shouldUseUniswap"/> Uniswap
+                <input
+                  v-model="shouldUseUniswap"
+                  type="checkbox"
+                > Uniswap
               </label>
               <label>
-                <input type="checkbox" v-model="shouldUseBalancer"/> Balancer
+                <input
+                  v-model="shouldUseBalancer"
+                  type="checkbox"
+                > Balancer
               </label>
               <label>
-                <input type="checkbox" v-model="shouldUseUniswapAndBalancer"/> Uniswap & Balancer
+                <input
+                  v-model="shouldUseUniswapAndBalancer"
+                  type="checkbox"
+                > Uniswap & Balancer
               </label>
             </div>
           </div>
@@ -62,8 +97,11 @@
                 inputmode="decimal"
                 step="any"
                 placeholder="0"
-              />
-              <select id="from-token" v-model="fromTokenAddress">
+              >
+              <select
+                id="from-token"
+                v-model="fromTokenAddress"
+              >
                 <option 
                   v-for="(token, index) in filteredTokens" 
                   :key="'fromToken-' + index" 
@@ -76,19 +114,35 @@
                 @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[fromTokenAddress]?.price)) }}
               </span>
             </div>
-            <span v-if="fromAmount" class="usd-amount">
+            <span
+              v-if="fromAmount"
+              class="usd-amount"
+            >
               ${{ spaceThousands((fromAmount * tokensByAddresses[fromTokenAddress]?.price).toFixed(1)) }}
             </span>
           </div>
 
           <div class="to-swap">
-            <img :src="downArrowImage" class="down-arrow-image" @click="switchTokens"/>
+            <img
+              :src="downArrowImage"
+              class="down-arrow-image"
+              @click="switchTokens"
+            >
             <p>Buy</p>
-            <div class="amount-token" v-if="tabOrder === 'market'">
-              <span class="amount-out" :class="{'fetching-price': isFetchingPrice}">
+            <div
+              v-if="tabOrder === 'market'"
+              class="amount-token"
+            >
+              <span
+                class="amount-out"
+                :class="{'fetching-price': isFetchingPrice}"
+              >
                 {{ spaceThousands(tradeSummary.toAmount) }}
               </span>
-              <select id="to-token" v-model="toTokenAddress">
+              <select
+                id="to-token"
+                v-model="toTokenAddress"
+              >
                 <option 
                   v-for="(token, index) in filteredTokens" 
                   :key="'toToken-' + index" 
@@ -98,11 +152,21 @@
                 </option>
               </select>
             </div>
-            <div class="amount-token" v-else>
-              <input class="amount-out" :class="{'fetching-price': isFetchingPrice}" v-model="tradeSummary.toAmount"/>
-                <!-- {{ spaceThousands(tradeSummary.toAmount) }}
+            <div
+              v-else
+              class="amount-token"
+            >
+              <input
+                v-model="tradeSummary.toAmount"
+                class="amount-out"
+                :class="{'fetching-price': isFetchingPrice}"
+              >
+              <!-- {{ spaceThousands(tradeSummary.toAmount) }}
               </input> -->
-              <select id="to-token" v-model="toTokenAddress">
+              <select
+                id="to-token"
+                v-model="toTokenAddress"
+              >
                 <option 
                   v-for="(token, index) in filteredTokens" 
                   :key="'toToken-' + index" 
@@ -112,7 +176,10 @@
                 </option>
               </select>
             </div>
-            <span v-if="tradeSummary.toAmount && !isFetchingPrice" class="usd-amount">
+            <span
+              v-if="tradeSummary.toAmount && !isFetchingPrice"
+              class="usd-amount"
+            >
               <span v-if="tokensByAddresses[toTokenAddress]?.price">
                 ${{ spaceThousands((Number(tradeSummary.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1)) }}
               </span>
@@ -125,7 +192,9 @@
             </p>
           </div>
 
-          <p class="details-message">{{ priceFetchingMessage }}</p>
+          <p class="details-message">
+            {{ priceFetchingMessage }}
+          </p>
           
           <!-- Effective Price Display -->
           <div
@@ -134,18 +203,23 @@
             style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 14px; color: #111; text-align: center;"
           >
             <div>1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.usdValue }}</div>
-            <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{effectivePrice.usdValueInverse }}</div>
+            <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{ effectivePrice.usdValueInverse }}</div>
           </div>
           
           <div class="address-form">
-            <p><span v-if="tradeSummary.protocol && tabOrder === 'market'">
-              On {{ tradeSummary.protocol === 'Uniswap & Balancer' ?  (`Uniswap ${tradeSummary.fraction}% & Balancer ${100 - tradeSummary.fraction}%`) : tradeSummary.protocol}}
-            </span> with</p>
-            <select id="sender-address" v-model="senderDetails">
+            <p>
+              <span v-if="tradeSummary.protocol && tabOrder === 'market'">
+                On {{ tradeSummary.protocol === 'Uniswap & Balancer' ? (`Uniswap ${tradeSummary.fraction}% & Balancer ${100 - tradeSummary.fraction}%`) : tradeSummary.protocol }}
+              </span> with
+            </p>
+            <select
+              id="sender-address"
+              v-model="senderDetails"
+            >
               <option 
-                v-for="(address, index) in addresses" 
-                :value="address" 
-                :key="'sender-' + address.address"
+                v-for="(address) in addresses" 
+                :key="'sender-' + address.address" 
+                :value="address"
               >
                 {{ address.name }} - 0x{{ address.address.substring(2, 6) }}:
                 {{ balanceString(address.address, fromTokenAddress) }} {{ tokensByAddresses[fromTokenAddress]?.symbol }}
@@ -153,25 +227,37 @@
             </select>
           </div>
 
-          <p class="details-message">{{ swapMessage }}</p>
-          <div v-if="tabOrder === 'market' && !isEditingTokens" class="swap-buttons">
+          <p class="details-message">
+            {{ swapMessage }}
+          </p>
+          <div
+            v-if="tabOrder === 'market' && !isEditingTokens"
+            class="swap-buttons"
+          >
             <div v-if="!needsToApprove">
-              <p class="details-message" v-if="tradeSummary?.gasLimit">Gas cost ~ ${{ (tradeSummary.gasLimit * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
+              <p
+                v-if="tradeSummary?.gasLimit"
+                class="details-message"
+              >
+                Gas cost ~ ${{ (tradeSummary.gasLimit * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}
+              </p>
               <button
                 v-if="!needsToApprove"
-                @click="isSwapButtonDisabled=true; triggerTrade()"
                 :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
                 class="swap-button"
+                @click="isSwapButtonDisabled=true; triggerTrade()"
               >
                 {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : 'Swap' }}
               </button>
             </div>
             <div v-else>
-              <p class="details-message">Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 100000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
+              <p class="details-message">
+                Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 100000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}
+              </p>
               <button
-                @click="approveSpending()"
                 :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
                 class="swap-button"
+                @click="approveSpending()"
               >
                 {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
               </button>
@@ -181,19 +267,21 @@
             <div v-if="!needsToApprove">
               <button
                 v-if="!needsToApprove"
-                @click="placeLimitOrder()"
                 :disabled="!priceLimit || !fromAmount || senderDetails?.address === ''"
                 class="swap-button"
+                @click="placeLimitOrder()"
               >
                 {{ 'Place order' }}
               </button>
             </div>
             <div v-else>
-              <p class="details-message">Gas cost ~ ${{ (150000 * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}</p>
+              <p class="details-message">
+                Gas cost ~ ${{ (150000 * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}
+              </p>
               <button
-                @click="approveSpending()"
                 :disabled="maxGasPrice < gasPrice"
                 class="swap-button"
+                @click="approveSpending()"
               >
                 {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
               </button>
@@ -208,34 +296,47 @@
         >
           <div class="automatic-header">
             <button 
-              @click="toggleGlobalPause" 
-              class="global-pause-btn"
+              class="global-pause-btn" 
               :class="{ 'paused': isGloballyPaused }"
               :title="isGloballyPaused ? 'Unpause' : 'Pause'"
+              @click="toggleGlobalPause"
             >
               {{ isGloballyPaused ? '▶️ Unpause' : '⏸️ Pause' }}
             </button>
             <div class="automatic-info">
-              <h3 v-if="isInitialBalanceFetchDone">{{ automaticOrders.length }} buy/sell levels</h3>
-              <h3 v-else>Initializing balances...</h3>
+              <h3 v-if="isInitialBalanceFetchDone">
+                {{ automaticOrders.length }} buy/sell levels
+              </h3>
+              <h3 v-else>
+                Initializing balances...
+              </h3>
               <p>{{ automaticMessage }}</p>
             </div>
           </div>
           <div class="matrix">
-            <div v-for="(tokenInRow, i) in tokensInRow" class="token-row">
+            <div
+              v-for="(tokenInRow, i) in tokensInRow"
+              class="token-row"
+            >
               <div
-                class="token-details"
                 v-if="tokenInRow?.token?.symbol"
+                class="token-details"
               >
-                <p class="token-symbol">{{ tokenInRow.token.symbol || 'Select Token' }}</p>
+                <p class="token-symbol">
+                  {{ tokenInRow.token.symbol || 'Select Token' }}
+                </p>
                 <p class="token-price">
                   ${{ spaceThousands(removeTrailingZeros(tokenInRow.token.price)) }}
                 </p>
-                <img :src="deleteImage" class="delete-row" @click="deleteRow(i)" />
+                <img
+                  :src="deleteImage"
+                  class="delete-row"
+                  @click="deleteRow(i)"
+                >
               </div>
               <div 
-                class="horizontal-scroll"
                 v-if="tokenInRow?.token?.symbol"
+                class="horizontal-scroll"
               >
                 <div
                   v-for="(token, j) in tokenInRow.columns"
@@ -243,17 +344,17 @@
                 >
                   <OrderBookLevels
                     v-if="token?.address && token.decimals"
-                    :tokenA="tokenInRow.token"
-                    :tokenB="token"
-                    :tokensByAddresses="tokensByAddresses"
+                    :token-a="tokenInRow.token"
+                    :token-b="token"
+                    :tokens-by-addresses="tokensByAddresses"
                     :balances="computedBalancesByAddress"
                     :price-threshold="0.01"
                     :details="token.details"
                     :price-deviation-percentage="priceDeviationPercentage"
                     :existing-orders="allExistingOrders"
-                    @orderUpdate="(details) => updateDetailsOrder(i, j, details)"
+                    @order-update="(details) => updateDetailsOrder(i, j, details)"
                     @delete="deleteColumn(i, j)"
-                  />
+                  ></OrderBookLevels>
                 </div>
                 <div 
                   v-if="tokenInRow?.token?.address && !shouldSelectTokenInCell"
@@ -294,9 +395,9 @@
                 +
               </div>
               <select
+                v-if="shouldSelectTokenInRow"
                 id="new-token"
                 v-model="newTokenAddress"
-                v-if="shouldSelectTokenInRow"
                 @change="addRowToMatrix"
               >
                 <option 
@@ -312,21 +413,36 @@
         </div>
 
         <!-- EDITING TOKENS -->
-        <div v-else class="editing-tokens">
-          <p class="text-center">Editing Tokens</p>
+        <div
+          v-else
+          class="editing-tokens"
+        >
+          <p class="text-center">
+            Editing Tokens
+          </p>
           <ul class="two-column-list">
-            <li v-for="(token, index) in tokens" :key="index">
+            <li
+              v-for="(token, index) in tokens"
+              :key="index"
+            >
               <span v-if="token.symbol === 'ETH'">ETH</span>
-              <label v-else class="checkbox-label edit-label">
+              <label
+                v-else
+                class="checkbox-label edit-label"
+              >
                 <!-- First line: Token address and delete icon -->
                 <div class="line">
                   <input
                     v-model.trim="token.address"
-                    @input="findSymbol(index, token.address)"
                     placeholder="Address"
-                  />
-                  <img :src="deleteImage" class="delete" @click="deleteToken(index)" />
-                  <div class="compensate-delete"></div>
+                    @input="findSymbol(index, token.address)"
+                  >
+                  <img
+                    :src="deleteImage"
+                    class="delete"
+                    @click="deleteToken(index)"
+                  >
+                  <div class="compensate-delete" />
                 </div>
               </label>
               <div v-if="token.address">
@@ -335,7 +451,12 @@
                   <div class="line">
                     <span>Symbol:</span>
                     <span v-if="token.symbol === 'ETH'">ETH</span>
-                    <input v-else v-model="token.symbol" placeholder="Token Name" class="token-name" />
+                    <input
+                      v-else
+                      v-model="token.symbol"
+                      placeholder="Token Name"
+                      class="token-name"
+                    >
                   </div>
                 </label>
                 <label>
@@ -362,7 +483,10 @@
         {{ (new Date(tradeSummary.sentDate)).toLocaleString() }} …
       </p>
       
-      <div v-if="pendingLimitOrders.length" class="pending-orders">
+      <div
+        v-if="pendingLimitOrders.length"
+        class="pending-orders"
+      >
         <h4>Pending Limit Orders</h4>
         <ul>
           <li 
@@ -371,17 +495,19 @@
             class="pending-order"
             :class="{'is-waiting-balance': order.isWaitingBalance, 'check-if-trigger': order.status === 'processing'}"
           >
-            <div class="order-info" v-if="tokensByAddresses[order.fromToken?.address] && tokensByAddresses[order.toToken?.address]">
+            <div
+              v-if="tokensByAddresses[order.fromToken?.address] && tokensByAddresses[order.toToken?.address]"
+              class="order-info"
+            >
               <div class="order-details">
                 <div class="trade-info">
                   <span class="left">
-                    <!-- If
                     <span v-if="!order.shouldSwitchTokensForLimit">
                       {{ order.fromToken.symbol }} ≥ {{ order.priceLimit }} {{ order.toToken.symbol }}
                     </span>
                     <span v-else>
                       {{ order.toToken.symbol }} ≤ {{ order.priceLimit }} {{ order.fromToken.symbol }}
-                    </span> -->
+                    </span>
                     <div>
                       <span style="font-size:16px;color:rgb(223,81,81);">
                         Sell <span style="font-size:16px;font-weight:800;text-decoration:underline;">{{ order.fromAmount }} {{ order.fromToken.symbol }} </span>
@@ -401,7 +527,10 @@
                     <span v-if="order.currentMarketPrice">
                       at {{ order.currentMarketPrice.toFixed(5) }}
                     </span>
-                    <span class="current-market-price" style="color: #888; font-size: 1em;">
+                    <span
+                      class="current-market-price"
+                      style="color: #888; font-size: 1em;"
+                    >
                       ( 
                       <span v-if="!order.shouldSwitchTokensForLimit">
                         {{ getCurrentMarketPrice(order.fromToken, order.toToken, false) }} {{ order.toToken.symbol }}/{{ order.fromToken.symbol }}
@@ -411,7 +540,10 @@
                       </span>
                       )
                     </span>
-                    <span class="current-market-price" style="margin-left: 10px; color: #888; font-size: 1em;">
+                    <span
+                      class="current-market-price"
+                      style="margin-left: 10px; color: #888; font-size: 1em;"
+                    >
                       Sum: ${{ (Number(tokensByAddresses[order.fromToken.address]?.price) * Number(order.fromAmount)).toFixed(2) }}
                     </span>
                   </span>
@@ -421,7 +553,10 @@
                 </div>
               </div>
             </div>
-            <span class="cancel-order" @click="cancelLimitOrder(order.id)">❌ Cancel</span>
+            <span
+              class="cancel-order"
+              @click="cancelLimitOrder(order.id)"
+            >❌ Cancel</span>
           </li>
         </ul>
       </div>
@@ -438,9 +573,11 @@
       userPrice: priceDeviationModalData.userPrice,
       deviation: priceDeviationModalData.deviation
     }"
+    :show-confirm-button="!!priceDeviationModalData.action"
+    :cancel-text="priceDeviationModalData.action ? 'Cancel' : 'OK'"
     @confirm="confirmPriceDeviationAction"
     @cancel="cancelPriceDeviationAction"
-  />
+  ></ConfirmationModal>
 </template>
 
 <script>
@@ -612,6 +749,7 @@ export default {
                 tokenB: token,
                 buyLevels: token.details.buyLevels || [],
                 sellLevels: token.details.sellLevels || [],
+                limitPriceInDollars: token.details.limitPriceInDollars || false,
                 rowIndex,
                 colIndex,
                 source: 'orderbook'
@@ -637,6 +775,7 @@ export default {
           tokenB: order.toToken,
           buyLevels: isBuyOrder ? [level] : [],
           sellLevels: isBuyOrder ? [] : [level],
+          limitPriceInDollars: order.limitPriceInDollars || false,
           source: 'limitorder',
           orderId: order.id
         });
@@ -846,7 +985,19 @@ export default {
       ([_fromAddr, _toAddr, _tabOrder]) => {
         if (_tabOrder === 'limit') {
           setMarketPriceAsLimit(_fromAddr, _toAddr);
+          isFetchingPrice.value = false;
         }
+        tradeSummary.toAmount = null;
+        tradeSummary.protocol = null;
+        tradeSummary.fromAmount = null;
+        tradeSummary.expectedToAmount = null;
+        tradeSummary.fromTokenSymbol = null;
+        tradeSummary.toTokenSymbol = null;
+        tradeSummary.priceLimit = null;
+        trades.value = [];
+        swapMessage.value = '';
+        priceFetchingMessage.value = '';
+        needsToApprove.value = false;
     });
 
     // Refresh balances
@@ -1407,6 +1558,11 @@ export default {
               return 'outdated';
             }
 
+            if (tabOrderValue === 'limit' || currentModeValue === 'automatic') {
+              console.log('not in market order anymore')
+              return;
+            }
+
             // Update reactive state with results
             trades.value = bestTradeResult.trades;
             tradeSummary.protocol = bestTradeResult.protocol;
@@ -1652,10 +1808,13 @@ export default {
     }
 
     const getTradesBalancer = async (_newFrom, _newTo, _newAmt, _newSenderAddress, shouldFetchGasLimit) => {
-      const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, _newSenderAddress);
+      // Extract address string if _newSenderAddress is an object
+      const senderAddressString = typeof _newSenderAddress === 'string' ? _newSenderAddress : _newSenderAddress.address;
+      
+      const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, senderAddressString);
 
       const txData = {
-        from: _newSenderAddress,
+        from: senderAddressString,
         to: result.contractAddress,
         data: result.callData,
         value: result.value,
@@ -2510,13 +2669,27 @@ export default {
 
     // Price deviation modal functions
     function checkPriceDeviation(userPrice, marketPrice, orderType) {
-      if (!marketPrice || marketPrice === 0) return true; // Skip check if no market price
+      if (!marketPrice || marketPrice === 0) return { needsConfirmation: false }; // Skip check if no market price
       
       const deviation = Math.abs((userPrice - marketPrice) / marketPrice * 100);
+      
+      console.log('checkPriceDeviation:', {
+        userPrice,
+        marketPrice,
+        deviation,
+        threshold: props.priceDeviationPercentage,
+        orderType
+      });
       
       if (deviation > props.priceDeviationPercentage) {
         const isBuyOrder = orderType === 'buy';
         const isUnfavorable = isBuyOrder ? userPrice > marketPrice : userPrice < marketPrice;
+        
+        console.log('Deviation check:', {
+          isBuyOrder,
+          isUnfavorable,
+          condition: isBuyOrder ? 'userPrice > marketPrice' : 'userPrice < marketPrice'
+        });
         
         if (isUnfavorable) {
           return {
@@ -2558,6 +2731,12 @@ export default {
           let orderPrice = order.priceLimit;
           let currentPrice = userPrice;
           
+          // Handle dollar-based prices in existing orders
+          if (order.limitPriceInDollars && order.toToken.price) {
+            // Convert dollar price to token ratio
+            orderPrice = orderPrice / order.toToken.price;
+          }
+          
           // If tokens are swapped, need to invert one of the prices for comparison
           const orderFromAddr = order.fromToken.address.toLowerCase();
           const currentFromAddr = fromTokenAddr.toLowerCase();
@@ -2571,17 +2750,23 @@ export default {
           if (isBuyOrder && !orderIsBuy) {
             // Current: buy, Existing: sell - buy price cannot be >= sell price
             if (currentPrice >= orderPrice) {
+              const orderDisplayPrice = order.limitPriceInDollars ? 
+                `$${order.priceLimit.toFixed(6)}` : 
+                `${(tokensSwapped ? (1/order.priceLimit) : order.priceLimit).toFixed(6)}`;
               return {
                 isValid: false,
-                reason: `Cannot buy at ${currentPrice.toFixed(6)} - price is at or above existing sell order at ${orderPrice.toFixed(6)}`
+                reason: `Cannot buy at ${currentPrice.toFixed(6)} - price is at or above existing sell order at ${orderDisplayPrice}`
               };
             }
           } else if (!isBuyOrder && orderIsBuy) {
             // Current: sell, Existing: buy - sell price cannot be <= buy price  
             if (currentPrice <= orderPrice) {
+              const orderDisplayPrice = order.limitPriceInDollars ? 
+                `$${order.priceLimit.toFixed(6)}` : 
+                `${(tokensSwapped ? (1/order.priceLimit) : order.priceLimit).toFixed(6)}`;
               return {
                 isValid: false,
-                reason: `Cannot sell at ${currentPrice.toFixed(6)} - price is at or below existing buy order at ${orderPrice.toFixed(6)}`
+                reason: `Cannot sell at ${currentPrice.toFixed(6)} - price is at or below existing buy order at ${orderDisplayPrice}`
               };
             }
           }
@@ -2654,13 +2839,8 @@ export default {
         ? fromPrice / toPrice
         : toPrice / fromPrice;
 
-      // Calculate expected output amount based on limit price
-      const expectedToAmount = !shouldSwitchTokensForLimit.value
-        ? (fromAmount.value * priceLimit.value).toFixed(6)
-        : (fromAmount.value / priceLimit.value).toFixed(6);
-
       // Check against existing pending orders (bid-ask spread validation)
-      const orderType = shouldSwitchTokensForLimit.value ? 'sell' : 'buy';
+      const orderType = shouldSwitchTokensForLimit.value ? 'buy' : 'sell';
       const bidAskValidation = validateAgainstPendingOrders(
         priceLimit.value, 
         orderType, 
@@ -2670,11 +2850,24 @@ export default {
       );
       
       if (!bidAskValidation.isValid) {
-        swapMessage.value = bidAskValidation.reason;
+        // Show simple informational modal for order conflicts
+        showPriceDeviationModal.value = true;
+        priceDeviationModalData.title = 'Order Conflict';
+        priceDeviationModalData.message = `Order aborted: ${bidAskValidation.reason}`;
+        priceDeviationModalData.action = null; // No action, just close
+        priceDeviationModalData.args = null;
         return;
       }
       
       // Check for price deviation
+      console.log('Price deviation check:', {
+        priceLimit: priceLimit.value,
+        currentMarketPrice,
+        orderType,
+        shouldSwitchTokensForLimit: shouldSwitchTokensForLimit.value,
+        fromPrice,
+        toPrice
+      });
       const deviationCheck = checkPriceDeviation(priceLimit.value, currentMarketPrice, orderType);
       
       if (deviationCheck.needsConfirmation) {
@@ -2838,7 +3031,8 @@ export default {
         
         if (availableFromAddress > 0) {
           selectedAddresses.push({
-            address,
+            address: address.address,
+            name: address.name,
             amount: availableFromAddress
           });
           totalAmount += availableFromAddress;
@@ -2858,6 +3052,46 @@ export default {
       // Use minimum of 0.003 ETH or calculated gas cost + 50% safety margin
       const calculatedReserve = gasCostEth * 1.5;
       return Math.max(0.003, calculatedReserve);
+    }
+
+    // Helper function to calculate execution price with gas cost adjustments
+    function calculateExecutionPrice(order, tradeResult, amount, toTokenPrice, deductGasCost = true) {
+      let executionPrice;
+      
+      // Base calculation
+      executionPrice = Number(tradeResult.totalHuman) / Number(amount);
+      
+      // Apply gas cost adjustment only if deductGasCost is true
+      if (deductGasCost && props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
+        const gasCostInToToken = tradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toTokenPrice;
+        
+        if (Number(tradeResult.totalHuman) <= gasCostInToToken) {
+          return { executionPrice: null, comparableExecutionPrice: null, unprofitable: true };
+        }
+        
+        if (order.shouldSwitchTokensForLimit) {
+          executionPrice = Number(amount) / (Number(tradeResult.totalHuman) - gasCostInToToken);
+        } else {
+          executionPrice = (Number(tradeResult.totalHuman) - gasCostInToToken) / Number(amount);
+        }
+      } else if (order.shouldSwitchTokensForLimit) {
+        // Invert price for shouldSwitchTokensForLimit orders
+        executionPrice = 1 / executionPrice;
+      }
+      
+      // Calculate comparable price for dollar-based orders
+      let comparableExecutionPrice = executionPrice;
+      if (order.limitPriceInDollars) {
+        if (!order.shouldSwitchTokensForLimit) {
+          // Sell levels: convert execution price to dollars (fromToken price)
+          comparableExecutionPrice = executionPrice * toTokenPrice;
+        } else {
+          // Buy levels: convert execution price to dollars (toToken price)
+          comparableExecutionPrice = toTokenPrice / executionPrice;
+        }
+      }
+      
+      return { executionPrice, comparableExecutionPrice, unprofitable: false };
     }
 
     // Async function to handle multi-address execution without blocking main loop
@@ -2882,10 +3116,10 @@ export default {
         }
 
         // Get exact execution price from DEX
-        const bestTradeResult = await getBestTrades(
+        let bestTradeResult = await getBestTrades(
           order.fromToken.address,
           order.toToken.address,
-          executionAmount,
+          executionAmount.toString(),
           order?.sender?.address || senderDetails.value.address,
           true,
           true,
@@ -2896,30 +3130,26 @@ export default {
           return { valid: false, reason: 'Unable to get execution quote' };
         }
 
-        // Calculate exact execution price
-        let exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(executionAmount);
+        // Calculate execution price using the helper
+        const { executionPrice: exactExecutionPrice, comparableExecutionPrice, unprofitable } = calculateExecutionPrice(
+          order, 
+          bestTradeResult, 
+          executionAmount, 
+          toToken.price
+        );
         
-        // Apply gas cost adjustment if needed
-        if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
-          const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toToken.price;
-          
-          if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
-            // For inverted prices (buy levels), gas cost reduces the received amount
-            exactExecutionPrice = Number(executionAmount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
-          } else {
-            // For non-inverted prices (sell levels), gas cost reduces the received amount
-            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(executionAmount);
-          }
+        if (unprofitable) {
+          return { valid: false, reason: 'Trade unprofitable due to gas costs' };
         }
-
+        
         // Check if trigger condition is still valid based on new logic
         let shouldTrigger = false;
         if (!order.shouldSwitchTokensForLimit) {
           // Normal case: trigger when execution price >= limit price
-          shouldTrigger = exactExecutionPrice >= order.priceLimit;
+          shouldTrigger = comparableExecutionPrice >= order.priceLimit;
         } else {
           // Inverted case: trigger when execution price <= limit price
-          shouldTrigger = exactExecutionPrice <= order.priceLimit;
+          shouldTrigger = comparableExecutionPrice <= order.priceLimit;
         }
 
         // Calculate loss protection check using configurable percentage
@@ -2931,6 +3161,7 @@ export default {
           return { 
             valid: false, 
             exactExecutionPrice,
+            comparableExecutionPrice,
             currentMarketPrice,
             priceDifference: 0,
             bestTradeResult,
@@ -2938,15 +3169,16 @@ export default {
           };
         }
 
-        const priceDifference = Math.abs(exactExecutionPrice - order.priceLimit) / order.priceLimit;
+        const priceDifference = Math.abs(comparableExecutionPrice - order.priceLimit) / order.priceLimit;
         
         return {
           valid: shouldTrigger,
           exactExecutionPrice,
+          comparableExecutionPrice, // Add this to the return object
           currentMarketPrice,
           priceDifference: priceDifference * 100, // Convert to percentage
           bestTradeResult, // Return the updated bestTradeResult
-          reason: shouldTrigger ? 'Trigger condition met' : `Price condition not met: ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit}`
+          reason: shouldTrigger ? 'Trigger condition met' : `Price condition not met: ${order.limitPriceInDollars ? '$' : ''}${comparableExecutionPrice.toFixed(9)} vs limit ${order.limitPriceInDollars ? '$' : ''}${order.priceLimit.toFixed(9)}`
         };
       } catch (error) {
         console.error('Error during price re-validation:', error);
@@ -2965,7 +3197,8 @@ export default {
         
         // Execute trades sequentially with each address
         for (let i = 0; i < addressSelection.addresses.length; i++) {
-          const { address, amount } = addressSelection.addresses[i];
+          const addressInfo = addressSelection.addresses[i];
+          const { address, amount, name } = addressInfo;
           
           if (totalExecuted >= targetAmount) break;
           
@@ -2973,13 +3206,14 @@ export default {
           
           // Re-validate trigger conditions before each address execution (except first)
           if (i > 0) {
-            console.log(`Re-validating trigger conditions before executing with address ${address.name} (${i + 1}/${addressSelection.addresses.length})`);
+            console.log(`Re-validating trigger conditions before executing with address ${name} (${i + 1}/${addressSelection.addresses.length})`);
             
             const validation = await revalidateTriggerCondition(order, executeAmount);
             
             if (!validation.valid) {
-              console.log(`⚠️ Trigger condition no longer valid for address ${address.name}: ${validation.reason}`);
-              console.log(`Market price: ${validation.currentMarketPrice?.toFixed(9) || 'N/A'}, Execution price: ${validation.exactExecutionPrice?.toFixed(9) || 'N/A'}, Limit: ${order.priceLimit}`);
+              console.log(`⚠️ Trigger condition no longer valid for address ${name}: ${validation.reason}`);
+              const unit = order.limitPriceInDollars ? '$' : '';
+              console.log(`Market price: ${validation.currentMarketPrice?.toFixed(9) || 'N/A'}, Execution price: ${validation.exactExecutionPrice?.toFixed(9) || 'N/A'}, Limit: ${unit}${order.priceLimit}`);
               
               validationFailures++;
               
@@ -2998,13 +3232,13 @@ export default {
             }
           }
           
-          console.log(`Executing ${executeAmount} ${order.fromToken.symbol} from address ${address.name} (${i + 1}/${addressSelection.addresses.length})`);
+          console.log(`Executing ${executeAmount} ${order.fromToken.symbol} from address ${name} (${i + 1}/${addressSelection.addresses.length})`);
           
-          const execution = await executeTradeWithAddress(order, { address }, executeAmount);
+          const execution = await executeTradeWithAddress(order, addressInfo, executeAmount);
           
           if (execution.success) {
             totalExecuted += execution.executedAmount;
-            console.log(`✅ Successfully executed ${execution.executedAmount} ${order.fromToken.symbol} from ${address.name}. Total executed: ${totalExecuted}/${order.remainingAmount}`);
+            console.log(`✅ Successfully executed ${execution.executedAmount} ${order.fromToken.symbol} from ${name}. Total executed: ${totalExecuted}/${order.remainingAmount}`);
             
             // Add delay before next address (except for last address)
             if (i < addressSelection.addresses.length - 1 && totalExecuted < order.remainingAmount) {
@@ -3103,112 +3337,90 @@ export default {
         
         console.log(`Multi-address execution completed. Order ${order.id}: ${order.status}, executed: ${totalExecuted}/${order.originalAmount}`);
         
+        // Update database with final order status
+        await window.electronAPI.updatePendingOrder({
+          ...JSON.parse(JSON.stringify(order)),
+          status: order.status,
+          remainingAmount: order.remainingAmount?.toString() || '0',
+          completedAt: order.completedAt,
+          executionPrice: order.executionPrice
+        });
+        
+        // Remove from pending orders if completed
+        if (order.status === 'completed') {
+          pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
+        }
+        
       } catch (error) {
         console.error('Multi-address execution failed:', error);
         order.status = 'failed';
         order.completedAt = new Date().toISOString();
+        
+        // Update database with failed status
+        await window.electronAPI.updatePendingOrder({
+          ...JSON.parse(JSON.stringify(order)),
+          status: 'failed',
+          completedAt: order.completedAt,
+          errorMessage: error.message || String(error)
+        });
       }
     }
 
     // Helper function to execute trade with specific address and amount
     async function executeTradeWithAddress(order, addressInfo, amount) {
       try {
+        console.log('executeTradeWithAddress called with addressInfo:', addressInfo);
         const modifiedOrder = {
           ...order,
           fromAmount: amount,
-          sender: addressInfo.address
+          sender: addressInfo
         };
         
-        // Execute the trade logic here
-        const fromToken = tokensByAddresses.value[order.fromToken.address];
-        const toToken = tokensByAddresses.value[order.toToken.address];
-                // Get current market price for validation
-        if (!fromToken?.price || !toToken?.price) {
-          throw new Error('Missing current price data for validation');
+        // Use revalidateTriggerCondition to get trade result and validate
+        const validation = await revalidateTriggerCondition(modifiedOrder, amount);
+        
+        if (!validation.valid) {
+          throw new Error(`Trade condition not met: ${validation.reason}`);
         }
         
-        
-        let bestTradeResult = await getBestTrades(
-          fromToken.address,
-          toToken.address,
-          amount,
-          modifiedOrder?.sender?.address,
-          true,
-          true,
-          true
-        );
-        
-        if (!bestTradeResult) {
-          throw new Error('No trade routes found');
-        }
+        let bestTradeResult = validation.bestTradeResult;
 
-        
-        // Calculate exact execution price for this specific trade
-        let exactExecutionPrice;
-        
-        // Apply gas cost adjustment if needed (same logic as main execution)
-        if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
-          const gasCostInToToken = bestTradeResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toToken.price;
-          
-          if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
-            // For inverted prices (buy levels), gas cost reduces the received amount
-            exactExecutionPrice = Number(amount) / (Number(bestTradeResult.totalHuman) - gasCostInToToken);
-          } else {
-            // For non-inverted prices (sell levels), gas cost reduces the received amount
-            exactExecutionPrice = (Number(bestTradeResult.totalHuman) - gasCostInToToken) / Number(amount);
-          }
-        } else {
-          // No gas cost adjustment needed - calculate base price and apply inversion if needed
-          exactExecutionPrice = Number(bestTradeResult.totalHuman) / Number(amount);
-          
-          // For buy levels with shouldSwitchTokensForLimit, invert the price to match limit format
-          if (order.shouldSwitchTokensForLimit && order.sourceLocation?.levelType === 'buy') {
-            exactExecutionPrice = 1 / exactExecutionPrice;
-          }
-        }
-        
-        // Validate price condition still holds after first trade impact
-        let shouldExecute = false;
-        if (!order.shouldSwitchTokensForLimit) {
-          // Normal case: trigger when execution price >= limit price
-          shouldExecute = exactExecutionPrice >= order.priceLimit;
-        } else {
-          // Inverted case: trigger when execution price <= limit price
-          shouldExecute = exactExecutionPrice <= order.priceLimit;
-        }
-        
-        if (!shouldExecute) {
-          console.log(`Price condition no longer valid. Execution price: ${exactExecutionPrice.toFixed(9)} vs limit: ${order.priceLimit} (inverted: ${order.shouldSwitchTokensForLimit})`);
-          return { success: false, error: 'Price condition no longer valid after market impact' };
-        }
-        
-        console.log(`Price validation passed. Execution price: ${exactExecutionPrice.toFixed(9)} vs limit: ${order.priceLimit} (inverted: ${order.shouldSwitchTokensForLimit})`);
-        
+        // Log validation result
+        const unit = order.limitPriceInDollars ? '$' : '';
+        console.log(`Price validation passed. Execution price: ${unit}${validation.comparableExecutionPrice.toFixed(9)} vs limit: ${unit}${order.priceLimit.toFixed(9)} (inverted: ${order.shouldSwitchTokensForLimit})`);        
         
         const limitOrderTradeSummary = {
           protocol: bestTradeResult.protocol,
-          sender: modifiedOrder.sender,
+          sender: addressInfo,
           fromAmount: amount.toString(),
           toAmount: bestTradeResult.totalHuman,
           expectedToAmount: bestTradeResult.totalHuman,
-          fromTokenSymbol: fromToken.symbol,
-          toTokenSymbol: toToken.symbol,
-          fromAddressName: modifiedOrder.sender.name,
-          fromToken: fromToken,
-          fromTokenAddress: fromToken.address,
-          toToken: toToken,
-          toTokenAddress: toToken.address,
+          fromTokenSymbol: bestTradeResult.fromToken.symbol,
+          toTokenSymbol: bestTradeResult.toToken.symbol,
+          fromAddressName: addressInfo.name,
+          fromToken: bestTradeResult.fromToken,
+          fromTokenAddress: bestTradeResult.fromToken.address,
+          toToken: bestTradeResult.toToken,
+          toTokenAddress: bestTradeResult.toToken.address,
           gasLimit: bestTradeResult.gasLimit,
-          // orderType removed - using shouldSwitchTokensForLimit instead
           automatic: order.automatic,
-          priceLimit: order.priceLimit, // Add priceLimit to enable correct type detection
+          priceLimit: order.priceLimit,
           type: order.automatic ? 'automatic' : 'limit',
         };
+
+        
+        // Handle mixed trades if applicable
+        if (bestTradeResult.bestMixed) {
+          limitOrderTradeSummary.fromAmountU = (Number(amount) * bestTradeResult.fractionMixed / 100).toFixed(7);
+          limitOrderTradeSummary.fromAmountB = (Number(amount) - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
+          limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
+          limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
+        }
 
 
         // 🕐 Time the approval process and re-validate if it takes too long
         const approvalStartTime = Date.now();
-        await approveSpending(bestTradeResult.trades, limitOrderTradeSummary);
+        await approveSpending(limitOrderTradeSummary);
         const approvalDuration = (Date.now() - approvalStartTime) / 1000; // Convert to seconds
         
         console.log(`Approval completed in ${approvalDuration.toFixed(2)} seconds`);
@@ -3348,33 +3560,51 @@ export default {
               // Inverted case: toToken price in terms of fromToken
               currentMarketPrice = toToken.price / fromToken.price;
             }
+            
+            // Convert to comparable units
+            let comparableMarketPrice = currentMarketPrice;
+            let comparablePriceLimit = order.priceLimit;
+            
+            if (order.limitPriceInDollars) {
+              if (!order.shouldSwitchTokensForLimit) {
+                // Sell levels: monitor fromToken price in dollars
+                comparableMarketPrice = fromToken.price;
+              } else {
+                // Buy levels: monitor toToken price in dollars
+                comparableMarketPrice = toToken.price;
+              }
+              // For dollar-based orders, the priceLimit is already in dollars
+              comparablePriceLimit = order.priceLimit;
+            }
 
             // Define price tolerance (e.g., within 1% of trigger price)
             const PRICE_TOLERANCE = 0.01; // 1%
-            const priceDifference = Math.abs(currentMarketPrice - order.priceLimit) / order.priceLimit;
+            const priceDifference = Math.abs(comparableMarketPrice - comparablePriceLimit) / comparablePriceLimit;
             
             // Only proceed with expensive getBestTrades call if we're close to trigger price
             let shouldCheckExactPrice = false;
             let shouldTrigger = false;
 
-            // New trigger logic based on price comparison
-            // If not inverted: trigger when fromTokenPrice >= limitPrice * toTokenPrice
-            // If inverted: trigger when toTokenPrice <= limitPrice * fromTokenPrice
+            // New trigger logic based on price comparison using comparable units
+            // If not inverted: trigger when market price >= limit price
+            // If inverted: trigger when market price <= limit price
             if (!order.shouldSwitchTokensForLimit) {
               // Normal case: check if we're close to trigger price (>=)
-              shouldCheckExactPrice = currentMarketPrice >= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
+              shouldCheckExactPrice = comparableMarketPrice >= comparablePriceLimit || priceDifference <= PRICE_TOLERANCE;
             } else {
               // Inverted case: check if we're close to trigger price (<=)
-              shouldCheckExactPrice = currentMarketPrice <= order.priceLimit || priceDifference <= PRICE_TOLERANCE;
+              shouldCheckExactPrice = comparableMarketPrice <= comparablePriceLimit || priceDifference <= PRICE_TOLERANCE;
             }
 
             if (!shouldCheckExactPrice) {
               // Price is not close enough to trigger, log and continue
-              console.log(`Order ${order.id}: market price ${currentMarketPrice.toFixed(6)} not close to limit ${order.priceLimit} (diff: ${(priceDifference * 100).toFixed(2)}%) - skipping exact price check`);
+              const unit = order.limitPriceInDollars ? '$' : '';
+              console.log(`Order ${order.id}: market price ${unit}${comparableMarketPrice.toFixed(6)} not close to limit ${unit}${comparablePriceLimit.toFixed(6)} (diff: ${(priceDifference * 100).toFixed(2)}%) - skipping exact price check`);
               continue;
             }
 
-            console.log(`Order ${order.id}: market price ${currentMarketPrice.toFixed(6)} is close to limit ${order.priceLimit} - checking exact execution price`);
+            const unit = order.limitPriceInDollars ? '$' : '';
+            console.log(`Order ${order.id}: market price ${unit}${comparableMarketPrice.toFixed(6)} is close to limit ${unit}${comparablePriceLimit.toFixed(6)} - checking exact execution price`);
 
             // Get exact trade execution price by fetching best trades
             const bestTradeResult = await getBestTrades(
@@ -3387,27 +3617,36 @@ export default {
               tokensByAddresses.value[order.fromToken.address].price * Number(order.fromAmount) >= 100,
             );
 
-            // Calculate exact execution price (output amount per input amount)
-            let exactExecutionPrice;
-            // No gas cost adjustment - calculate base price and apply inversion if needed
-            exactExecutionPrice = Number(bestTradeResult.totalHuman) / (Number(order.fromAmount) * 0.01);
-            // For shouldSwitchTokensForLimit, invert the price to match limit format
-            if (order.shouldSwitchTokensForLimit) {
-              exactExecutionPrice = 1 / exactExecutionPrice;
-            }
-            console.log({exactExecutionPrice})
+            // Calculate exact execution price using the helper (with small test amount)
+            // No gas deduction for initial price check
+            const { executionPrice: exactExecutionPrice, comparableExecutionPrice } = calculateExecutionPrice(
+              order, 
+              bestTradeResult, 
+              Number(order.fromAmount) * 0.01,
+              toToken.price,
+              false  // Don't deduct gas cost for initial check
+            );
+            console.log({exactExecutionPrice, comparableExecutionPrice})
 
+            // Get the comparable price limit
+            comparablePriceLimit = order.priceLimit;
+            if (order.limitPriceInDollars) {
+              // For dollar-based orders, the priceLimit is already in dollars
+              comparablePriceLimit = order.priceLimit;
+            }
+            
             // Determine if order should be triggered based on new logic
             if (!order.shouldSwitchTokensForLimit) {
               // Normal case: trigger when execution price >= limit price
-              shouldTrigger = exactExecutionPrice >= order.priceLimit;
+              shouldTrigger = comparableExecutionPrice >= comparablePriceLimit;
             } else {
               // Inverted case: trigger when execution price <= limit price
-              shouldTrigger = exactExecutionPrice <= order.priceLimit;
+              shouldTrigger = comparableExecutionPrice <= comparablePriceLimit;
             }
 
             if (!shouldTrigger) {
-              console.log(`Order ${order.id}: exact execution price ${exactExecutionPrice.toFixed(9)} vs limit ${order.priceLimit} - not triggered`);
+              const unit = order.limitPriceInDollars ? '$' : '';
+              console.log(`Order ${order.id}: exact execution price ${unit}${comparableExecutionPrice.toFixed(9)} vs limit ${unit}${comparablePriceLimit.toFixed(9)} - not triggered`);
               continue
             }
           
@@ -3475,43 +3714,27 @@ export default {
         return { meetsCondition: false, executionPrice: undefined, tradeResult: testResult, unprofitable: true };
       }
       
-      // Calculate execution price for this amount
-      let testExecutionPrice;
-      if (props.maxGasPrice && Number(props.maxGasPrice) * 1e9 < Number(props.gasPrice)) {
-        const gasCostInToToken = testResult.gasLimit * Number(props.gasPrice) * props.ethPrice / toTokenData.price;
-        const totalReceived = Number(testResult.totalHuman);
-        
-        if (totalReceived <= gasCostInToToken) {
-          // This amount is unprofitable due to gas costs
-          return { meetsCondition: false, executionPrice: undefined, tradeResult: testResult, unprofitable: true };
-        }
-        
-        if (order.shouldSwitchTokensForLimit) {
-          testExecutionPrice = testAmount / (totalReceived - gasCostInToToken);
-        } else {
-          testExecutionPrice = (totalReceived - gasCostInToToken) / testAmount;
-        }
-      } else {
-        // Calculate execution price consistently with gas-deducted case
-        if (order.shouldSwitchTokensForLimit) {
-          // For inverted price: fromAmount / toAmount
-          if (Number(testResult.totalHuman) === 0) {
-            console.error(`Invalid output amount (0) for order ${order.id}`);
-            return { meetsCondition: false, executionPrice: undefined, tradeResult: testResult, unprofitable: true };
-          }
-          testExecutionPrice = testAmount / Number(testResult.totalHuman);
-        } else {
-          // Normal price: toAmount / fromAmount
-          testExecutionPrice = Number(testResult.totalHuman) / testAmount;
-        }
+      // Calculate execution price using the helper
+      const { executionPrice: testExecutionPrice, comparableExecutionPrice: comparableTestPrice, unprofitable } = calculateExecutionPrice(
+        order,
+        testResult,
+        testAmount,
+        toTokenData.price
+      );
+      
+      if (unprofitable) {
+        return { meetsCondition: false, executionPrice: undefined, tradeResult: testResult, unprofitable: true };
       }
+      
+      // Get the comparable price limit
+      let comparablePriceLimit = order.priceLimit;
       
       // Check if this amount meets the limit condition
       let meetsCondition;
       if (!order.shouldSwitchTokensForLimit) {
-        meetsCondition = testExecutionPrice >= order.priceLimit;
+        meetsCondition = comparableTestPrice >= comparablePriceLimit;
       } else {
-        meetsCondition = testExecutionPrice <= order.priceLimit;
+        meetsCondition = comparableTestPrice <= comparablePriceLimit;
       }
 
       // Check minimum amount requirement for automatic orders
@@ -3746,10 +3969,11 @@ export default {
           // Execute multi-address trade asynchronously without blocking main loop
           order.status = 'processing';
           console.log(`Executing multi-address trade for order ${order.id} with amount ${executableAmount}`);
+          console.log({addressSelection})
           await executeMultiAddressTrade(order, addressSelection, exactExecutionPrice, executableAmount);
         } else {
           // Limit order: Single address execution
-          const singleAddress = { address: order.sender };
+          const singleAddress = order.sender;
           
           // Update status to running before execution
           await window.electronAPI.updatePendingOrder({
@@ -3772,36 +3996,51 @@ export default {
               order.completedAt = new Date().toISOString();
               order.executionPrice = exactExecutionPrice;
               
-              // Update UI for automatic orders
+              // Update UI for automatic orders BEFORE database update
               if (order.automatic && order.sourceLocation) {
                 const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
-                if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+                // Validate indices are still valid
+                if (tokensInRow[rowIndex] && tokensInRow[rowIndex].columns[colIndex] && tokensInRow[rowIndex].columns[colIndex].details) {
                   const levels = levelType === 'sell' 
                     ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
                     : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
                     
-                  if (levels[levelIndex]) {
+                  if (levels && levels[levelIndex]) {
                     levels[levelIndex].status = 'processed';
                     levels[levelIndex].executionPrice = exactExecutionPrice;
                     levels[levelIndex].executionDate = new Date().toISOString();
+                    // Force immediate UI update
+                    await nextTick();
                     updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                  } else {
+                    console.warn(`Level ${levelIndex} not found in ${levelType}Levels for order ${order.id}`);
                   }
+                } else {
+                  console.warn(`Invalid row/column indices for order ${order.id}: row=${rowIndex}, col=${colIndex}`);
                 }
               }
               
+              // Update database AFTER UI update
+              await window.electronAPI.updatePendingOrder({
+                ...JSON.parse(JSON.stringify(order)),
+                remainingAmount: newRemainingAmount.toString(),
+                status: order.status
+              });
+              
+              // Remove from pending orders AFTER database update
               pendingLimitOrders.value = pendingLimitOrders.value.filter(o => o.id !== order.id);
               console.log(`Order ${order.id} completed - filled ${fillPercentage.toFixed(1)}%`);
             } else {
               // Order partially filled, set back to pending for future executions
               order.status = 'pending';
               console.log(`Order ${order.id} partially filled - ${fillPercentage.toFixed(1)}% complete, remaining: ${newRemainingAmount}`);
+              
+              await window.electronAPI.updatePendingOrder({
+                ...JSON.parse(JSON.stringify(order)),
+                remainingAmount: newRemainingAmount.toString(),
+                status: order.status
+              });
             }
-            
-            await window.electronAPI.updatePendingOrder({
-              ...JSON.parse(JSON.stringify(order)),
-              remainingAmount: newRemainingAmount.toString(),
-              status: order.status
-            });
           } else {
             // Trade failed, restore the remaining amount
             const restoredAmount = Number(order.remainingAmount || order.fromAmount);
@@ -3948,6 +4187,7 @@ export default {
           isPaused: false,
           isRandomMode: false,
           minimumAmount: 0,
+          limitPriceInDollars: false,
           buyLevels: [
             { triggerPrice: null, balancePercentage: null },
             { triggerPrice: null, balancePercentage: null },
@@ -4169,7 +4409,11 @@ export default {
               if (minimumAmount > 0 && fromAmount > 0) {
                 // Calculate expected output amount using trigger price
                 // For buy levels: we're buying toToken with fromToken
-                const expectedOutputAmount = fromAmount * buyLevel.triggerPrice;
+                let effectiveTriggerPrice = buyLevel.triggerPrice;
+                if (col.details.limitPriceInDollars && toToken.price) {
+                  effectiveTriggerPrice = buyLevel.triggerPrice / toToken.price;
+                }
+                const expectedOutputAmount = fromAmount * effectiveTriggerPrice;
                 meetsMinimumRequirement = expectedOutputAmount >= minimumAmount;
                 
                 if (!meetsMinimumRequirement) {
@@ -4190,6 +4434,7 @@ export default {
                   status: 'pending',
                   createdAt: new Date().toISOString(),
                   automatic: true,
+                  limitPriceInDollars: col.details.limitPriceInDollars || false,
                   sourceLocation: {
                     rowIndex: i,
                     colIndex: j,
@@ -4243,7 +4488,7 @@ export default {
                 }
               }
               
-              if (fromAmount > 0 && meetsMinimumRequirement) {
+              if (fromAmount > 0 && meetsMinimumRequirement) {             
                 orders.push({
                   id: Math.floor(Math.random() * 10000000000000),
                   fromAmount,
@@ -4256,6 +4501,7 @@ export default {
                   status: 'pending',
                   createdAt: new Date().toISOString(),
                   automatic: true,
+                  limitPriceInDollars: col.details.limitPriceInDollars || false,
                   sourceLocation: {
                     rowIndex: i,
                     colIndex: j,

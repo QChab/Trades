@@ -3,9 +3,9 @@
     <!-- Header with controls -->
     <div class="header">
       <button 
-        @click="togglePause" 
-        class="control-btn pause-btn"
+        class="control-btn pause-btn" 
         :class="{ active: isPaused }"
+        @click="togglePause"
       >
         {{ isPaused ? '▶️' : '⏸️' }}
       </button>
@@ -16,8 +16,8 @@
       </div>
       
       <button 
-        @click="$emit('delete')" 
-        class="control-btn delete-btn"
+        class="control-btn delete-btn" 
+        @click="$emit('delete')"
       >
         🗑️
       </button>
@@ -25,38 +25,62 @@
 
     <!-- Address selection and minimum amount controls -->
     <div class="address-controls">
-      <div class="address-selection">
-        <span class="slider-label left" :class="{'slider-selected': !isRandomMode}">Highest</span>
-        <label class="slider-toggle">
-          <input 
-            type="checkbox" 
-            v-model="isRandomMode"
-            @change="emitOrderUpdate"
-          />
-          <span class="slider"></span>
-        </label>
-        <span class="slider-label right"  :class="{'slider-selected': isRandomMode}">Random</span>
+      <div class="left-controls">
+        <div class="address-selection">
+          <label class="middle-label">
+            <input 
+              v-model="isRandomMode" 
+              type="checkbox"
+              @change="emitOrderUpdate"
+            >
+            <span
+              class="higher-label"
+              :class="{'slider-selected': isRandomMode}"
+            >Random</span>
+          </label>
+        </div>
+        <div class="price-unit-selection">
+          <span
+            class="slider-label left"
+            :class="{'slider-selected': !limitPriceInDollars}"
+          >{{ tokenB?.symbol }}</span>
+          <label class="slider-toggle">
+            <input 
+              v-model="limitPriceInDollars" 
+              type="checkbox"
+              @change="togglePriceUnit"
+            >
+            <span class="slider" />
+          </label>
+          <span
+            class="slider-label right"
+            :class="{'slider-selected': limitPriceInDollars}"
+          >$</span>
+        </div>
       </div>
       <div class="minimum-amount">
         <label class="amount-label">
           Min: 
           <input 
-            type="number" 
-            v-model.number="minimumAmount"
-            @input="emitOrderUpdate"
+            v-model.number="minimumAmount" 
+            type="number"
             step="0.000001"
             min="0"
             placeholder="0.0"
             class="min-amount-input"
-          />
-          <span class="token-symbol">{{ tokenA?.symbol }}</span>
+            @input="emitOrderUpdate"
+          >
+          <!-- <span class="token-symbol">{{ tokenA?.symbol }}</span> -->
         </label>
       </div>
     </div>
 
     <!-- Current market price -->
     <div class="market-price">
-      <span class="price-value">1 {{ tokenA?.symbol }} = {{ currentMarketPrice.toFixed(7) }} {{ tokenB?.symbol }}</span>
+      <span class="price-value">
+        1 {{ tokenA?.symbol }} = 
+        <span>{{ currentMarketPrice.toFixed(7) }} {{ tokenB?.symbol }}</span>
+      </span>
     </div>
 
     <!-- Order levels grid -->
@@ -70,25 +94,59 @@
           :class="{ 'close-to-trigger': isCloseToTrigger('buy', level) }"
         >
           <div class="level-inputs">
-            <img :src="deleteImage" class="delete" @click="cleanLevel(level, index)" />
-            <label class="input-group">
-              <span class="first-part-price">{{ tokenA?.symbol }} ≤ </span>
-              <input
-                v-model.number="level.triggerPrice"
-                @change="updateLevel('buy', index)"
-                type="number"
-                step="0.000001"
-                placeholder="0.0"
-                class="price-input"
-              />
-              <span class="second-part-price">{{ tokenB?.symbol }}</span>
-              <span v-if="level.triggerPrice" class="usd-price">${{ getUsdPrice(level.triggerPrice) }}</span>
-            </label>
-            <label class="input-group" v-if="level.triggerPrice">
+            <img
+              :src="deleteImage"
+              class="delete"
+              @click="cleanLevel(level, index)"
+            >
+            <div class="price-input-container">
+              <label class="input-group">
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="first-part-price"
+                >{{ tokenA?.symbol }} ≤ </span>
+                <span
+                  v-else
+                  class="first-part-price"
+                >{{ tokenA?.symbol }} ≤</span>
+                <input
+                  v-model.number="level.triggerPrice"
+                  type="number"
+                  step="0.000001"
+                  placeholder="0.0"
+                  class="price-input"
+                  @change="updateLevel('buy', index)"
+                >
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="second-part-price"
+                >{{ tokenB?.symbol }}</span>
+                <span
+                  v-else
+                  class="second-part-price"
+                >$</span>
+              </label>
+              <div
+                v-if="level.triggerPrice"
+                class="secondary-price"
+              >
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="usd-price"
+                >${{ getUsdPrice(level.triggerPrice) }}</span>
+                <span
+                  v-if="limitPriceInDollars"
+                  class="token-price-below"
+                >{{ getTokenPriceFromDollar(level.triggerPrice) }} {{ tokenB?.symbol }}</span>
+              </div>
+            </div>
+            <label
+              v-if="level.triggerPrice"
+              class="input-group"
+            >
               Buy
               <input
                 v-model.number="level.balancePercentage"
-                @input="updateLevel('buy', index)"
                 type="number"
                 min="0"
                 max="100"
@@ -96,9 +154,13 @@
                 placeholder="0"
                 class="percentage-input"
                 :title="getPercentageTooltip('buy', level.balancePercentage)"
-              />
+                @input="updateLevel('buy', index)"
+              >
               <span class="percentage-symbol">%</span>
-              <span class="level-status-inline" :class="getLevelStatusClass('buy', level)">
+              <span
+                class="level-status-inline"
+                :class="getLevelStatusClass('buy', level)"
+              >
                 {{ getLevelStatus('buy', level) }}
               </span>
             </label>
@@ -114,25 +176,60 @@
           :class="{ 'close-to-trigger': isCloseToTrigger('sell', level) }"
         >
           <div class="level-inputs">
-            <img :src="deleteImage" class="delete" @click="cleanLevel(level, index)" v-if="level.triggerPrice"/>
-            <label class="input-group">
-              <span class="first-part-price">{{ tokenA?.symbol }} ≥ </span>
-              <input
-                v-model.number="level.triggerPrice"
-                @change="updateLevel('sell', index)"
-                type="number"
-                step="0.000001"
-                placeholder="0.0"
-                class="price-input"
-              />
-              <span class="second-part-price">{{ tokenB?.symbol }}</span>
-              <span v-if="level.triggerPrice" class="usd-price">${{ getUsdPrice(level.triggerPrice) }}</span>
-            </label>
-            <label class="input-group" v-if="level.triggerPrice">
+            <img
+              v-if="level.triggerPrice"
+              :src="deleteImage"
+              class="delete"
+              @click="cleanLevel(level, index)"
+            >
+            <div class="price-input-container">
+              <label class="input-group">
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="first-part-price"
+                >{{ tokenA?.symbol }} ≥ </span>
+                <span
+                  v-else
+                  class="first-part-price"
+                >{{ tokenA?.symbol }} ≥ </span>
+                <input
+                  v-model.number="level.triggerPrice"
+                  type="number"
+                  step="0.000001"
+                  placeholder="0.0"
+                  class="price-input"
+                  @change="updateLevel('sell', index)"
+                >
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="second-part-price"
+                >{{ tokenB?.symbol }}</span>
+                <span
+                  v-else
+                  class="second-part-price"
+                >$</span>
+              </label>
+              <div
+                v-if="level.triggerPrice"
+                class="secondary-price"
+              >
+                <span
+                  v-if="!limitPriceInDollars"
+                  class="usd-price"
+                >${{ getUsdPrice(level.triggerPrice) }}</span>
+                <span
+                  v-if="limitPriceInDollars"
+                  class="token-price-below"
+                >{{ getTokenPriceFromDollar(level.triggerPrice) }} {{ tokenB?.symbol }}</span>
+              </div>
+            </div>
+            <label
+              v-if="level.triggerPrice"
+              class="input-group"
+            >
               Sell
               <input
                 v-model.number="level.balancePercentage"
-                @input="updateLevel('sell', index)"
                 type="number"
                 min="0"
                 max="100"
@@ -140,9 +237,13 @@
                 placeholder="0"
                 class="percentage-input"
                 :title="getPercentageTooltip('sell', level.balancePercentage)"
-              />
+                @input="updateLevel('sell', index)"
+              >
               <span class="percentage-symbol">%</span>
-              <span class="level-status-inline" :class="getLevelStatusClass('sell', level)">
+              <span
+                class="level-status-inline"
+                :class="getLevelStatusClass('sell', level)"
+              >
                 {{ getLevelStatus('sell', level) }}
               </span>
             </label>
@@ -155,12 +256,14 @@
   <!-- Price Deviation Confirmation Modal -->
   <ConfirmationModal
     :show="showPriceDeviationModal"
-    title="Price Deviation Warning"
+    :title="pendingLevelUpdate ? 'Price Deviation Warning' : 'Order Conflict'"
     :message="priceDeviationMessage"
     :details="priceDeviationDetails"
+    :showConfirmButton="!!pendingLevelUpdate"
+    :cancelText="pendingLevelUpdate ? 'Cancel' : 'OK'"
     @confirm="confirmPriceDeviationUpdate"
     @cancel="cancelPriceDeviationUpdate"
-  />
+  ></ConfirmationModal>
 </template>
 
 <script>
@@ -217,6 +320,7 @@ export default {
     const isPaused = ref(false);
     const isRandomMode = ref(false); // false = highest balance, true = random
     const minimumAmount = ref(0);
+    const limitPriceInDollars = ref(false);
     
     // Modal state for price deviation warning
     const showPriceDeviationModal = ref(false);
@@ -301,18 +405,51 @@ export default {
       const marketPrice = currentMarketPrice.value;
       if (!marketPrice || marketPrice <= 0) return false;
       
-      if (type === 'sell' && level.triggerPrice < marketPrice) {
+      // Convert prices to same unit for comparison
+      let levelPriceInTokenRatio;
+      let marketPriceForComparison;
+      
+      if (limitPriceInDollars.value) {
+        // Level price is in dollars, convert to token ratio for comparison
+        levelPriceInTokenRatio = level.triggerPrice / tokenBPrice.value;
+        marketPriceForComparison = marketPrice;
+      } else {
+        // Both are already in token ratios
+        levelPriceInTokenRatio = level.triggerPrice;
+        marketPriceForComparison = marketPrice;
+      }
+      
+      // Check if far from trigger point (not close)
+      if (type === 'sell' && levelPriceInTokenRatio < marketPriceForComparison) {
         return true; // Not close to trigger
-      } else if (type === 'buy' && level.triggerPrice > marketPrice) {
+      } else if (type === 'buy' && levelPriceInTokenRatio > marketPriceForComparison) {
         return true; // Not close to trigger
       }
 
-      const priceDifference = Math.abs(marketPrice - level.triggerPrice) / level.triggerPrice;
+      // Calculate price difference as percentage
+      const priceDifference = Math.abs(marketPriceForComparison - levelPriceInTokenRatio) / levelPriceInTokenRatio;
       return priceDifference <= props.priceThreshold;
     };
 
     const togglePause = () => {
       isPaused.value = !isPaused.value;
+      emitOrderUpdate();
+    };
+
+    const togglePriceUnit = () => {
+      // Clear all levels when switching modes
+      buyLevels.forEach((level) => {
+        level.triggerPrice = null;
+        level.balancePercentage = null;
+        level.status = 'inactive';
+      });
+      
+      sellLevels.forEach((level) => {
+        level.triggerPrice = null;
+        level.balancePercentage = null;
+        level.status = 'inactive';
+      });
+      
       emitOrderUpdate();
     };
     
@@ -365,20 +502,45 @@ export default {
           if (orderType === 'sell') {
             // Current is sell - cannot be <= any active buy level
             for (const buyLevel of buyLevels) {
+              if (buyLevel.status === 'processed') continue;
+              if (buyLevel.status === 'paused') continue;
               if (buyLevel.triggerPrice && buyLevel.balancePercentage && buyLevel.status === 'active') {
                 let buyPrice = buyLevel.triggerPrice;
                 
-                // If tokens are swapped, invert the price for comparison
-                const orderTokenA = existingOrder.tokenA.address.toLowerCase();
-                const currentTokenA = tokenA.value.address.toLowerCase();
-                if (orderTokenA !== currentTokenA) {
-                  buyPrice = 1 / buyPrice;
+                // Convert existing order's price to comparable units
+                if (existingOrder.limitPriceInDollars) {
+                  // Existing order uses dollar prices
+                  if (limitPriceInDollars.value) {
+                    // Both use dollars - direct comparison
+                    buyPrice = buyLevel.triggerPrice;
+                  } else {
+                    // Convert existing dollar price to token ratio
+                    const existingTokenBPrice = existingOrder.tokenB.price || tokenBPrice.value;
+                    buyPrice = buyLevel.triggerPrice / existingTokenBPrice;
+                  }
+                } else {
+                  // Existing order uses token ratios
+                  if (limitPriceInDollars.value) {
+                    // Convert existing token ratio to dollars
+                    const existingTokenBPrice = existingOrder.tokenB.price || tokenBPrice.value;
+                    buyPrice = buyLevel.triggerPrice * existingTokenBPrice;
+                  } else {
+                    // Both use token ratios - check if tokens are swapped
+                    const orderTokenA = existingOrder.tokenA.address.toLowerCase();
+                    const currentTokenA = tokenA.value.address.toLowerCase();
+                    if (orderTokenA !== currentTokenA) {
+                      buyPrice = 1 / buyLevel.triggerPrice;
+                    } else {
+                      buyPrice = buyLevel.triggerPrice;
+                    }
+                  }
                 }
                 
                 if (userPrice <= buyPrice) {
+                  const unit = limitPriceInDollars.value ? '$' : '';
                   return {
                     isValid: false,
-                    reason: `Sell price ${userPrice.toFixed(6)} cannot be at or below existing buy level at ${buyPrice.toFixed(6)}`
+                    reason: `Sell price ${unit}${userPrice.toFixed(6)} cannot be at or below existing buy level at ${unit}${buyPrice.toFixed(6)}`
                   };
                 }
               }
@@ -386,20 +548,45 @@ export default {
           } else if (orderType === 'buy') {
             // Current is buy - cannot be >= any active sell level
             for (const sellLevel of sellLevels) {
+              if (sellLevel.status === 'processed') continue;
+              if (sellLevel.status === 'paused') continue;
               if (sellLevel.triggerPrice && sellLevel.balancePercentage && sellLevel.status === 'active') {
                 let sellPrice = sellLevel.triggerPrice;
                 
-                // If tokens are swapped, invert the price for comparison
-                const orderTokenA = existingOrder.tokenA.address.toLowerCase();
-                const currentTokenA = tokenA.value.address.toLowerCase();
-                if (orderTokenA !== currentTokenA) {
-                  sellPrice = 1 / sellPrice;
+                // Convert existing order's price to comparable units
+                if (existingOrder.limitPriceInDollars) {
+                  // Existing order uses dollar prices
+                  if (limitPriceInDollars.value) {
+                    // Both use dollars - direct comparison
+                    sellPrice = sellLevel.triggerPrice;
+                  } else {
+                    // Convert existing dollar price to token ratio
+                    const existingTokenBPrice = existingOrder.tokenB.price || tokenBPrice.value;
+                    sellPrice = sellLevel.triggerPrice / existingTokenBPrice;
+                  }
+                } else {
+                  // Existing order uses token ratios
+                  if (limitPriceInDollars.value) {
+                    // Convert existing token ratio to dollars
+                    const existingTokenBPrice = existingOrder.tokenB.price || tokenBPrice.value;
+                    sellPrice = sellLevel.triggerPrice * existingTokenBPrice;
+                  } else {
+                    // Both use token ratios - check if tokens are swapped
+                    const orderTokenA = existingOrder.tokenA.address.toLowerCase();
+                    const currentTokenA = tokenA.value.address.toLowerCase();
+                    if (orderTokenA !== currentTokenA) {
+                      sellPrice = 1 / sellLevel.triggerPrice;
+                    } else {
+                      sellPrice = sellLevel.triggerPrice;
+                    }
+                  }
                 }
                 
                 if (userPrice >= sellPrice) {
+                  const unit = limitPriceInDollars.value ? '$' : '';
                   return {
                     isValid: false,
-                    reason: `Buy price ${userPrice.toFixed(6)} cannot be at or above existing sell level at ${sellPrice.toFixed(6)}`
+                    reason: `Buy price ${unit}${userPrice.toFixed(6)} cannot be at or above existing sell level at ${unit}${sellPrice.toFixed(6)}`
                   };
                 }
               }
@@ -411,11 +598,22 @@ export default {
         if (orderType === 'sell') {
           // Check against current component's buy levels
           for (const buyLevel of buyLevels) {
+            if (buyLevel.status === 'processed') continue;
+            if (buyLevel.status === 'paused') continue;
             if (buyLevel.triggerPrice && buyLevel.balancePercentage) {
-              if (userPrice <= buyLevel.triggerPrice) {
+              // Convert both prices to token ratios for comparison
+              const buyPriceInTokenRatio = limitPriceInDollars.value ? 
+                (buyLevel.triggerPrice / tokenBPrice.value) : buyLevel.triggerPrice;
+              const sellPriceInTokenRatio = limitPriceInDollars.value ? 
+                (userPrice / tokenBPrice.value) : userPrice;
+              
+              if (sellPriceInTokenRatio <= buyPriceInTokenRatio) {
+                const unit = limitPriceInDollars.value ? '$' : tokenB.value?.symbol;
+                const displayBuyPrice = limitPriceInDollars.value ? buyLevel.triggerPrice : buyLevel.triggerPrice;
+                const displaySellPrice = limitPriceInDollars.value ? userPrice : userPrice;
                 return {
                   isValid: false,
-                  reason: `Sell price ${userPrice.toFixed(6)} cannot be at or below buy level at ${buyLevel.triggerPrice.toFixed(6)}`
+                  reason: `Sell price ${unit}${displaySellPrice.toFixed(6)} cannot be at or below buy level at ${unit}${displayBuyPrice.toFixed(6)}`
                 };
               }
             }
@@ -423,11 +621,22 @@ export default {
         } else if (orderType === 'buy') {
           // Check against current component's sell levels
           for (const sellLevel of sellLevels) {
+            if (sellLevel.status === 'processed') continue;
+            if (sellLevel.status === 'paused') continue;
             if (sellLevel.triggerPrice && sellLevel.balancePercentage) {
-              if (userPrice >= sellLevel.triggerPrice) {
+              // Convert both prices to token ratios for comparison
+              const sellPriceInTokenRatio = limitPriceInDollars.value ? 
+                (sellLevel.triggerPrice / tokenBPrice.value) : sellLevel.triggerPrice;
+              const buyPriceInTokenRatio = limitPriceInDollars.value ? 
+                (userPrice / tokenBPrice.value) : userPrice;
+              
+              if (buyPriceInTokenRatio >= sellPriceInTokenRatio) {
+                const unit = limitPriceInDollars.value ? '$' : tokenB.value?.symbol;
+                const displaySellPrice = limitPriceInDollars.value ? sellLevel.triggerPrice : sellLevel.triggerPrice;
+                const displayBuyPrice = limitPriceInDollars.value ? userPrice : userPrice;
                 return {
                   isValid: false,
-                  reason: `Buy price ${userPrice.toFixed(6)} cannot be at or above sell level at ${sellLevel.triggerPrice.toFixed(6)}`
+                  reason: `Buy price ${unit}${displayBuyPrice.toFixed(6)} cannot be at or above sell level at ${unit}${displaySellPrice.toFixed(6)}`
                 };
               }
             }
@@ -473,21 +682,30 @@ export default {
       if (level.balancePercentage > 100) level.balancePercentage = 100;
       
       // Check against existing orders (bid-ask spread validation)
-      if (level.triggerPrice) {
-        const bidAskValidation = validateAgainstExistingOrders(level.triggerPrice, type);
+      if (!level.triggerPrice)
+        return updateLevelConfirmed(type, index);
+
+      const bidAskValidation = validateAgainstExistingOrders(level.triggerPrice, type);
+      
+      if (!bidAskValidation.isValid) {
+        // Show modal for order conflicts
+        showPriceDeviationModal.value = true;
+        priceDeviationMessage.value = `Order aborted: ${bidAskValidation.reason}`;
+        priceDeviationDetails.value = null;
+        pendingLevelUpdate.value = null; // No action needed
         
-        if (!bidAskValidation.isValid) {
-          // Clear the invalid price instead of reverting to original
-          level.triggerPrice = null;
-          console.warn(`Order validation failed: ${bidAskValidation.reason}`);
-          return;
-        }
+        // Clear the invalid price
+        level.triggerPrice = null;
+        return;
       }
       
       // Check for price deviation if we have a trigger price
-      if (level.triggerPrice && tokenAPrice.value && tokenBPrice.value) {
+      if (tokenAPrice.value && tokenBPrice.value) {
         const marketPrice = tokenAPrice.value / tokenBPrice.value;
-        const deviationCheck = checkPriceDeviation(level.triggerPrice, marketPrice, type);
+        // Convert user price to token ratio if in dollar mode
+        const priceForDeviation = limitPriceInDollars.value ? 
+          (level.triggerPrice / tokenBPrice.value) : level.triggerPrice;
+        const deviationCheck = checkPriceDeviation(priceForDeviation, marketPrice, type);
         
         if (deviationCheck.needsConfirmation) {
           // Store pending update info
@@ -503,8 +721,12 @@ export default {
             : `Your sell price is ${deviationCheck.deviation}% lower than the current market price. Are you sure you want to set this level?`;
           
           priceDeviationDetails.value = {
-            marketPrice: `1 ${tokenA.value.symbol} = ${marketPrice.toFixed(6)} ${tokenB.value.symbol}`,
-            userPrice: `1 ${tokenA.value.symbol} = ${level.triggerPrice.toFixed(6)} ${tokenB.value.symbol}`,
+            marketPrice: limitPriceInDollars.value 
+              ? `1 ${tokenA.value.symbol} = $${(marketPrice * tokenBPrice.value).toFixed(2)}`
+              : `1 ${tokenA.value.symbol} = ${marketPrice.toFixed(6)} ${tokenB.value.symbol}`,
+            userPrice: limitPriceInDollars.value 
+              ? `1 ${tokenA.value.symbol} = $${level.triggerPrice.toFixed(2)}`
+              : `1 ${tokenA.value.symbol} = ${level.triggerPrice.toFixed(6)} ${tokenB.value.symbol}`,
             deviation: deviationCheck.deviation
           };
           
@@ -512,8 +734,6 @@ export default {
           return; // Don't continue with update until confirmed
         }
       }
-      
-      updateLevelConfirmed(type, index);
     };
     
     const updateLevelConfirmed = (type, index) => {
@@ -526,10 +746,8 @@ export default {
         // BUT preserve 'processed' status - don't reset processed levels
         if (level.status === 'processed') {
           // Keep processed status - do nothing
-        } else if (level.status === 'processing' || level.status === 'failed') {
-          level.status = 'active';
         } else {
-          level.status = 'waiting';
+          level.status = 'active';
         }
       } else {
         // Even if invalid inputs, preserve processed status
@@ -538,7 +756,7 @@ export default {
         }
       }
       
-      updateLevelStatus(type, index);
+      // updateLevelStatus(type, index);
       
       if (level.triggerPrice && level.balancePercentage)
         emitOrderUpdate();
@@ -562,8 +780,6 @@ export default {
         // If already processed, keep processed status (but allow processing to be reset)
         return;
       }
-      // Check if price conditions are met
-      const marketPrice = currentMarketPrice.value;
       
       // Only update status if not already set or if it's in a state that should be updated
       if (level.status === 'inactive' || level.status === 'waiting' || level.status === undefined) {
@@ -582,14 +798,14 @@ export default {
       if (isPaused.value) return 'Paused';
       
       // Check if level is being processed or has completed
-      if (level.status === 'processing') return 'Processed';
+      if (level.status === 'processing') return 'Processing';
       if (level.status === 'processed') return 'Processed';
       if (level.status === 'partially_filled') return 'Partial';
       if (level.status === 'failed') return 'Failed ✗';
       
-      if (level.status === 'active') return 'Active';
       if (level.status === 'triggered') return 'Triggered';
       if (isCloseToTrigger(type, level)) return 'Close';
+      if (level.status === 'active') return 'Active';
       return 'Waiting';
     };
 
@@ -608,10 +824,10 @@ export default {
       if (level.triggerPrice !== null) {
         return 'status-invalid';
       }
-      
+
+      if (isCloseToTrigger(type, level)) return 'status-close-trigger';
       if (level.status === 'active') return 'status-active';
       if (level.status === 'triggered') return 'status-triggered';
-      if (isCloseToTrigger(type, level)) return 'status-close-trigger';
       return 'status-waiting';
     };
 
@@ -620,6 +836,7 @@ export default {
         isPaused: isPaused.value,
         isRandomMode: isRandomMode.value,
         minimumAmount: minimumAmount.value,
+        limitPriceInDollars: limitPriceInDollars.value,
         sellLevels: sellLevels.map((level, index) => ({
           ...level,
           index,
@@ -639,8 +856,8 @@ export default {
       level.triggerPrice = null;
       level.balancePercentage = null;
       level.status = 'inactive'; // Reset status when cleaning
-      updateLevelStatus('sell', index);
-      updateLevelStatus('buy', index);
+      // updateLevelStatus('sell', index);
+      // updateLevelStatus('buy', index);
       emitOrderUpdate();
     };
 
@@ -648,6 +865,12 @@ export default {
       if (!triggerPrice || !tokenBPrice.value) return '0.00';
       const usdPrice = triggerPrice * tokenBPrice.value;
       return removeTrailingZeros(usdPrice, 4);
+    };
+
+    const getTokenPriceFromDollar = (dollarPrice) => {
+      if (!dollarPrice || !tokenBPrice.value) return '0.00';
+      const tokenPrice = dollarPrice / tokenBPrice.value;
+      return removeTrailingZeros(tokenPrice, 7);
     };
 
     const getPercentageTooltip = (type, percentage) => {
@@ -690,11 +913,13 @@ export default {
           isRandomMode.value = props.details.isRandomMode
         if (props.details.minimumAmount !== undefined)
           minimumAmount.value = props.details.minimumAmount
+        if (props.details.limitPriceInDollars !== undefined)
+          limitPriceInDollars.value = props.details.limitPriceInDollars
       }
       
       // Initialize all rows
-      sellLevels.forEach((level, index) => updateLevelStatus('sell', index));
-      buyLevels.forEach((level, index) => updateLevelStatus('buy', index));
+      // sellLevels.forEach((level, index) => updateLevelStatus('sell', index));
+      // buyLevels.forEach((level, index) => updateLevelStatus('buy', index));
     });
 
     // Watch for market price changes to update price validity
@@ -702,12 +927,12 @@ export default {
       () => currentMarketPrice.value,
       () => {
         // Update all price validations when market price changes
-        sellLevels.forEach((level, index) => {
-          updateLevelStatus('sell', index);
-        });
-        buyLevels.forEach((level, index) => {
-          updateLevelStatus('buy', index);
-        });
+        // sellLevels.forEach((level, index) => {
+        //   updateLevelStatus('sell', index);
+        // });
+        // buyLevels.forEach((level, index) => {
+        //   updateLevelStatus('buy', index);
+        // });
       }
     );
 
@@ -731,7 +956,13 @@ export default {
       getPercentageTooltip,
       emitOrderUpdate,
       
+      // Dollar mode functions
+      limitPriceInDollars,
+      togglePriceUnit,
+      getTokenPriceFromDollar,
+      
       // Price deviation modal
+      pendingLevelUpdate,
       showPriceDeviationModal,
       priceDeviationMessage,
       priceDeviationDetails,
@@ -769,7 +1000,19 @@ export default {
   font-size: 11px;
 }
 
+.left-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .address-selection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.price-unit-selection {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -779,6 +1022,19 @@ export default {
   font-size: 10px;
   color: #666;
   font-weight: 500;
+}
+
+.middle-label {
+  display: flex;
+  align-items: center;
+  width: 75px;
+}
+
+.higher-label {
+  font-size: 10px;
+  color: #666;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .slider-label.left {
@@ -1045,8 +1301,8 @@ input:checked + .slider:before {
   gap: 1px; /* Reduced from 8px */
   margin-left: auto;
   margin-right: auto;
-  flex-wrap: wrap;
-  min-width: 135px;
+  flex-wrap: nowrap;
+  min-width: 145px;
 }
 
 .input-group span {
@@ -1056,12 +1312,13 @@ input:checked + .slider:before {
 
 .price-input {
   flex: 1;
-  padding: 4px 6px; /* Reduced from 6px 8px */
+  padding: 1px;
   border: 1px solid #eee;
   border-radius: 3px; /* Reduced from 4px */
   font-size: 12px; /* Reduced from 14px */
   transition: all 0.2s ease;
   text-align: center;
+  max-width: 65px;
 }
 
 .price-input:focus, .percentage-input:focus {
@@ -1094,7 +1351,7 @@ input:checked + .slider:before {
 
 .level-status-inline {
   padding: 2px 4px;
-  margin-left: 4px;
+  margin-left: auto;
   border-radius: 3px;
   font-size: 9px;
   font-weight: 500;
@@ -1103,9 +1360,22 @@ input:checked + .slider:before {
 }
 
 .usd-price {
+  font-size: 10px;
+  color: #666;
+  font-weight: 500;
+}
+
+.token-price-below {
+  font-size: 10px;
+  color: #666;
+  font-weight: 500;
+}
+
+.secondary-price {
+  text-align: center;
+  margin-top: 2px;
   font-size: 9px;
   color: #666;
-  margin-left: 50px;
   font-weight: 500;
 }
 
@@ -1186,7 +1456,7 @@ input.percentage-input {
   margin-left: 2px;
 }
 .first-part-price {
-  width: 38px;
+  width: 35px;
 }
 
 .token-price {
