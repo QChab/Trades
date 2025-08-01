@@ -860,6 +860,32 @@ export default {
       }
     }, { immediate: true, deep: true });
     
+    // Watch for changes in details prop to update local levels
+    watch(() => props.details, (newDetails) => {
+      if (newDetails) {
+        if (newDetails.sellLevels) {
+          for (let i = 0; i < newDetails.sellLevels.length; i++) {
+            // Update the reactive level object properties
+            Object.assign(sellLevels[i], newDetails.sellLevels[i]);
+          }
+        }
+        if (newDetails.buyLevels) {
+          for (let i = 0; i < newDetails.buyLevels.length; i++) {
+            // Update the reactive level object properties
+            Object.assign(buyLevels[i], newDetails.buyLevels[i]);
+          }
+        }
+        if (newDetails.isPaused !== undefined)
+          isPaused.value = newDetails.isPaused
+        if (newDetails.isRandomMode !== undefined)
+          isRandomMode.value = newDetails.isRandomMode
+        if (newDetails.minimumAmount !== undefined)
+          minimumAmount.value = newDetails.minimumAmount
+        if (newDetails.limitPriceInDollars !== undefined)
+          limitPriceInDollars.value = newDetails.limitPriceInDollars
+      }
+    }, { deep: true });
+    
     onMounted(() => {
       if (props.details) {
         if (props.details.sellLevels) {

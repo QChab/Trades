@@ -1051,6 +1051,60 @@ export default {
       ) {
         balanceOffsetByTokenByAddress[tok][sender] -= amt;
       }
+      
+      // Update level status when transaction is confirmed
+      if (confirmed.orderId && confirmed.orderSourceLocation) {
+        const { rowIndex, colIndex, levelIndex, levelType } = confirmed.orderSourceLocation;
+        
+        // Validate indices are still valid
+        if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+          const levels = levelType === 'sell' 
+            ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+            : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+            
+          if (levels[levelIndex]) {
+            // Find the order to check execution percentage
+            const order = automaticOrders.value.find(o => o.id === confirmed.orderId);
+            
+            if (order) {
+              const originalAmount = Number(order.fromAmount);
+              const executedAmount = Number(confirmed.fromAmount);
+              const remainingAmount = Number(order.remainingAmount || 0);
+              const fillPercentage = (executedAmount / originalAmount) * 100;
+              
+              console.log(`Transaction confirmed for order ${confirmed.orderId}, execution: ${fillPercentage.toFixed(1)}%`);
+              
+              // Check if order is 97.5% or more filled
+              if (fillPercentage >= 97.5 || remainingAmount < originalAmount * 0.025) {
+                levels[levelIndex].status = 'processed';
+                console.log(`Level ${levelIndex} marked as processed (${fillPercentage.toFixed(1)}% filled)`);
+              } else {
+                levels[levelIndex].status = 'partially_filled';
+                levels[levelIndex].partialExecutionDate = new Date().toISOString();
+                levels[levelIndex].executedAmount = executedAmount;
+                levels[levelIndex].originalPercentage = levels[levelIndex].balancePercentage;
+                
+                // Calculate new percentage based on remaining amount
+                const executedRatio = executedAmount / originalAmount;
+                const remainingRatio = 1 - executedRatio;
+                const newPercentage = levels[levelIndex].originalPercentage * remainingRatio;
+                levels[levelIndex].balancePercentage = Number(newPercentage.toFixed(2));
+                
+                console.log(`Level ${levelIndex} marked as partially_filled (${fillPercentage.toFixed(1)}% filled, new percentage: ${newPercentage.toFixed(2)}%)`);
+              }
+              
+              levels[levelIndex].executionPrice = confirmed.executionPrice || null;
+              levels[levelIndex].executionDate = new Date().toISOString();
+              levels[levelIndex].confirmedTxId = confirmed.txId;
+              
+              // Force UI update
+              updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+            } else {
+              console.warn(`Order ${confirmed.orderId} not found in automaticOrders`);
+            }
+          }
+        }
+      }
     });
 
     watch(
@@ -3284,7 +3338,7 @@ export default {
               if (levels[levelIndex]) {
                 // Calculate new percentage based on remaining amount
                 const originalPercentage = levels[levelIndex].balancePercentage;
-                const executedRatio = totalExecuted / order.originalAmount;
+                const executedRatio = totalExecuted / order.fromAmount;
                 const remainingRatio = 1 - executedRatio;
                 const newPercentage = originalPercentage * remainingRatio;
                 
@@ -3321,7 +3375,8 @@ export default {
             if (levels[levelIndex]) {
               // Explicitly set status based on order completion
               if (order.status === 'completed') {
-                levels[levelIndex].status = 'processed';
+                // Keep status as 'processing' until transaction is confirmed
+                levels[levelIndex].status = 'processing';
               } else if (order.status === 'partially_filled') {
                 levels[levelIndex].status = 'partially_filled';
               } else {
@@ -3335,7 +3390,7 @@ export default {
           }
         }
         
-        console.log(`Multi-address execution completed. Order ${order.id}: ${order.status}, executed: ${totalExecuted}/${order.originalAmount}`);
+        console.log(`Multi-address execution completed. Order ${order.id}: ${order.status}, executed: ${totalExecuted}/${order.fromAmount}`);
         
         // Update database with final order status
         await window.electronAPI.updatePendingOrder({
@@ -3435,7 +3490,9 @@ export default {
             sentDate: new Date(),
             isConfirmed: true,
             timestamp: new Date(),
-            testMode: true
+            testMode: true,
+            orderId: order.id,
+            orderSourceLocation: order.sourceLocation
           };
           
           emit('update:trade', testTrade);
@@ -3465,6 +3522,10 @@ export default {
           limitOrderTradeSummary.expectedToAmount = bestTradeResult.totalHuman;
           limitOrderTradeSummary.gasLimit = bestTradeResult.gasLimit;
         }
+        
+        // Add order information to trade summary for transaction tracking
+        limitOrderTradeSummary.orderId = order.id;
+        limitOrderTradeSummary.orderSourceLocation = order.sourceLocation;
         
         await triggerTrade(bestTradeResult.trades, limitOrderTradeSummary);
         
@@ -4006,7 +4067,7 @@ export default {
                     : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
                     
                   if (levels && levels[levelIndex]) {
-                    levels[levelIndex].status = 'processed';
+                    levels[levelIndex].status = 'processing';
                     levels[levelIndex].executionPrice = exactExecutionPrice;
                     levels[levelIndex].executionDate = new Date().toISOString();
                     // Force immediate UI update
