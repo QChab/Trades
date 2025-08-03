@@ -3194,8 +3194,10 @@ export default {
           // Sell levels: convert execution price to dollars (fromToken price)
           comparableExecutionPrice = executionPrice * toTokenPrice;
         } else {
-          // Buy levels: convert execution price to dollars (toToken price)
-          comparableExecutionPrice = toTokenPrice / executionPrice;
+          // Buy levels: For dollar-based buy orders, we want the dollar price of the toToken
+          // executionPrice is toToken/fromToken ratio (after inversion)
+          // So the dollar price is simply toTokenPrice
+          comparableExecutionPrice = toTokenPrice;
         }
       }
       

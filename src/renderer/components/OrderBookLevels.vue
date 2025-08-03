@@ -93,7 +93,6 @@
           class="level-row buy-row"
           :class="{ 'close-to-trigger': isCloseToTrigger('buy', level) }"
         >
-        {{ level }}
           <div class="level-inputs">
             <img
               :src="deleteImage"
@@ -1446,6 +1445,7 @@ input.percentage-input {
   top: 30px;
   right: 3px;
   cursor: pointer;
+  z-index: 100;
 }
 .status-invalid {
   background-color: #f8d7da;
