@@ -3769,6 +3769,7 @@ export default {
           
             // Execute order asynchronously without blocking main loop
             tryExecutePendingOrder(order, exactExecutionPrice);
+            await new Promise(r => setTimeout(r, 2000));
           } catch (error) {
             console.error(`Error checking limit order ${order.id}:`, error);
           }
@@ -3921,11 +3922,30 @@ export default {
         let bestTestResult;
 
         const fullAmountTest = await testExecutableAmount(order, Number(remainingAmount));
+        
+        // Check that no other automatic order from the same OrderBookLevel is in "processing" mode
+        if (order.automatic && order.sourceLocation) {
+          const { rowIndex, colIndex, levelType } = order.sourceLocation;
+          const hasProcessingOrder = automaticOrders.value.some(o => 
+            o.id !== order.id &&
+            o.status === 'processing' &&
+            o.sourceLocation &&
+            o.sourceLocation.rowIndex === rowIndex &&
+            o.sourceLocation.colIndex === colIndex &&
+            o.sourceLocation.levelType === levelType
+          );
+          
+          if (hasProcessingOrder) {
+            console.log(`Order ${order.id}: Skipping because another order from the same ${levelType} levels is currently processing`);
+            return { meetsCondition: false, executionPrice: undefined, tradeResult: fullAmountTest.tradeResult, unprofitable: false };
+          }
+        }
+        
         if (fullAmountTest.meetsCondition && !fullAmountTest.unprofitable) {
           console.log(`Order ${order.id}: 100% of remaining amount can be executed at price ${fullAmountTest.executionPrice.toFixed(6)}`);
           
           // Update order status to processing while processing
-          order.status = 'processing';
+          order.status = props.isTestMode ? 'processed': 'processing';
           
           // Update remaining amount to 0 since we're executing everything
           await window.electronAPI.updatePendingOrder({
@@ -3992,7 +4012,7 @@ export default {
           console.log(`Order ${order.id}: Found optimal executable amount: ${executableAmount} (${(bestPercentage*100).toFixed(1)}% of original)`);
           
           // Update order status to processing while processing
-          order.status = 'processing';
+          order.status = props.isTestMode ? 'processed': 'processing';
           
           // Update remaining amount immediately
           newRemainingAmount = Number(remainingAmount) - (originalFromAmount * bestPercentage);
