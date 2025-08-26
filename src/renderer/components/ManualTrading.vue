@@ -3753,10 +3753,34 @@ export default {
               console.log(`Order ${order.id}: exact execution price ${unit}${comparableExecutionPrice.toFixed(9)} vs limit ${unit}${comparablePriceLimit.toFixed(9)} - not triggered`);
               continue
             }
+            
+            // Check if another order from the same location is already processing
+            if (order.automatic && order.sourceLocation) {
+              const { rowIndex, colIndex } = order.sourceLocation;
+              const hasProcessingOrder = automaticOrders.value.some(o => 
+                o.id !== order.id &&
+                (o.status === 'processing' || o.status === 'partially_filled') &&
+                o.sourceLocation &&
+                o.sourceLocation.rowIndex === rowIndex &&
+                o.sourceLocation.colIndex === colIndex
+              );
+              
+              if (hasProcessingOrder) {
+                console.log(`Order ${order.id}: Another order from row ${rowIndex}, col ${colIndex} is processing. Waiting for next cycle...`);
+                continue;
+              }
+            }
           
             // Execute order asynchronously without blocking main loop
             tryExecutePendingOrder(order, exactExecutionPrice);
-            await new Promise(r => setTimeout(r, 2000));
+            
+            // For automatic orders from the same token pair, add a longer delay to allow pool data to refresh
+            if (order.automatic && order.sourceLocation) {
+              console.log(`Order ${order.id}: Automatic order executed, waiting 5 seconds for pool data refresh...`);
+              await new Promise(r => setTimeout(r, 10000));
+            } else {
+              await new Promise(r => setTimeout(r, 2000));
+            }
           } catch (error) {
             console.error(`Error checking limit order ${order.id}:`, error);
           }
@@ -3910,23 +3934,8 @@ export default {
 
         const fullAmountTest = await testExecutableAmount(order, Number(remainingAmount));
         
-        // Check that no other automatic order from the same OrderBookLevel is in "processing" mode
-        if (order.automatic && order.sourceLocation) {
-          const { rowIndex, colIndex, levelType } = order.sourceLocation;
-          const hasProcessingOrder = automaticOrders.value.some(o => 
-            o.id !== order.id &&
-            o.status === 'processing' &&
-            o.sourceLocation &&
-            o.sourceLocation.rowIndex === rowIndex &&
-            o.sourceLocation.colIndex === colIndex &&
-            o.sourceLocation.levelType === levelType
-          );
-          
-          if (hasProcessingOrder) {
-            console.log(`Order ${order.id}: Skipping because another order from the same ${levelType} levels is currently processing`);
-            return { meetsCondition: false, executionPrice: undefined, tradeResult: fullAmountTest.tradeResult, unprofitable: false };
-          }
-        }
+        // Note: Check for concurrent processing is now done before calling tryExecutePendingOrder
+        // This ensures we don't waste resources fetching trade data for orders that can't execute
         
         if (fullAmountTest.meetsCondition && !fullAmountTest.unprofitable) {
           console.log(`Order ${order.id}: 100% of remaining amount can be executed at price ${fullAmountTest.executionPrice.toFixed(6)}`);
