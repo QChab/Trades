@@ -22,7 +22,7 @@
           </label>
           <div class="price-deviation-setting">
             <label>
-              Max price deviation:
+              Warning price deviation:
               <input 
                 v-model.number="priceDeviationPercentage" 
                 type="number" 
@@ -30,6 +30,18 @@
                 max="100" 
                 class="small-number"
               >%
+            </label>
+          </div>
+          <div class="graph-api-key-setting">
+            <label>
+              Graph API Key:
+              <input 
+                v-model="graphApiKey" 
+                type="text" 
+                class="api-key-input"
+                placeholder="Enter Graph API key"
+                @change="saveGraphApiKey"
+              >
             </label>
           </div>
         </div>
@@ -266,6 +278,7 @@
       const confirmedTrade = ref({});
       const priceDeviationPercentage = ref(20);
       const showSettings = ref(false);
+      const graphApiKey = ref('d692082c59f956790647e889e75fa84d');
 
       const maxGasPrice = ref(3);
 
@@ -312,6 +325,18 @@
           priceDeviationPercentage: deviationValue,
         })));
       })
+
+      // Save Graph API key
+      const saveGraphApiKey = () => {
+        currentSettings.value = ({
+          ...currentSettings.value,
+          graphApiKey: graphApiKey.value,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          graphApiKey: graphApiKey.value,
+        })));
+      }
 
       const gasPrice = ref(1000000000);
       const setGasPrice = (currentGasPrice) => {
@@ -569,6 +594,8 @@
           isTestMode.value = settings.isTestMode;
         if (settings.hasOwnProperty('priceDeviationPercentage'))
           priceDeviationPercentage.value = settings.priceDeviationPercentage;
+        if (settings.graphApiKey)
+          graphApiKey.value = settings.graphApiKey;
       
         isFileDetected.value = await window.electronAPI.isFileDetected();
         
@@ -670,6 +697,8 @@
         setConfirmedTrade,
         confirmedTrade,
         isInitialBalanceFetchDone,
+        graphApiKey,
+        saveGraphApiKey,
       }
     }
   };
@@ -786,6 +815,25 @@
     text-align: center;
   }
   
+  .graph-api-key-setting {
+    margin-top: 0;
+  }
+  
+  .graph-api-key-setting label {
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  
+  .graph-api-key-setting input.api-key-input {
+    width: 250px;
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  
   .settings-button {
     background: #007bff;
     color: white;
@@ -891,6 +939,7 @@
     cursor: pointer;
     margin: 15px;
     display: block;
+    text-align: center;
   }
 
   .infura-keys {

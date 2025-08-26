@@ -274,18 +274,6 @@
                 {{ 'Place order' }}
               </button>
             </div>
-            <div v-else>
-              <p class="details-message">
-                Gas cost ~ ${{ (150000 * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}
-              </p>
-              <button
-                :disabled="maxGasPrice < gasPrice"
-                class="swap-button"
-                @click="approveSpending()"
-              >
-                {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
-              </button>
-            </div>
           </div>
         </div>
 
@@ -625,7 +613,7 @@ export default {
       "function allowance(address owner, address spender) view returns (uint256)",
       "function approve(address spender, uint256 amount) returns (bool)",
     ];
-    const SUBGRAPH_URL = `https://gateway.thegraph.com/api/85a93cb8cc32fa52390e51a09125a6fc/subgraphs/id/DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G`;
+    const SUBGRAPH_URL = `https://gateway.thegraph.com/api/d692082c59f956790647e889e75fa84d/subgraphs/id/DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G`;
 
     const {
       findPossiblePools,
@@ -961,7 +949,7 @@ export default {
       ethBalanceCheckInterval.value = setInterval(() => {
         if (isInsufficientEthError.value && hasSufficientEthForGas()) {
           swapMessage.value = '';
-          isSwapButtonDisabled.value = false;
+          // isSwapButtonDisabled.value = false;
           isInsufficientEthError.value = false;
           stopEthBalanceMonitoring();
         }
@@ -2580,12 +2568,11 @@ export default {
 
     // ─── approveSpending(): Approve ERC20 → Permit2 → Router ───────────────
     const approveSpending = async (localTrades, localTradeSummary) => {
+      const activeTradeSummary = localTradeSummary || tradeSummary;
+      
       try {
         isSwapButtonDisabled.value = true;
-        
-        // Use local trade summary if provided, otherwise fall back to global tradeSummary
-        const activeTradeSummary = localTradeSummary || tradeSummary;
-        
+                
         // Get the correct sender address from the trade summary or fallback to senderDetails
         const senderAddress = activeTradeSummary.sender?.address || senderDetails.value.address;
         

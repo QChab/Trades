@@ -294,6 +294,7 @@ async function sendTransaction(transaction) {
 
     console.log(txData);
     let txResponse = await wallet.sendTransaction(txData);
+    console.log(txResponse?.nonce);
 
     saveTradeInDB({...transaction.tradeSummary, txId: txResponse?.hash});
 
@@ -462,6 +463,7 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
     const tx = await router.execute(
       ...args,
     )
+    console.log(tx?.nonce);
     saveTradeInDB({...tradeSummary, txId: tx?.hash});
 
     return {success: true, warnings, tx: JSON.parse(JSON.stringify(tx))};
