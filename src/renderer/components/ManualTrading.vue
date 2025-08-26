@@ -577,6 +577,7 @@ import downArrowImage from '@/../assets/down-arrow.svg';
 import deleteImage from '@/../assets/delete.svg';
 import { useUniswapV4 } from '../composables/useUniswap';
 import { useBalancerV3 } from '../composables/useBalancer';
+import { useChainlinkPrice } from '../composables/useChainlinkPrice';
 import spaceThousands from '../composables/spaceThousands';
 import OrderBookLevels from './OrderBookLevels.vue';
 import ConfirmationModal from './ConfirmationModal.vue';
@@ -1520,7 +1521,8 @@ export default {
       
       if (bestMixed) {
         console.log(bestMixed)
-        totalHuman = ethers.utils.formatUnits(bestMixed.outputAmount, toToken.decimals);
+        // Always use raw total output for display (before gas costs)
+        totalHuman = ethers.utils.formatUnits(bestMixed.rawTotalOutput, toToken.decimals);
         finalTrades = [
           ...bestMixed.tradesU.validTrades,
           bestMixed.tradesB,
@@ -1892,8 +1894,12 @@ export default {
         totalNegativeOutput = negativeOutputBalancer.sub(outputU);
       }
 
+      // Calculate raw total output before gas costs
+      const rawTotalOutput = (totalBig || BigNumber.from('0')).add(outputAmount || BigNumber.from('0'));
+      
       return {
         outputAmount: totalOutput,
+        rawTotalOutput: rawTotalOutput, // Total raw output before gas costs for display
         negativeOutput: totalNegativeOutput, // For comparison when mixed trade is unprofitable
         tradesU: {
           validTrades: validTrades || [],
@@ -2171,10 +2177,26 @@ export default {
       });
       const data = await resp.json();
       const d = data?.data?.token?.derivedETH ? Number(data.data.token.derivedETH) : 0;
+      
+      // If price is 0 or not found, try Chainlink as fallback
+      if (d === 0) {
+        const { getPriceFromChainlink } = useChainlinkPrice();
+        try {
+          const chainlinkResult = await getPriceFromChainlink(lc, toRaw(props.provider));
+          if (chainlinkResult.success && chainlinkResult.price > 0) {
+            console.log(`Using Chainlink price for ${lc}: $${chainlinkResult.price}`);
+            return chainlinkResult.price;
+          }
+        } catch (error) {
+          console.log(`Chainlink price fetch failed for ${lc}:`, error);
+        }
+      }
+      
       return d * ethUsd;
     }
 
     async function tokensUsd(tokenArray, ethUsd) {
+      const { getPriceFromChainlink } = useChainlinkPrice();
       const addressesToFetch = []
       const tokenPrices = {}
       for (const token of tokenArray) {
@@ -2203,11 +2225,29 @@ export default {
         body: JSON.stringify({ query: qry, variables: { ids: addressesToFetch } })
       });
       const data = await resp.json();
+      
+      // Process tokens from The Graph
       for (const token of (data?.data?.tokens || [])) {
         if (!token.id) continue;
-
         const d = token?.derivedETH ? Number(token.derivedETH) : 0;
         tokenPrices[token.id] = d * ethUsd;
+      }
+
+      // Use Chainlink as fallback ONLY for tokens without price from The Graph
+      for (const address of addressesToFetch) {
+        const lc = address.toLowerCase();
+        // Only fetch from Chainlink if price is 0 or not set
+        if (!tokenPrices[lc] || tokenPrices[lc] === 0) {
+          try {
+            const chainlinkResult = await getPriceFromChainlink(lc, toRaw(props.provider));
+            if (chainlinkResult.success && chainlinkResult.price > 0) {
+              tokenPrices[lc] = chainlinkResult.price;
+              console.log(`Using Chainlink price for ${lc}: $${chainlinkResult.price}`);
+            }
+          } catch (error) {
+            console.log(`Chainlink price fetch failed for ${lc}:`, error);
+          }
+        }
       }
 
       return tokenPrices;
@@ -2435,10 +2475,14 @@ export default {
           const maxPriorityFeePerGas =  ethers.utils.parseUnits(
             (0.02 + Math.random()*0.05 + Number(props.gasPrice)/(40e9)).toFixed(9), 9
           )
-          // https://eth.meowrpc.com
-          // https://rpc.mevblocker.io
-          const privateProvider = new ethers.providers.JsonRpcProvider('https://rpc.mevblocker.io', { chainId: 1, name: 'homestead' });
-          const nonce = await privateProvider.getTransactionCount(currentTradeSummary.sender.address, 'pending');
+          
+          // Get current nonce from NonceManager cache in main.mjs
+          const nonceResult = await window.electronAPI.getCurrentNonce(currentTradeSummary.sender.address);
+          if (!nonceResult.success) {
+            throw new Error('Failed to get nonce: ' + nonceResult.error);
+          }
+          const nonce = nonceResult.nonce;
+          console.log(`Using NonceManager nonce ${nonce} for mixed trades`);
 
           const [resultsU, resultsB] = await Promise.all([
             executeMixedSwaps(

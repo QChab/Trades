@@ -6,6 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // Expose a safe API to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
+  getCurrentNonce: (address) => ipcRenderer.invoke('get-current-nonce', address),
   sendTransaction: (transaction) => ipcRenderer.invoke('send-transaction', transaction),
   sendTrade: (trade) => ipcRenderer.invoke('send-trade', trade),
   approveSpender: (from, contractAddress, spender, permit2Spender) => ipcRenderer.invoke('approve-spender', from, contractAddress, spender, permit2Spender),

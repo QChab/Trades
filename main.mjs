@@ -418,8 +418,26 @@ async function sendTransaction(transaction) {
     
     console.log(transaction.contractAddress);
 
-    // Get nonce from NonceManager
-    const nonce = await nonceManager.getNonce(walletAddress);
+    let nonce;
+    
+    // If a nonce is explicitly provided (for mixed trades), use it with a delay
+    if (transaction.nonce !== undefined && transaction.nonce !== null) {
+      nonce = transaction.nonce;
+      console.log(`Using provided nonce ${nonce} for mixed trade, waiting 900ms...`);
+      await new Promise(r => setTimeout(r, 900));
+      
+      // Update the NonceManager's cache to keep it in sync
+      const data = nonceManager.nonces.get(walletAddress.toLowerCase());
+      if (data && data.localNonce <= nonce) {
+        data.localNonce = nonce + 1;
+        data.lastUsed = Date.now();
+        data.lastTxTime = Date.now();
+        nonceManager.nonces.set(walletAddress.toLowerCase(), data);
+      }
+    } else {
+      // Get nonce from NonceManager for regular trades
+      nonce = await nonceManager.getNonce(walletAddress);
+    }
 
     const txData = {
       from: walletAddress,
@@ -428,12 +446,7 @@ async function sendTransaction(transaction) {
       value: transaction.value,
       maxFeePerGas: transaction.maxFeePerGas || ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
       maxPriorityFeePerGas: transaction.maxPriorityFeePerGas || ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (40 * 1000000000))).toFixed(3), 9),
-      nonce: nonce // Always use our managed nonce
-    }
-
-    // Remove the old nonce logic
-    if (transaction.nonce) {
-      console.log(`Overriding provided nonce ${transaction.nonce} with managed nonce ${nonce}`);
+      nonce: nonce
     }
 
     console.log(txData);
@@ -443,8 +456,10 @@ async function sendTransaction(transaction) {
       txResponse = await wallet.sendTransaction(txData);
       console.log(`Transaction sent with nonce ${txResponse?.nonce}, hash: ${txResponse?.hash}`);
       
-      // Increment nonce after successful submission
-      nonceManager.incrementNonce(walletAddress);
+      // Only increment nonce if we got it from NonceManager (not for provided nonces)
+      if (transaction.nonce === undefined || transaction.nonce === null) {
+        nonceManager.incrementNonce(walletAddress);
+      }
     } catch (err) {
       // Handle nonce errors
       await nonceManager.handleTransactionError(walletAddress, err);
@@ -1058,6 +1073,16 @@ function createWindow() {
 
   ipcMain.handle('send-trade', (event, trade) => {
     return sendTrade(trade);
+  });
+  
+  ipcMain.handle('get-current-nonce', async (event, address) => {
+    try {
+      const nonce = await nonceManager.getNonce(address.toLowerCase());
+      return { success: true, nonce };
+    } catch (err) {
+      console.error('Failed to get nonce:', err);
+      return { success: false, error: err.message };
+    }
   });
 
   ipcMain.handle('approve-spender', (event, from, contractAddress, spender, permit2Spender) => {
