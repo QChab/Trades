@@ -12,7 +12,7 @@
       
       <div class="token-pair">
         <span class="token-name">{{ tokenB?.symbol }}</span>
-        <span class="token-price">{{ '  $' + removeTrailingZeros(tokenB?.price, 8) }}</span>
+        <span class="token-price">{{ '  $' + tokenB?.price?.toFixed(2) }}</span>
       </div>
       
       <button 
@@ -79,7 +79,7 @@
     <div class="market-price">
       <span class="price-value">
         1 {{ tokenA?.symbol }} = 
-        <span>{{ currentMarketPrice.toFixed(7) }} {{ tokenB?.symbol }}</span>
+        <span>{{ currentMarketPrice.toFixed(2) }} {{ tokenB?.symbol }}</span>
       </span>
     </div>
 
@@ -774,7 +774,7 @@ export default {
       if (level.status === 'partially_filled') return 'Partial';
       if (level.status === 'failed') return 'Failed ✗';
       
-      if (isCloseToTrigger(type, level)) return 'Close';
+      if (isCloseToTrigger(type, level)) return 'Near';
       if (level.status === 'active') return 'Active';
       return 'Waiting';
     });

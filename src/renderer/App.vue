@@ -32,6 +32,19 @@
               >%
             </label>
           </div>
+          <div class="price-deviation-setting">
+            <label>
+              Near Tolerance:
+              <input 
+                v-model.number="priceThreshold" 
+                type="number" 
+                min="0.1" 
+                max="100" 
+                step="0.1"
+                class="small-number"
+              >%
+            </label>
+          </div>
           <div class="graph-api-key-setting">
             <label>
               Graph API Key:
@@ -216,6 +229,7 @@
           @refresh-balance="refreshBalance"
           :is-test-mode="isTestMode"
           :price-deviation-percentage="priceDeviationPercentage"
+          :price-threshold="priceThreshold"
         ></ManualTrading>
       </div>
     </div>
@@ -277,6 +291,7 @@
       const isTestMode = ref(false);
       const confirmedTrade = ref({});
       const priceDeviationPercentage = ref(20);
+      const priceThreshold = ref(1);
       const showSettings = ref(false);
       const graphApiKey = ref('d692082c59f956790647e889e75fa84d');
 
@@ -323,6 +338,18 @@
         window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
           ...currentSettings.value,
           priceDeviationPercentage: deviationValue,
+        })));
+      })
+
+      // Watch and save price threshold setting
+      watch(() => priceThreshold.value, (thresholdValue) => {
+        currentSettings.value = ({
+          ...currentSettings.value,
+          priceThreshold: thresholdValue,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          priceThreshold: thresholdValue,
         })));
       })
 
@@ -594,6 +621,8 @@
           isTestMode.value = settings.isTestMode;
         if (settings.hasOwnProperty('priceDeviationPercentage'))
           priceDeviationPercentage.value = settings.priceDeviationPercentage;
+        if (settings.hasOwnProperty('priceThreshold'))
+          priceThreshold.value = settings.priceThreshold;
         if (settings.graphApiKey)
           graphApiKey.value = settings.graphApiKey;
       
@@ -676,6 +705,7 @@
         setGasPrice,
         isTestMode,
         priceDeviationPercentage,
+        priceThreshold,
         showSettings,
         toggleSettings,
         isProcessRunning,

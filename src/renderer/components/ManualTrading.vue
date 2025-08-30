@@ -111,7 +111,7 @@
                 </option>
               </select>
               <span class="right-price">
-                @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[fromTokenAddress]?.price)) }}
+                @ ${{ spaceThousands(tokensByAddresses[fromTokenAddress]?.price?.toFixed(2)) }}
               </span>
             </div>
             <span
@@ -188,7 +188,7 @@
               </span>
             </span>
             <p class="right-price">
-              @ ${{ spaceThousands(removeTrailingZeros(tokensByAddresses[toTokenAddress]?.price)) }}
+              @ ${{ spaceThousands(tokensByAddresses[toTokenAddress]?.price?.toFixed(2)) }}
             </p>
           </div>
 
@@ -314,7 +314,7 @@
                   {{ tokenInRow.token.symbol || 'Select Token' }}
                 </p>
                 <p class="token-price">
-                  ${{ spaceThousands(removeTrailingZeros(tokenInRow.token.price)) }}
+                  ${{ spaceThousands(tokenInRow.token.price?.toFixed(2)) }}
                 </p>
                 <img
                   :src="deleteImage"
@@ -336,7 +336,7 @@
                     :token-b="token"
                     :tokens-by-addresses="tokensByAddresses"
                     :balances="computedBalancesByAddress"
-                    :price-threshold="0.01"
+                    :price-threshold="priceThreshold / 100"
                     :details="token.details"
                     :price-deviation-percentage="priceDeviationPercentage"
                     :existing-orders="allExistingOrders"
@@ -454,7 +454,7 @@
                 </label>
                 <label>
                   <div class="line">
-                    <span>Price: ${{ token.price.toFixed(5) }}</span>
+                    <span>Price: ${{ token.price.toFixed(2) }}</span>
                   </div>
                 </label>
               </div>
@@ -475,7 +475,7 @@
         v-if="pendingLimitOrders.length"
         class="pending-orders"
       >
-        <h4>Pending Limit Orders</h4>
+        <h4>Limit Orders</h4>
         <ul>
           <li 
             v-for="order in pendingLimitOrders"
@@ -491,20 +491,31 @@
                 <div class="trade-info">
                   <span class="left">
                     <span v-if="!order.shouldSwitchTokensForLimit">
-                      {{ order.fromToken.symbol }} ≥ {{ order.priceLimit }} {{ order.toToken.symbol }}
+                      If {{ order.fromToken.symbol }} ≥ {{ order.priceLimit }} {{ order.toToken.symbol }}
                     </span>
                     <span v-else>
-                      {{ order.toToken.symbol }} ≤ {{ order.priceLimit }} {{ order.fromToken.symbol }}
+                      If {{ order.toToken.symbol }} ≤ {{ order.priceLimit }} {{ order.fromToken.symbol }}
+                    </span>
+                    <span
+                      class="current-market-price"
+                      style="color: #000; font-size: 1em; margin-left: 40px;"
+                    >
+                      <span v-if="!order.shouldSwitchTokensForLimit">
+                        <span style="font-weight: 600; font-size: 1.1em;">{{ getCurrentMarketPrice(order.fromToken, order.toToken, false) }}</span> {{ order.toToken.symbol }}/{{ order.fromToken.symbol }}
+                      </span>
+                      <span v-else>
+                        <span style="font-weight: 600; font-size: 1.1em;">{{ getCurrentMarketPrice(order.fromToken, order.toToken, true) }}</span> {{ order.fromToken.symbol }}/{{ order.toToken.symbol }}
+                      </span>
                     </span>
                     <div>
                       <span style="font-size:16px;color:rgb(223,81,81);">
                         Sell <span style="font-size:16px;font-weight:800;text-decoration:underline;">{{ order.fromAmount }} {{ order.fromToken.symbol }} </span>
-                        (${{ tokensByAddresses[order.fromToken?.address].price.toFixed(7) }})
+                        (${{ tokensByAddresses[order.fromToken?.address].price.toFixed(2) }})
                       </span> 
                       -> 
                       <span style="font-size:16px;color:rgb(69,201,99);">
                         Buy <span style="font-size:16px;font-weight:800;text-decoration:underline;">{{ order.toAmount || '' }} {{ order.toToken.symbol }} </span>
-                        (${{ tokensByAddresses[order.toToken?.address].price.toFixed(7) }})
+                        (${{ tokensByAddresses[order.toToken?.address].price.toFixed(2) }})
                       </span>
                     </div>
                   </span>
@@ -513,20 +524,7 @@
                   <span>
                     {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
                     <span v-if="order.currentMarketPrice">
-                      at {{ order.currentMarketPrice.toFixed(5) }}
-                    </span>
-                    <span
-                      class="current-market-price"
-                      style="color: #888; font-size: 1em;"
-                    >
-                      ( 
-                      <span v-if="!order.shouldSwitchTokensForLimit">
-                        {{ getCurrentMarketPrice(order.fromToken, order.toToken, false) }} {{ order.toToken.symbol }}/{{ order.fromToken.symbol }}
-                      </span>
-                      <span v-else>
-                        {{ getCurrentMarketPrice(order.fromToken, order.toToken, true) }} {{ order.fromToken.symbol }}/{{ order.toToken.symbol }}
-                      </span>
-                      )
+                      at {{ order.currentMarketPrice.toFixed(2) }}
                     </span>
                     <span
                       class="current-market-price"
@@ -600,6 +598,7 @@ export default {
     isInitialBalanceFetchDone: {type: Boolean, default: false},
     isTestMode: { type: Boolean, default: false },
     priceDeviationPercentage: { type: Number, default: 20 },
+    priceThreshold: { type: Number, default: 1 },
   },
   emits: ['update:settings', 'update:trade', 'refreshBalance'],
   setup(props, { emit }) {
@@ -927,7 +926,7 @@ export default {
       // If shouldInvert is true, show the inverse price
       const displayPrice = shouldInvert ? (1 / marketPrice) : marketPrice;
       
-      return displayPrice.toFixed(6);
+      return displayPrice.toFixed(2);
     };
 
     const balanceString = (ownerAddress, tokenAddr) => {
@@ -2184,7 +2183,6 @@ export default {
         try {
           const chainlinkResult = await getPriceFromChainlink(lc, toRaw(props.provider));
           if (chainlinkResult.success && chainlinkResult.price > 0) {
-            console.log(`Using Chainlink price for ${lc}: $${chainlinkResult.price}`);
             return chainlinkResult.price;
           }
         } catch (error) {
@@ -2242,7 +2240,6 @@ export default {
             const chainlinkResult = await getPriceFromChainlink(lc, toRaw(props.provider));
             if (chainlinkResult.success && chainlinkResult.price > 0) {
               tokenPrices[lc] = chainlinkResult.price;
-              console.log(`Using Chainlink price for ${lc}: $${chainlinkResult.price}`);
             }
           } catch (error) {
             console.log(`Chainlink price fetch failed for ${lc}:`, error);
@@ -3625,6 +3622,7 @@ export default {
 
     let isCheckingPendingOrders = false;
     const orderExecutionLocks = new Map(); // Track orders currently being executed
+    const locationProcessingTimestamps = new Map(); // Track when orders from each location started processing
     
     async function checkPendingOrdersToTrigger() {
       // Check global pause state first
@@ -3725,8 +3723,8 @@ export default {
               comparablePriceLimit = order.priceLimit;
             }
 
-            // Define price tolerance (e.g., within 1% of trigger price)
-            const PRICE_TOLERANCE = 0.01; // 1%
+            // Use price tolerance from props (converted from percentage to decimal)
+            const PRICE_TOLERANCE = props.priceThreshold / 100;
             const priceDifference = Math.abs(comparableMarketPrice - comparablePriceLimit) / comparablePriceLimit;
             
             // Only proceed with expensive getBestTrades call if we're close to trigger price
@@ -3801,30 +3799,37 @@ export default {
             // Check if another order from the same location is already processing
             if (order.automatic && order.sourceLocation) {
               const { rowIndex, colIndex } = order.sourceLocation;
+              const locationKey = `${rowIndex}-${colIndex}`;
+              
+              // Check if there's an active processing order from this location
               const hasProcessingOrder = automaticOrders.value.some(o => 
                 o.id !== order.id &&
-                (o.status === 'processing' || o.status === 'partially_filled') &&
+                (o.status === 'processing') &&
                 o.sourceLocation &&
                 o.sourceLocation.rowIndex === rowIndex &&
                 o.sourceLocation.colIndex === colIndex
               );
               
               if (hasProcessingOrder) {
+                // No timestamp recorded, skip this iteration
                 console.log(`Order ${order.id}: Another order from row ${rowIndex}, col ${colIndex} is processing. Waiting for next cycle...`);
                 continue;
+              }
+
+              const processingStartTime = locationProcessingTimestamps.get(locationKey);
+              if (processingStartTime) {
+                const elapsedSeconds = (Date.now() - processingStartTime) / 1000;
+                if (elapsedSeconds < 30) {
+                  console.log(`Order ${order.id}: Another order from row ${rowIndex}, col ${colIndex} is processing. Waiting ${(30 - elapsedSeconds).toFixed(1)} more seconds...`);
+                  continue;
+                }
               }
             }
           
             // Execute order asynchronously without blocking main loop
             tryExecutePendingOrder(order, exactExecutionPrice);
             
-            // For automatic orders from the same token pair, add a longer delay to allow pool data to refresh
-            if (order.automatic && order.sourceLocation) {
-              console.log(`Order ${order.id}: Automatic order executed, waiting 5 seconds for pool data refresh...`);
-              await new Promise(r => setTimeout(r, 10000));
-            } else {
-              await new Promise(r => setTimeout(r, 2000));
-            }
+            await new Promise(r => setTimeout(r, 2000));
           } catch (error) {
             console.error(`Error checking limit order ${order.id}:`, error);
           }
@@ -4137,6 +4142,12 @@ export default {
       try {
         // Handle different execution paths based on order type
         if (order.automatic && order.remainingAmount > 0) {
+          if (order.sourceLocation) {
+            const { rowIndex, colIndex } = order.sourceLocation;
+            const locationKey = `${rowIndex}-${colIndex}`;
+            locationProcessingTimestamps.set(locationKey, Date.now());
+            console.log(`Order ${order.id}: Set processing timestamp for location ${locationKey}`);
+          }
           // Multi-address execution for automatic orders
           const addressSelection = getAddressesWithHighestBalances(
             order.fromToken.address, 
@@ -4151,6 +4162,7 @@ export default {
           
           // Execute multi-address trade asynchronously without blocking main loop
           order.status = 'processing';
+          
           console.log(`Executing multi-address trade for order ${order.id} with amount ${executableAmount}`);
           console.log({addressSelection})
           await executeMultiAddressTrade(order, addressSelection, exactExecutionPrice, executableAmount);
@@ -5440,7 +5452,7 @@ button::-webkit-focus-inner {
 }
 
 .order-meta {
-  font-size: 12px;
+  font-size: 15px;
   color: #666;
   margin-top: 5px;
   display: flex;
