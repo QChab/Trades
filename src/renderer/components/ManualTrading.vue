@@ -286,10 +286,10 @@
             <button 
               class="global-pause-btn" 
               :class="{ 'paused': isGloballyPaused }"
-              :title="isGloballyPaused ? 'Unpause' : 'Pause'"
+              :title="isGloballyPaused ? 'Off' : 'On'"
               @click="toggleGlobalPause"
             >
-              {{ isGloballyPaused ? '▶️ Unpause' : '⏸️ Pause' }}
+              {{ isGloballyPaused ? 'Off' : 'On' }}
             </button>
             <div class="automatic-info">
               <h3 v-if="isInitialBalanceFetchDone">
@@ -321,6 +321,9 @@
                   class="delete-row"
                   @click="deleteRow(i)"
                 >
+                <div
+                  class="compensate-height"
+                />
               </div>
               <div 
                 v-if="tokenInRow?.token?.symbol"
@@ -524,7 +527,7 @@
                   <span>
                     {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
                     <span v-if="order.currentMarketPrice">
-                      at {{ order.currentMarketPrice.toFixed(2) }}
+                      at {{ order.currentMarketPrice.toFixed(3) }}
                     </span>
                     <span
                       class="current-market-price"
@@ -721,7 +724,7 @@ export default {
 
     const automaticOrders = ref([]);
     const automaticMessage= ref(null);
-    const isGloballyPaused = ref(false);
+    const isGloballyPaused = ref(true);
     
     // Computed property to collect all existing order book levels and limit orders
     const allExistingOrders = computed(() => {
@@ -749,23 +752,27 @@ export default {
       
       // Add pending limit orders
       pendingLimitOrders.value.forEach(order => {
-        // Convert limit order to a format that matches OrderBookLevels validation
+        // Limit orders are always selling fromToken to buy toToken
+        // If shouldSwitchTokensForLimit is true, we need to invert the price
+        const triggerPrice = order.shouldSwitchTokensForLimit ? 
+          (1 / order.priceLimit) : order.priceLimit;
+        
         const level = {
-          triggerPrice: order.priceLimit,
+          triggerPrice: triggerPrice,
           balancePercentage: 100, // Assume full percentage for limit orders
           status: 'active'
         };
         
-        const isBuyOrder = !order.shouldSwitchTokensForLimit;
-        
+        // Limit orders are always sell orders (selling fromToken for toToken)
         allOrders.push({
           tokenA: order.fromToken,
           tokenB: order.toToken,
-          buyLevels: isBuyOrder ? [level] : [],
-          sellLevels: isBuyOrder ? [] : [level],
+          buyLevels: [],
+          sellLevels: [level],
           limitPriceInDollars: order.limitPriceInDollars || false,
           source: 'limitorder',
-          orderId: order.id
+          orderId: order.id,
+          shouldSwitchTokensForLimit: order.shouldSwitchTokensForLimit
         });
       });
       
@@ -890,12 +897,12 @@ export default {
       
       let usdValue, usdValueInverse
       if (list100CoinsEth.includes(fromSymbol))
-        usdValueInverse = fromTokenPrice
+        usdValueInverse = fromTokenPrice.toFixed(2);
       else
         usdValueInverse = toTokenPrice > 0 ? (pricePerInputToken * toTokenPrice).toFixed(2) : '0.00';
 
       if (list100CoinsEth.includes(toSymbol))
-        usdValue = toTokenPrice
+        usdValue = toTokenPrice.toFixed(2);
       else
         usdValue = fromTokenPrice > 0 ? (pricePerOutputToken * fromTokenPrice).toFixed(2) : '0.00';
       
@@ -926,7 +933,7 @@ export default {
       // If shouldInvert is true, show the inverse price
       const displayPrice = shouldInvert ? (1 / marketPrice) : marketPrice;
       
-      return displayPrice.toFixed(2);
+      return displayPrice.toFixed(3);
     };
 
     const balanceString = (ownerAddress, tokenAddr) => {
@@ -5100,11 +5107,19 @@ input.small-number {
   cursor: pointer;
 }
 
-
 .token-details .delete-row {
   display: none;
   width: 20px;
   height: 15px;
+}
+
+.token-details .compensate-height {
+  display: block;
+  height: 20px;
+}
+
+.token-details:hover .compensate-height {
+  display: none;
 }
 
 .token-details:hover .delete-row {
@@ -5479,12 +5494,12 @@ button::-webkit-focus-inner {
 }
 
 .is-waiting-balance {
-  background-color: #ff990090; /* Orange for waiting balance */
+  background-color: #ffd08a90; /* Orange for waiting balance */
   font-weight: 600;
 }
 
 .check-if-trigger {
-  background-color: #0b9135; /* Orange for waiting balance */
+  background-color: #7fa58b; /* Orange for waiting balance */
   font-weight: 600;
 }
 
@@ -5543,29 +5558,21 @@ h3 {
 }
 
 .global-pause-btn {
-  background-color: #fff;
+  background-color: #2dab3e;
   color: #000;
   border: none;
-  padding: 10px 20px;
+  padding: 4px 8px;
   border-radius: 5px;
   cursor: pointer;
   font-size: 16px;
   font-weight: bold;
   transition: background-color 0.3s ease;
-  min-width: 150px;
+  min-width: 40px;
   position: absolute;
 }
 
-.global-pause-btn:hover {
-  background-color: #ccc;
-}
-
 .global-pause-btn.paused {
-  background-color: #fba09a;
-}
-
-.global-pause-btn.paused:hover {
-  background-color: #d27771;
+  background-color: #ca4f46;
 }
 
 .matrix {
@@ -5596,7 +5603,6 @@ h3 {
   overflow-x: auto;
   display: flex;
   flex-direction: row;
-  background-color: #fafafa;
   border-bottom: 2px solid #ddd;
   border-top: 2px solid #ddd;
 }
@@ -5626,6 +5632,7 @@ h3 {
 .no-addresses-unlocked {
   background-color: #aaa;
   opacity: .5;
+  pointer-events: none;
 }
 
 input.amount-out {

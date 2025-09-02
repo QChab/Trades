@@ -115,7 +115,9 @@
                   step="0.000001"
                   placeholder="0.0"
                   class="price-input"
+                  @focus="saveOriginalPrice('buy', index, level.triggerPrice)"
                   @change="updateLevel('buy', index)"
+                  @keyup.enter="$event.target.blur()"
                 >
                 <span
                   v-if="!limitPriceInDollars"
@@ -146,7 +148,7 @@
             >
               Buy
               <input
-                v-model.number="level.balancePercentage"
+                :value="level.balancePercentage"
                 type="number"
                 min="0"
                 max="100"
@@ -154,7 +156,8 @@
                 placeholder="0"
                 class="percentage-input"
                 :title="getPercentageTooltip('buy', level.balancePercentage)"
-                @input="updateLevel('buy', index)"
+                @change="updatePercentage('buy', index, $event)"
+                @keyup.enter="$event.target.blur()"
               >
               <span class="percentage-symbol">%</span>
               <span
@@ -198,7 +201,9 @@
                   step="0.000001"
                   placeholder="0.0"
                   class="price-input"
+                  @focus="saveOriginalPrice('sell', index, level.triggerPrice)"
                   @change="updateLevel('sell', index)"
+                  @keyup.enter="$event.target.blur()"
                 >
                 <span
                   v-if="!limitPriceInDollars"
@@ -229,7 +234,7 @@
             >
               Sell
               <input
-                v-model.number="level.balancePercentage"
+                :value="level.balancePercentage"
                 type="number"
                 min="0"
                 max="100"
@@ -237,7 +242,8 @@
                 placeholder="0"
                 class="percentage-input"
                 :title="getPercentageTooltip('sell', level.balancePercentage)"
-                @input="updateLevel('sell', index)"
+                @change="updatePercentage('sell', index, $event)"
+                @keyup.enter="$event.target.blur()"
               >
               <span class="percentage-symbol">%</span>
               <span
@@ -327,6 +333,7 @@ export default {
     const pendingLevelUpdate = ref(null);
     const priceDeviationMessage = ref('');
     const priceDeviationDetails = ref(null);
+    const originalPrices = ref({}); // Track original prices before changes
 
     // Initialize 3 sell levels and 3 buy levels
     const sellLevels = reactive([
@@ -488,7 +495,12 @@ export default {
           const currentTokenA = tokenA.value.address.toLowerCase();
           const currentTokenB = tokenB.value.address.toLowerCase();
           
-          // Check if same token pair (either direction)
+          // For limit orders, only check exact match (fromToken -> toToken)
+          if (order.source === 'limitorder') {
+            return orderTokenA === currentTokenA && orderTokenB === currentTokenB;
+          }
+          
+          // For orderbook orders, check both directions
           return (orderTokenA === currentTokenA && orderTokenB === currentTokenB) ||
                  (orderTokenA === currentTokenB && orderTokenB === currentTokenA);
         });
@@ -660,13 +672,30 @@ export default {
       }
     };
     
+    const saveOriginalPrice = (type, index, price) => {
+      const key = `${type}-${index}`;
+      originalPrices.value[key] = price;
+    };
+    
     const cancelPriceDeviationUpdate = () => {
       showPriceDeviationModal.value = false;
       if (pendingLevelUpdate.value) {
         const { type, index, originalPrice } = pendingLevelUpdate.value;
         const levels = type === 'sell' ? sellLevels : buyLevels;
-        levels[index].triggerPrice = originalPrice; // Restore original price
+        
+        // If originalPrice was null, clear the entire level
+        if (originalPrice === null) {
+          levels[index].triggerPrice = null;
+          levels[index].balancePercentage = null;
+          levels[index].status = 'inactive';
+        } else {
+          levels[index].triggerPrice = originalPrice; // Restore original price
+        }
+        
         pendingLevelUpdate.value = null;
+        // Clear the saved original price
+        const key = `${type}-${index}`;
+        delete originalPrices.value[key];
       }
     };
     
@@ -674,8 +703,9 @@ export default {
       const levels = type === 'sell' ? sellLevels : buyLevels;
       const level = levels[index];
       
-      // Store original price for potential restoration
-      const originalPrice = level.triggerPrice;
+      // Get the original price that was saved on focus
+      const key = `${type}-${index}`;
+      const originalPrice = originalPrices.value[key] !== undefined ? originalPrices.value[key] : null;
       
       // Validate inputs
       if (level.triggerPrice < 0) level.triggerPrice = 0;
@@ -737,6 +767,28 @@ export default {
         showPriceDeviationModal.value = true;
         return; // Don't continue with update until confirmed
       }
+    };
+    
+    const updatePercentage = (type, index, event) => {
+      const levels = type === 'sell' ? sellLevels : buyLevels;
+      const level = levels[index];
+      
+      // Get the new percentage value from the input
+      const newPercentage = parseFloat(event.target.value);
+      
+      // Validate and update the percentage
+      if (isNaN(newPercentage) || newPercentage === '') {
+        level.balancePercentage = null;
+      } else if (newPercentage < 0) {
+        level.balancePercentage = 0;
+      } else if (newPercentage > 100) {
+        level.balancePercentage = 100;
+      } else {
+        level.balancePercentage = newPercentage;
+      }
+      
+      // Now update the status and emit changes
+      updateLevelConfirmed(type, index);
     };
     
     const updateLevelConfirmed = (type, index) => {
@@ -944,6 +996,8 @@ export default {
       validateAgainstExistingOrders,
       confirmPriceDeviationUpdate,
       cancelPriceDeviationUpdate,
+      saveOriginalPrice,
+      updatePercentage,
     };
   }
 };
@@ -1127,6 +1181,7 @@ input:checked + .slider:before {
 .token-pair {
   text-align: center;
   flex-grow: 1;
+  padding-bottom: 5px;
 }
 
 .token-name {
