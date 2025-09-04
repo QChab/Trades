@@ -148,7 +148,7 @@
             >
               Buy
               <input
-                :value="level.balancePercentage"
+                :value="getPercentageInputValue('buy', index, level.balancePercentage)"
                 type="number"
                 min="0"
                 max="100"
@@ -156,7 +156,9 @@
                 placeholder="0"
                 class="percentage-input"
                 :title="getPercentageTooltip('buy', level.balancePercentage)"
-                @change="updatePercentage('buy', index, $event)"
+                @focus="onPercentageFocus('buy', index, $event)"
+                @input="onPercentageInput($event)"
+                @blur="onPercentageBlur('buy', index, $event)"
                 @keyup.enter="$event.target.blur()"
               >
               <span class="percentage-symbol">%</span>
@@ -234,7 +236,7 @@
             >
               Sell
               <input
-                :value="level.balancePercentage"
+                :value="getPercentageInputValue('sell', index, level.balancePercentage)"
                 type="number"
                 min="0"
                 max="100"
@@ -242,7 +244,9 @@
                 placeholder="0"
                 class="percentage-input"
                 :title="getPercentageTooltip('sell', level.balancePercentage)"
-                @change="updatePercentage('sell', index, $event)"
+                @focus="onPercentageFocus('sell', index, $event)"
+                @input="onPercentageInput($event)"
+                @blur="onPercentageBlur('sell', index, $event)"
                 @keyup.enter="$event.target.blur()"
               >
               <span class="percentage-symbol">%</span>
@@ -334,6 +338,10 @@ export default {
     const priceDeviationMessage = ref('');
     const priceDeviationDetails = ref(null);
     const originalPrices = ref({}); // Track original prices before changes
+    
+    // Track focused percentage inputs
+    const focusedPercentageInput = ref(null);
+    const tempPercentageValue = ref(null);
 
     // Initialize 3 sell levels and 3 buy levels
     const sellLevels = reactive([
@@ -769,6 +777,55 @@ export default {
       }
     };
     
+    const onPercentageFocus = (type, index, event) => {
+      const key = `${type}-${index}`;
+      focusedPercentageInput.value = key;
+      tempPercentageValue.value = event.target.value;
+    };
+    
+    const onPercentageInput = (event) => {
+      // Store the temporary value while typing
+      tempPercentageValue.value = event.target.value;
+    };
+    
+    const onPercentageBlur = (type, index, event) => {
+      const levels = type === 'sell' ? sellLevels : buyLevels;
+      const level = levels[index];
+      
+      // Clear focus tracking
+      focusedPercentageInput.value = null;
+      
+      // Get the final percentage value from the input
+      const newPercentage = parseFloat(event.target.value);
+      
+      // Validate and update the percentage
+      if (isNaN(newPercentage) || newPercentage === '' || event.target.value === '') {
+        level.balancePercentage = null;
+      } else if (newPercentage < 0) {
+        level.balancePercentage = 0;
+      } else if (newPercentage > 100) {
+        level.balancePercentage = 100;
+      } else {
+        level.balancePercentage = newPercentage;
+      }
+      
+      // Clear temp value
+      tempPercentageValue.value = null;
+      
+      // Now update the status and emit changes
+      updateLevelConfirmed(type, index);
+    };
+    
+    const getPercentageInputValue = (type, index, levelValue) => {
+      const key = `${type}-${index}`;
+      // If this input is focused, show the temporary value
+      if (focusedPercentageInput.value === key && tempPercentageValue.value !== null) {
+        return tempPercentageValue.value;
+      }
+      // Otherwise show the level value
+      return levelValue;
+    };
+    
     const updatePercentage = (type, index, event) => {
       const levels = type === 'sell' ? sellLevels : buyLevels;
       const level = levels[index];
@@ -998,6 +1055,12 @@ export default {
       cancelPriceDeviationUpdate,
       saveOriginalPrice,
       updatePercentage,
+      
+      // Percentage input focus handling
+      onPercentageFocus,
+      onPercentageInput,
+      onPercentageBlur,
+      getPercentageInputValue,
     };
   }
 };
