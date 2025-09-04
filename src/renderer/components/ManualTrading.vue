@@ -5499,7 +5499,7 @@ button::-webkit-focus-inner {
 }
 
 .check-if-trigger {
-  background-color: #7fa58b; /* Orange for waiting balance */
+  background-color: #a6c9b1; /* Orange for waiting balance */
   font-weight: 600;
 }
 

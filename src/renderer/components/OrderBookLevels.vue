@@ -36,7 +36,7 @@
             <span
               class="higher-label"
               :class="{'slider-selected': isRandomMode}"
-            >Random</span>
+            >{{ isRandomMode ? 'Random' : 'Max first' }}</span>
           </label>
         </div>
         <div class="price-unit-selection">
@@ -882,13 +882,13 @@ export default {
     const getUsdPrice = (triggerPrice) => {
       if (!triggerPrice || !tokenBPrice.value) return '0.00';
       const usdPrice = triggerPrice * tokenBPrice.value;
-      return removeTrailingZeros(usdPrice, 4);
+      return removeTrailingZeros(usdPrice, 2);
     };
 
     const getTokenPriceFromDollar = (dollarPrice) => {
       if (!dollarPrice || !tokenBPrice.value) return '0.00';
       const tokenPrice = dollarPrice / tokenBPrice.value;
-      return removeTrailingZeros(tokenPrice, 7);
+      return removeTrailingZeros(tokenPrice, 2);
     };
 
     const getPercentageTooltip = (type, percentage) => {
@@ -1038,6 +1038,14 @@ export default {
   display: flex;
   align-items: center;
   gap: 6px;
+  border: 1px solid #666;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.address-selection input{
+  display: none;
 }
 
 .price-unit-selection {
@@ -1056,6 +1064,7 @@ export default {
   display: flex;
   align-items: center;
   width: 75px;
+  cursor: pointer;
 }
 
 .higher-label {
@@ -1063,6 +1072,9 @@ export default {
   color: #666;
   font-weight: 500;
   white-space: nowrap;
+  margin-left: auto;
+  margin-right: auto;
+  cursor: pointer;
 }
 
 .slider-label.left {

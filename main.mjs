@@ -484,11 +484,14 @@ async function sendTransaction(transaction) {
     const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from);
     const PRIVATE_KEY = pk.pk;
     
+    // Use privateRpc from settings or default to mevblocker
+    const privateRpcUrl = settings?.privateRpc || 'https://rpc.mevblocker.io';
+    
     const wallet = new ethers.Wallet(PRIVATE_KEY, isPrivate ? 
-      new ethers.providers.JsonRpcProvider('https://rpc.mevblocker.io', { chainId: 1, name: 'homestead' }) : provider);
+      new ethers.providers.JsonRpcProvider(privateRpcUrl, { chainId: 1, name: 'homestead' }) : provider);
 
     if (!wallet || !wallet.address || wallet.address.toLowerCase() !== from) {
-      throw new Error(`Incorrect private key for address ${transfer.from}`)
+      throw new Error(`Incorrect private key for address ${address}`)
     }
     return wallet;
   }

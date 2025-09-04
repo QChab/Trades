@@ -57,6 +57,18 @@
               >
             </label>
           </div>
+          <div class="private-rpc-setting">
+            <label>
+              Private RPC:
+              <input 
+                v-model="privateRpc" 
+                type="text" 
+                class="api-key-input"
+                placeholder="Private RPC for swaps"
+                @change="savePrivateRpc"
+              >
+            </label>
+          </div>
         </div>
       </div>
       
@@ -294,6 +306,7 @@
       const priceThreshold = ref(1);
       const showSettings = ref(false);
       const graphApiKey = ref('d692082c59f956790647e889e75fa84d');
+      const privateRpc = ref('https://rpc.mevblocker.io');
 
       const maxGasPrice = ref(3);
 
@@ -362,6 +375,18 @@
         window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
           ...currentSettings.value,
           graphApiKey: graphApiKey.value,
+        })));
+      }
+      
+      // Save Private RPC
+      const savePrivateRpc = () => {
+        currentSettings.value = ({
+          ...currentSettings.value,
+          privateRpc: privateRpc.value,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          privateRpc: privateRpc.value,
         })));
       }
 
@@ -625,6 +650,8 @@
           priceThreshold.value = settings.priceThreshold;
         if (settings.graphApiKey)
           graphApiKey.value = settings.graphApiKey;
+        if (settings.privateRpc)
+          privateRpc.value = settings.privateRpc;
       
         isFileDetected.value = await window.electronAPI.isFileDetected();
         
@@ -729,6 +756,8 @@
         isInitialBalanceFetchDone,
         graphApiKey,
         saveGraphApiKey,
+        privateRpc,
+        savePrivateRpc,
       }
     }
   };
@@ -823,7 +852,7 @@
     align-items: center;
     justify-content: space-between;
     flex: 1;
-    gap: 30px;
+    gap: 15px;
   }
   
   .price-deviation-setting {
@@ -831,32 +860,35 @@
   }
   
   .price-deviation-setting label {
-    font-size: 14px;
+    font-size: 12px;
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 3px;
   }
   
   .price-deviation-setting input.small-number {
-    width: 50px;
+    width: 30px;
     padding: 2px 5px;
     border: 1px solid #ddd;
     border-radius: 3px;
     text-align: center;
   }
   
-  .graph-api-key-setting {
+  .graph-api-key-setting,
+  .private-rpc-setting {
     margin-top: 0;
   }
   
-  .graph-api-key-setting label {
-    font-size: 14px;
+  .graph-api-key-setting label,
+  .private-rpc-setting label {
+    font-size: 12px;
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 3px;
   }
   
-  .graph-api-key-setting input.api-key-input {
+  .graph-api-key-setting input.api-key-input,
+  .private-rpc-setting input.api-key-input {
     width: 250px;
     padding: 4px 8px;
     border: 1px solid #ddd;

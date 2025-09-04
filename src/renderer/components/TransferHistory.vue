@@ -168,6 +168,8 @@ export default {
         new ethers.providers.JsonRpcProvider('https://0xrpc.io/eth', { chainId: 1, name: 'homestead' }),
         new ethers.providers.JsonRpcProvider('https://eth.drpc.org', { chainId: 1, name: 'homestead' }),
         new ethers.providers.JsonRpcProvider('https://ethereum.therpc.io', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://eth.merkle.io', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://eth.llamarpc.com', { chainId: 1, name: 'homestead' }),
       ];
 
       let i = 0;
