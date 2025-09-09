@@ -34,13 +34,16 @@ export default {
     // Function to fetch the current gas price from the blockchain
     async function fetchGasPrice() {
       try {
-        const rpcUrls = [
-          'https://eth.merkle.io',
-          'https://eth.llamarpc.com',
-        ]
-        const providersList = rpcUrls.map((url) => 
-          new ethers.providers.JsonRpcProvider(url,{ chainId: 1, name: 'homestead' })
-        );
+        const providersList = [
+          new ethers.providers.JsonRpcProvider('https://eth1.lava.build', { chainId: 1, name: 'homestead' }),
+          new ethers.providers.JsonRpcProvider('https://mainnet.gateway.tenderly.co', { chainId: 1, name: 'homestead' }),
+          new ethers.providers.JsonRpcProvider('https://0xrpc.io/eth', { chainId: 1, name: 'homestead' }),
+          new ethers.providers.JsonRpcProvider('https://eth.drpc.org', { chainId: 1, name: 'homestead' }),
+          new ethers.providers.JsonRpcProvider('https://ethereum.therpc.io', { chainId: 1, name: 'homestead' }),
+          new ethers.providers.JsonRpcProvider('https://eth.merkle.io', { chainId: 1, name: 'homestead' }),
+          new ethers.providers.JsonRpcProvider('https://eth.llamarpc.com', { chainId: 1, name: 'homestead' }),
+        ];
+
         const feeData = await providersList[i % 2].getFeeData();
         // Extract the current gas price from the feeData object
         const currentGasPrice = feeData.gasPrice;

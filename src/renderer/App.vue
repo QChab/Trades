@@ -1,113 +1,254 @@
-  <template>
-    <div class="header">
-      <div class="settings">
-        <!-- <label>Test mode: <input type="checkbox" v-model="isTestMode"/></label> -->
+<template>
+  <div class="header">
+    <div class="settings">
+      <!-- Settings toggle button (always visible) -->
+      <button 
+        @click="toggleSettings" 
+        class="settings-button"
+      >
+        {{ showSettings ? 'Close Settings' : 'Settings' }}
+      </button>
+      
+      <!-- Settings content (only shown when expanded) -->
+      <div v-if="showSettings" class="settings-content">
+        <div class="test-mode-container">
+          <label class="test-mode-label">
+            <input 
+              v-model="isTestMode" 
+              type="checkbox" 
+              class="test-mode-checkbox"
+            >
+            <span>Test limit&auto</span>
+          </label>
+          <div class="price-deviation-setting">
+            <label>
+              Warning price deviation:
+              <input 
+                v-model.number="priceDeviationPercentage" 
+                type="number" 
+                min="1" 
+                max="100" 
+                class="small-number"
+              >%
+            </label>
+          </div>
+          <div class="price-deviation-setting">
+            <label>
+              Near Tolerance:
+              <input 
+                v-model.number="priceThreshold" 
+                type="number" 
+                min="0.1" 
+                max="100" 
+                step="0.1"
+                class="small-number"
+              >%
+            </label>
+          </div>
+          <div class="graph-api-key-setting">
+            <label>
+              Graph API Key:
+              <input 
+                v-model="graphApiKey" 
+                type="text" 
+                class="api-key-input"
+                placeholder="Enter Graph API key"
+                @change="saveGraphApiKey"
+              >
+            </label>
+          </div>
+          <div class="private-rpc-setting">
+            <label>
+              Private RPC:
+              <input 
+                v-model="privateRpc" 
+                type="text" 
+                class="api-key-input"
+                placeholder="Private RPC for swaps"
+                @change="savePrivateRpc"
+              >
+            </label>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Other settings (hidden when Settings is expanded) -->
+      <div v-if="!showSettings" class="other-settings">
         <div class="infura-keys">
           <!-- The title that toggles the infura keys section -->
-          <p class="title" @click="toggleInfuraKeys">
+          <p
+            class="title"
+            @click="toggleInfuraKeys"
+          >
             RPCs ({{ infuraKeys.length }})
             <!-- Icon that rotates when the section is toggled open/closed -->
-            <img :src="chevronDownImage" class="chevron-down" :class="{ rotated: showInfuraKeys }" />
-          </p>
-          <!-- The section that shows the list of Infura API keys and an input to add new keys -->
-          <div v-if="showInfuraKeys" class="infura-keys-content">
-            <!-- Loop over the infuraKeys array to display each key -->
-            <div v-for="(key, index) in infuraKeys" :key="index" class="infura-key-entry">
-              <span class="rpc-url">{{ key }}</span>
-              <!-- Delete button to remove a specific key -->
-              <button @click="deleteInfuraKey(index)">Delete</button>
-            </div>
-            <!-- Section to add a new Infura API key -->
-            <div class="add-infura-key">
-              <form @submit.prevent="addInfuraKey">
-                <!-- Two-way binding with newInfuraKey -->
-                <input v-model="newInfuraKey" placeholder="http..." @input="errorInfuraKey = ''"/>
-                <!-- Clicking this button adds the new key to the list -->
-                <button type="submit">+</button>
-              </form>
-            </div>
-            <p class="error-message">{{ errorInfuraKey }}</p>
-          </div>
-        </div>
-        <div class="private-keys" >
-          <p class="title" @click="shouldShowPKForm = !shouldShowPKForm">
-            Trading Addresses ({{ loadedAddresses.length }})
-            <img :src="chevronDownImage" class="chevron-down" :class="{ rotated : shouldShowPKForm }"></img>
-          </p>
-          <div v-if="shouldShowPKForm && !hasUnlockedPrivateKeys">
-            <p class="text-center" v-if="!isFileDetected">First set your password</p>
-            <p class="text-center" v-if="isFileDetected">Enter your password to load the addresses</p>
-            <form
-              @submit.prevent="() => isFileDetected ? loadPrivateKeys() : readPrivateKeyFile()"
+            <img
+              :src="chevronDownImage"
+              class="chevron-down"
+              :class="{ rotated: showInfuraKeys }"
             >
-              <input class="center" v-model="password" type="password" required/>
-              <div v-if="!isFileDetected">
-                <p class="text-center">
-                  Then submit a Excel or CSV file with the addresses, private keys and names of the trading addresses
-                </p>
-                <FileManager 
-                  @file:new="storePrivateKeyArgs"
-                  :noPreview="true"
-                  file-type="C"
-                  :extensions="'xls xlsx csv'"
-                  id="2"
-                  :shouldHideNoFile="false"
-                />
-              </div>
-              <p v-if="errorMessagePK" class="error-message"> {{ errorMessagePK }} </p>
-              <button 
-                type="submit"
-                class="submit-button"
+          </p>
+        <!-- The section that shows the list of Infura API keys and an input to add new keys -->
+        <div
+          v-if="showInfuraKeys"
+          class="infura-keys-content"
+        >
+          <!-- Loop over the infuraKeys array to display each key -->
+          <div
+            v-for="(key, index) in infuraKeys"
+            :key="index"
+            class="infura-key-entry"
+          >
+            <span class="rpc-url">{{ key }}</span>
+            <!-- Delete button to remove a specific key -->
+            <button @click="deleteInfuraKey(index)">
+              Delete
+            </button>
+          </div>
+          <!-- Section to add a new Infura API key -->
+          <div class="add-infura-key">
+            <form @submit.prevent="addInfuraKey">
+              <!-- Two-way binding with newInfuraKey -->
+              <input
+                v-model="newInfuraKey"
+                placeholder="http..."
+                @input="errorInfuraKey = ''"
               >
-                {{ isFileDetected ? 'Load' : 'Submit' }}
+              <!-- Clicking this button adds the new key to the list -->
+              <button type="submit">
+                +
               </button>
             </form>
-            <span class="action" v-if="isFileDetected" @click="hasUnlockedPrivateKeys = false, isFileDetected = false">Import another file</span>
           </div>
-          <div v-if="shouldShowPKForm && hasUnlockedPrivateKeys">
-            <span class="action" @click="hasUnlockedPrivateKeys = false, isFileDetected = false">Import another file</span>
-          </div>
+          <p class="error-message">
+            {{ errorInfuraKey }}
+          </p>
         </div>
+      </div>
+      <div class="private-keys">
+        <p
+          class="title"
+          @click="shouldShowPKForm = !shouldShowPKForm"
+        >
+          Trading Addresses ({{ loadedAddresses.length }})
+          <img
+            :src="chevronDownImage"
+            class="chevron-down"
+            :class="{ rotated : shouldShowPKForm }"
+          />
+        </p>
+        <div v-if="shouldShowPKForm && !hasUnlockedPrivateKeys">
+          <p
+            v-if="!isFileDetected"
+            class="text-center"
+          >
+            First set your password
+          </p>
+          <p
+            v-if="isFileDetected"
+            class="text-center"
+          >
+            Enter your password to load the addresses
+          </p>
+          <form
+            @submit.prevent="() => isFileDetected ? loadPrivateKeys() : readPrivateKeyFile()"
+          >
+            <input
+              v-model="password"
+              class="center"
+              type="password"
+              required
+            >
+            <div v-if="!isFileDetected">
+              <p class="text-center">
+                Then submit a Excel or CSV file with the addresses, private keys and names of the trading addresses
+              </p>
+              <FileManager 
+                id="2"
+                :no-preview="true"
+                file-type="C"
+                :extensions="'xls xlsx csv'"
+                :should-hide-no-file="false"
+                @file:new="storePrivateKeyArgs"
+              ></FileManager>
+            </div>
+            <p
+              v-if="errorMessagePK"
+              class="error-message"
+            >
+              {{ errorMessagePK }}
+            </p>
+            <button 
+              type="submit"
+              class="submit-button"
+            >
+              {{ isFileDetected ? 'Load' : 'Submit' }}
+            </button>
+          </form>
+          <span
+            v-if="isFileDetected"
+            class="action"
+            @click="hasUnlockedPrivateKeys = false, isFileDetected = false"
+          >Import another file</span>
+        </div>
+        <div v-if="shouldShowPKForm && hasUnlockedPrivateKeys">
+          <span
+            class="action"
+            @click="hasUnlockedPrivateKeys = false, isFileDetected = false"
+          >Import another file</span>
+        </div>
+      </div>
         <!-- Max Gas Input -->
         <div class="form-group">
-          <img class="icon-line" :src="gasImage" width="30"/>
+          <img
+            class="icon-line"
+            :src="gasImage"
+            width="30"
+          >
           <label>
             Max
-            <input class="medium-number" type="number" v-model.number="maxGasPrice" placeholder="Max Gas" /> gwei
+            <input
+              v-model.number="maxGasPrice"
+              class="medium-number"
+              type="number"
+              placeholder="Max Gas"
+            > gwei
           </label>
           <GasPrice 
-            @update:gas-price="setGasPrice"
-            :maxGasPrice="maxGasPrice"
+            :max-gas-price="maxGasPrice"
             :provider="provider"
-          />
+            @update:gas-price="setGasPrice"
+          ></GasPrice>
         </div>
       </div>
     </div>
-    <div class="app-container">
-      <div class="main-content">
-
-        <!-- Middle Column: Modes (paramétrage avancé) -->
-        <div class="middle-column">
-          <ManualTrading
-            @update:settings="setCurrentSettings"
-            @update:gasPrice="setGasPrice"
-            @update:trade="addTrade"
-            @refreshBalance="refreshBalance"
-            :addresses="loadedAddresses"
-            :gasPrice="gasPrice"
-            :maxGasPrice="maxGasPrice * 1000000000"
-            :ethPrice="ethPrice"
-            :provider="provider"
-            :confirmedTrade="confirmedTrade"
-            :isInitialBalanceFetchDone="isInitialBalanceFetchDone"
-          />
-        </div>
-
+  </div>
+  <div class="app-container">
+    <div class="main-content">
+      <!-- Middle Column: Modes (paramétrage avancé) -->
+      <div class="middle-column">
+        <ManualTrading
+          :addresses="loadedAddresses"
+          :gas-price="gasPrice"
+          :max-gas-price="maxGasPrice * 1000000000"
+          :eth-price="ethPrice"
+          :provider="provider"
+          @update:settings="setCurrentSettings"
+          :confirmed-trade="confirmedTrade"
+          @update:gas-price="setGasPrice"
+          :is-initial-balance-fetch-done="isInitialBalanceFetchDone"
+          @update:trade="addTrade"
+          @refresh-balance="refreshBalance"
+          :is-test-mode="isTestMode"
+          :price-deviation-percentage="priceDeviationPercentage"
+          :price-threshold="priceThreshold"
+        ></ManualTrading>
       </div>
-      <!-- Bottom Section: History and Live Visualization -->
-      <div class="bottom-section">
-        <div class="history-section">
-          <!-- <TransferControl
+    </div>
+    <!-- Bottom Section: History and Live Visualization -->
+    <div class="bottom-section">
+      <div class="history-section">
+        <!-- <TransferControl
             :settings="currentSettings"
             :sourceAddresses="sourceAddresses"
             :destinationAddresses="destinationAddresses"
@@ -119,16 +260,16 @@
             @deleteHistory="emptyTransfers"
             :infuraKeys="infuraKeys"
           /> -->
-          <TransferHistory 
-            @confirmedTrade="setConfirmedTrade"
-            :trades="trades"
-            :ethPrice="ethPrice"
-            :provider="provider"
-          />
-        </div>
+        <TransferHistory 
+          :trades="trades"
+          :eth-price="ethPrice"
+          :provider="provider"
+          @confirmed-trade="setConfirmedTrade"
+        ></TransferHistory>
       </div>
     </div>
-  </template>
+  </div>
+</template>
 
   <script>
   import { watch, shallowRef, onMounted, onBeforeMount, reactive, ref, markRaw, toRaw} from 'vue';
@@ -161,6 +302,11 @@
 
       const isTestMode = ref(false);
       const confirmedTrade = ref({});
+      const priceDeviationPercentage = ref(20);
+      const priceThreshold = ref(1);
+      const showSettings = ref(false);
+      const graphApiKey = ref('d692082c59f956790647e889e75fa84d');
+      const privateRpc = ref('https://rpc.mevblocker.io');
 
       const maxGasPrice = ref(3);
 
@@ -183,6 +329,66 @@
           maxGasPrice: maxGasPriceValue,
         })));
       })
+
+      // Watch and save test mode setting
+      watch(() => isTestMode.value, (testModeValue) => {
+        currentSettings.value = ({
+          ...currentSettings.value,
+          isTestMode: testModeValue,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          isTestMode: testModeValue,
+        })));
+      })
+
+      // Watch and save price deviation percentage setting
+      watch(() => priceDeviationPercentage.value, (deviationValue) => {
+        currentSettings.value = ({
+          ...currentSettings.value,
+          priceDeviationPercentage: deviationValue,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          priceDeviationPercentage: deviationValue,
+        })));
+      })
+
+      // Watch and save price threshold setting
+      watch(() => priceThreshold.value, (thresholdValue) => {
+        currentSettings.value = ({
+          ...currentSettings.value,
+          priceThreshold: thresholdValue,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          priceThreshold: thresholdValue,
+        })));
+      })
+
+      // Save Graph API key
+      const saveGraphApiKey = () => {
+        currentSettings.value = ({
+          ...currentSettings.value,
+          graphApiKey: graphApiKey.value,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          graphApiKey: graphApiKey.value,
+        })));
+      }
+      
+      // Save Private RPC
+      const savePrivateRpc = () => {
+        currentSettings.value = ({
+          ...currentSettings.value,
+          privateRpc: privateRpc.value,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          privateRpc: privateRpc.value,
+        })));
+      }
 
       const gasPrice = ref(1000000000);
       const setGasPrice = (currentGasPrice) => {
@@ -275,11 +481,6 @@
       ];
       
       const getBalance = async (address, token) => {
-        console.log('fetching balance ' + token.symbol)
-        if (isTestMode.value) {
-          return Math.floor(Math.random() * 60);
-        }
-
         const contract = new ethers.Contract(token.address, erc20Abi, toRaw(provider.value));
         if (!token.decimals)
           token.decimals = await contract.decimals();
@@ -300,7 +501,6 @@
       const ethPrice = ref(0);
 
       async function getEthUsd () {
-        console.log('fetching eth price')
         try {
           const url =
             'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd';
@@ -442,6 +642,16 @@
         const settings = await window.electronAPI.loadSettings();
         if (settings.maxGasPrice)
           maxGasPrice.value = settings.maxGasPrice;
+        if (settings.hasOwnProperty('isTestMode'))
+          isTestMode.value = settings.isTestMode;
+        if (settings.hasOwnProperty('priceDeviationPercentage'))
+          priceDeviationPercentage.value = settings.priceDeviationPercentage;
+        if (settings.hasOwnProperty('priceThreshold'))
+          priceThreshold.value = settings.priceThreshold;
+        if (settings.graphApiKey)
+          graphApiKey.value = settings.graphApiKey;
+        if (settings.privateRpc)
+          privateRpc.value = settings.privateRpc;
       
         isFileDetected.value = await window.electronAPI.isFileDetected();
         
@@ -465,6 +675,16 @@
       // Toggles the display of the Infura API keys section when the title is clicked
       const toggleInfuraKeys = () => {
         showInfuraKeys.value = !showInfuraKeys.value;
+      };
+      
+      // Toggles the settings section
+      const toggleSettings = () => {
+        showSettings.value = !showSettings.value;
+        // Close other sections when opening settings
+        if (showSettings.value) {
+          showInfuraKeys.value = false;
+          shouldShowPKForm.value = false;
+        }
       };
 
       const errorInfuraKey = ref('');
@@ -511,6 +731,10 @@
         gasPrice,
         setGasPrice,
         isTestMode,
+        priceDeviationPercentage,
+        priceThreshold,
+        showSettings,
+        toggleSettings,
         isProcessRunning,
         setIsProcessRunning,
         emptyTrades,
@@ -530,6 +754,10 @@
         setConfirmedTrade,
         confirmedTrade,
         isInitialBalanceFetchDone,
+        graphApiKey,
+        saveGraphApiKey,
+        privateRpc,
+        savePrivateRpc,
       }
     }
   };
@@ -618,6 +846,94 @@
     display: block;
     margin: 15px auto;
   }
+  
+  .test-mode-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+    gap: 15px;
+  }
+  
+  .price-deviation-setting {
+    margin-top: 0;
+  }
+  
+  .price-deviation-setting label {
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  
+  .price-deviation-setting input.small-number {
+    width: 30px;
+    padding: 2px 5px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    text-align: center;
+  }
+  
+  .graph-api-key-setting,
+  .private-rpc-setting {
+    margin-top: 0;
+  }
+  
+  .graph-api-key-setting label,
+  .private-rpc-setting label {
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  
+  .graph-api-key-setting input.api-key-input,
+  .private-rpc-setting input.api-key-input {
+    width: 250px;
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  
+  .settings-button {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 15px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  
+  .settings-button:hover {
+    background: #0056b3;
+  }
+  
+  .settings-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    flex: 1;
+    gap: 20px;
+  }
+  
+  .other-settings {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex: 1;
+    justify-content: space-around;
+  }
+  
+  .settings {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+  }
   </style>
 
   <style>
@@ -685,6 +1001,7 @@
     cursor: pointer;
     margin: 15px;
     display: block;
+    text-align: center;
   }
 
   .infura-keys {
@@ -778,5 +1095,24 @@
     position: relative;
     top: 10px;
     margin-right: 10px;
+  }
+
+  /* Test Mode Checkbox Styles */
+  .test-mode-container {
+    background-color: #fff;
+    padding: 10px;
+    border-radius: 5px;
+  }
+
+  .test-mode-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 0.9em;
+  }
+
+  .test-mode-checkbox {
+    margin: 0;
   }
 </style>

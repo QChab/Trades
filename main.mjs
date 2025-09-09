@@ -25,6 +25,145 @@ const UNIVERSAL_ROUTER_ADDRESS = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
 const BALANCER_VAULT_ADDRESS   = '0xBA12222222228d8Ba445958a75a0704d566BF2C8';
 const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
+// Nonce Management System for MEV-protected RPCs
+class NonceManager {
+  constructor() {
+    this.nonces = new Map(); // address -> {localNonce, lastUsed, lastTxTime}
+    this.STALE_TIME = 60000; // 1 minute in milliseconds
+    this.MIN_TX_DELAY = 3000; // Minimum 3 seconds between transactions from same address (MEV blocker needs time)
+  }
+
+  async getNonce(address) {
+    address = address.toLowerCase();
+    const now = Date.now();
+    const cached = this.nonces.get(address);
+    
+    // Check if we need to fetch from chain
+    const needsRefresh = !cached || (now - cached.lastUsed > this.STALE_TIME);
+    
+    if (needsRefresh) {
+      await this.refreshNonce(address);
+    }
+    
+    // Check if we need to delay for MEV blocker to process previous tx
+    if (cached && cached.lastTxTime) {
+      const timeSinceLastTx = now - cached.lastTxTime;
+      if (timeSinceLastTx < this.MIN_TX_DELAY) {
+        const delayNeeded = this.MIN_TX_DELAY - timeSinceLastTx;
+        console.log(`Delaying ${delayNeeded}ms before next transaction from ${address}`);
+        await new Promise(resolve => setTimeout(resolve, delayNeeded));
+      }
+    }
+    
+    const data = this.nonces.get(address);
+    console.log(`Using nonce ${data.localNonce} for ${address}`);
+    return data.localNonce;
+  }
+
+  async refreshNonce(address) {
+    address = address.toLowerCase();
+    
+    try {
+      // Get both pending and latest to handle edge cases
+      const [pendingNonce, latestNonce] = await Promise.all([
+        provider.getTransactionCount(address, 'pending'),
+        provider.getTransactionCount(address, 'latest')
+      ]);
+      
+      // Use the higher of the two
+      const chainNonce = Math.max(pendingNonce, latestNonce);
+      
+      // If we have a local nonce that's higher (recent unconfirmed tx), keep it
+      const cached = this.nonces.get(address);
+      const currentLocal = cached?.localNonce || 0;
+      const finalNonce = Math.max(chainNonce, currentLocal);
+      
+      this.nonces.set(address, {
+        localNonce: finalNonce,
+        lastUsed: Date.now(),
+        lastTxTime: cached?.lastTxTime || null
+      });
+      
+      console.log(`Refreshed nonce for ${address}: chain=${chainNonce}, local=${currentLocal}, using=${finalNonce}`);
+    } catch (err) {
+      console.error('Failed to refresh nonce from chain:', err);
+      // If we have a cached value and refresh fails, keep using it
+      if (this.nonces.has(address)) {
+        console.log('Using cached nonce due to refresh failure');
+      } else {
+        throw new Error(`Cannot get nonce for ${address}: ${err.message}`);
+      }
+    }
+  }
+
+  incrementNonce(address) {
+    address = address.toLowerCase();
+    const data = this.nonces.get(address);
+    
+    if (!data) {
+      throw new Error(`No nonce data for ${address} - call getNonce first`);
+    }
+    
+    const now = Date.now();
+    data.localNonce += 1;
+    data.lastUsed = now;
+    data.lastTxTime = now; // Record when transaction was sent
+    this.nonces.set(address, data);
+    
+    console.log(`Incremented nonce for ${address} to ${data.localNonce}`);
+  }
+
+  // Force refresh on transaction failure
+  async handleTransactionError(address, error) {
+    address = address.toLowerCase();
+    
+    // Check if it's a MEV blocker pending block error (likely nonce conflict)
+    const isMevBlockerError = error.message && (
+      error.message.includes('Failed in pending block') ||
+      error.message.includes('Reverted')
+    ) && error.code === 'SERVER_ERROR';
+    
+    // Check if it's a nonce-related error
+    const isNonceError = error.message && (
+      error.message.includes('nonce') ||
+      error.message.includes('replacement transaction') ||
+      error.code === 'NONCE_EXPIRED' ||
+      error.code === -32000
+    );
+    
+    if (isNonceError || isMevBlockerError) {
+      console.log(`Transaction error detected for ${address} (MEV blocker: ${isMevBlockerError}), forcing refresh`);
+      await this.refreshNonce(address);
+      
+      // For MEV blocker errors, increase the delay for next transaction
+      if (isMevBlockerError) {
+        const data = this.nonces.get(address);
+        if (data) {
+          // Add extra delay by setting lastTxTime to current time
+          data.lastTxTime = Date.now();
+          this.nonces.set(address, data);
+          console.log(`Added extra delay for ${address} due to MEV blocker error`);
+        }
+      }
+    }
+  }
+
+  // Clear stale entries periodically (optional cleanup)
+  cleanupStale() {
+    const now = Date.now();
+    const staleTime = this.STALE_TIME * 10; // 10 minutes
+    
+    for (const [address, data] of this.nonces.entries()) {
+      if (now - data.lastUsed > staleTime) {
+        this.nonces.delete(address);
+        console.log(`Cleaned up stale nonce for ${address}`);
+      }
+    }
+  }
+}
+
+const nonceManager = new NonceManager();
+
 const UNIVERSAL_ROUTER_ABI       = [
   'function execute(bytes commands, bytes[] inputs, uint256 deadline) external payable returns (bytes[] memory results)'
 ];
@@ -268,32 +407,64 @@ async function sendTransaction(transaction) {
 
   try {
     const wallet = getWallet(transaction.from, true);
+    const walletAddress = await wallet.getAddress();
 
-    const balance = await provider.getBalance(wallet.address);
+    const balance = await provider.getBalance(walletAddress);
     const balanceEth = Number(ethers.utils.formatEther(balance));
     if (balanceEth < 0.0005)
-      throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.0005)`)
+      throw new Error(`Eth Balance of address ${walletAddress} too low (< 0.0005)`)
     else if (balanceEth < 0.01)
-      warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
+      warnings.push(`Beware eth Balance of address ${walletAddress} low (< 0.01)`)
     
     console.log(transaction.contractAddress);
 
+    let nonce;
+    
+    // If a nonce is explicitly provided (for mixed trades), use it with a delay
+    if (transaction.nonce !== undefined && transaction.nonce !== null) {
+      nonce = transaction.nonce;
+      console.log(`Using provided nonce ${nonce} for mixed trade, waiting 900ms...`);
+      await new Promise(r => setTimeout(r, 900));
+      
+      // Update the NonceManager's cache to keep it in sync
+      const data = nonceManager.nonces.get(walletAddress.toLowerCase());
+      if (data && data.localNonce <= nonce) {
+        data.localNonce = nonce + 1;
+        data.lastUsed = Date.now();
+        data.lastTxTime = Date.now();
+        nonceManager.nonces.set(walletAddress.toLowerCase(), data);
+      }
+    } else {
+      // Get nonce from NonceManager for regular trades
+      nonce = await nonceManager.getNonce(walletAddress);
+    }
+
     const txData = {
-      from: await wallet.getAddress(),
+      from: walletAddress,
       to: transaction.contractAddress,
       data: transaction.callData,
       value: transaction.value,
       maxFeePerGas: transaction.maxFeePerGas || ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1000000000).toFixed(3), 9),
       maxPriorityFeePerGas: transaction.maxPriorityFeePerGas || ethers.utils.parseUnits((0.01 + Math.random() * .05 + (Number(gasPrice) / (40 * 1000000000))).toFixed(3), 9),
-    }
-
-    if (transaction.nonce) {
-      txData.nonce = transaction.nonce;
-      await new Promise(r => setTimeout(r, 900));
+      nonce: nonce
     }
 
     console.log(txData);
-    let txResponse = await wallet.sendTransaction(txData);
+    
+    let txResponse;
+    try {
+      txResponse = await wallet.sendTransaction(txData);
+      console.log(`Transaction sent with nonce ${txResponse?.nonce}, hash: ${txResponse?.hash}`);
+      
+      // Only increment nonce if we got it from NonceManager (not for provided nonces)
+      if (transaction.nonce === undefined || transaction.nonce === null) {
+        nonceManager.incrementNonce(walletAddress);
+      }
+    } catch (err) {
+      // Handle nonce errors
+      await nonceManager.handleTransactionError(walletAddress, err);
+      throw err;
+    }
 
     saveTradeInDB({...transaction.tradeSummary, txId: txResponse?.hash});
 
@@ -313,11 +484,14 @@ async function sendTransaction(transaction) {
     const pk = privateKeys.find((PK) => PK.address.toLowerCase() === from);
     const PRIVATE_KEY = pk.pk;
     
+    // Use privateRpc from settings or default to mevblocker
+    const privateRpcUrl = settings?.privateRpc || 'https://rpc.mevblocker.io';
+    
     const wallet = new ethers.Wallet(PRIVATE_KEY, isPrivate ? 
-      new ethers.providers.JsonRpcProvider('https://rpc.mevblocker.io', { chainId: 1, name: 'homestead' }) : provider);
+      new ethers.providers.JsonRpcProvider(privateRpcUrl, { chainId: 1, name: 'homestead' }) : provider);
 
     if (!wallet || !wallet.address || wallet.address.toLowerCase() !== from) {
-      throw new Error(`Incorrect private key for address ${transfer.from}`)
+      throw new Error(`Incorrect private key for address ${address}`)
     }
     return wallet;
   }
@@ -331,25 +505,52 @@ const ERC20_ABI = [
 async function approveSpender({ from, contractAddress, spender, permit2Spender }) {
   const warnings = [];
   try {
+    // Validate input parameters
+    if (!from || !ethers.utils.isAddress(from)) {
+      throw new Error('Invalid from address: ' + from);
+    }
+    if (!contractAddress || !ethers.utils.isAddress(contractAddress)) {
+      throw new Error('Invalid contract address: ' + contractAddress);
+    }
+    if (!spender || !ethers.utils.isAddress(spender)) {
+      throw new Error('Invalid spender address: ' + spender);
+    }
+    if (permit2Spender && !ethers.utils.isAddress(permit2Spender)) {
+      throw new Error('Invalid permit2Spender address: ' + permit2Spender);
+    }
+    
     const wallet = getWallet(from);
-    const balance = await provider.getBalance(wallet.address);
+    const walletAddress = await wallet.getAddress();
+    const balance = await provider.getBalance(walletAddress);
     const balanceEth = Number(ethers.utils.formatEther(balance));
     if (balanceEth < 0.0004)
-      throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.0005)`)
+      throw new Error(`Eth Balance of address ${walletAddress} too low (< 0.0005)`)
     else if (balanceEth < 0.01)
-      warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`);
+      warnings.push(`Beware eth Balance of address ${walletAddress} low (< 0.01)`);
+
+    // Get nonce for first transaction
+    let nonce = await nonceManager.getNonce(walletAddress);
 
     const overrides = {
       maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1e9).toFixed(3), 9),
       maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * .05 + (Number(gasPrice) / (40 * 1e9))).toFixed(3), 9),
+      nonce: nonce
     };
 
     // 1. Approve ERC20 for spender (Permit2, Vault, or Router)
     const erc20 = new ethers.Contract(contractAddress, ERC20_ABI, wallet);
     let allowance = await erc20.allowance(from, spender);
     if (BigNumber.from(allowance).lt(BigNumber.from('100000000000000000000000000'))) {
-      const tx = await erc20.approve(spender, '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', overrides);
-      await tx.wait();
+      try {
+        const tx = await erc20.approve(spender, '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', overrides);
+        console.log(`ERC20 approval sent with nonce ${nonce}, hash: ${tx?.hash}`);
+        nonceManager.incrementNonce(walletAddress);
+        await tx.wait();
+        nonce = await nonceManager.getNonce(walletAddress); // Get updated nonce for next transaction
+      } catch (err) {
+        await nonceManager.handleTransactionError(walletAddress, err);
+        throw err;
+      }
     }
     console.log('Allowance approved for', contractAddress, 'to', spender);
 
@@ -363,14 +564,22 @@ async function approveSpender({ from, contractAddress, spender, permit2Spender }
 
       let [p2allow] = await permit2Contract.allowance(from, contractAddress, permit2Spender);
       if (BigNumber.from(p2allow).lt(BigNumber.from('100000000000000000000000000'))) {
-        const tx2 = await permit2Contract.approve(
-          contractAddress,
-          permit2Spender,
-          '1000000000000000000000000000000000000000000000',
-          Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365 * 50, // 50 years
-          overrides
-        );
-        await tx2.wait();
+        const overrides2 = { ...overrides, nonce };
+        try {
+          const tx2 = await permit2Contract.approve(
+            contractAddress,
+            permit2Spender,
+            '1000000000000000000000000000000000000000000000',
+            Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365 * 50, // 50 years
+            overrides2
+          );
+          console.log(`Permit2 approval sent with nonce ${nonce}, hash: ${tx2?.hash}`);
+          nonceManager.incrementNonce(walletAddress);
+          await tx2.wait();
+        } catch (err) {
+          await nonceManager.handleTransactionError(walletAddress, err);
+          throw err;
+        }
       }
     }
 
@@ -391,6 +600,17 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
     if (!tradeSummary.fromToken?.address) throw new Error('Missing from token address in trade details')
     if (!tradeSummary.toToken?.address) throw new Error('Missing to token address in trade details')
     if (!tradeSummary.sender?.address) throw new Error('Missing sender address in trade details')
+    
+    // Validate addresses
+    if (!ethers.utils.isAddress(tradeSummary.fromToken.address) && tradeSummary.fromToken.address !== ethers.constants.AddressZero) {
+      throw new Error('Invalid from token address: ' + tradeSummary.fromToken.address);
+    }
+    if (!ethers.utils.isAddress(tradeSummary.toToken.address) && tradeSummary.toToken.address !== ethers.constants.AddressZero) {
+      throw new Error('Invalid to token address: ' + tradeSummary.toToken.address);
+    }
+    if (!ethers.utils.isAddress(tradeSummary.sender.address)) {
+      throw new Error('Invalid sender address: ' + tradeSummary.sender.address);
+    }
 
     if (tradeSummary.fromToken.address !== ethers.constants.AddressZero) {
       const erc20 = new ethers.Contract(
@@ -416,12 +636,13 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
     }
     const router = new ethers.Contract(UNIVERSAL_ROUTER_ADDRESS, UNIVERSAL_ROUTER_ABI, wallet);
     
-    const balance = await provider.getBalance(wallet.address);
+    const walletAddress = await wallet.getAddress();
+    const balance = await provider.getBalance(walletAddress);
     const balanceEth = Number(ethers.utils.formatEther(balance));
     if (balanceEth < 0.0005)
-      throw new Error(`Eth Balance of address ${wallet.address} too low (< 0.0005)`)
+      throw new Error(`Eth Balance of address ${walletAddress} too low (< 0.0005)`)
     else if (balanceEth < 0.01)
-      warnings.push(`Beware eth Balance of address ${wallet.address} low (< 0.01)`)
+      warnings.push(`Beware eth Balance of address ${walletAddress} low (< 0.01)`)
     
     if (onlyEstimate) {
       const gasEstimate = await router
@@ -434,9 +655,39 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
       return {success: true, estimatedCostEth}
     }
 
-    const tx = await router.execute(
-      ...args,
-    )
+    // Get nonce from NonceManager
+    const nonce = await nonceManager.getNonce(walletAddress);
+    
+    // Add nonce to the transaction overrides (last argument)
+    const argsWithNonce = [...args];
+    if (argsWithNonce.length > 0) {
+      const lastArg = argsWithNonce[argsWithNonce.length - 1];
+      // Check if last arg is overrides object
+      if (typeof lastArg === 'object' && !Array.isArray(lastArg) && !BigNumber.isBigNumber(lastArg)) {
+        // Add nonce to existing overrides
+        argsWithNonce[argsWithNonce.length - 1] = { ...lastArg, nonce };
+      } else {
+        // Add new overrides object with nonce
+        argsWithNonce.push({ nonce });
+      }
+    } else {
+      // This shouldn't happen for router.execute, but handle it
+      argsWithNonce.push({ nonce });
+    }
+
+    let tx;
+    try {
+      tx = await router.execute(...argsWithNonce);
+      console.log(`Transaction sent with nonce ${tx?.nonce}, hash: ${tx?.hash}`);
+      
+      // Increment nonce after successful submission
+      nonceManager.incrementNonce(walletAddress);
+    } catch (err) {
+      // Handle nonce errors
+      await nonceManager.handleTransactionError(walletAddress, err);
+      throw err;
+    }
+    
     saveTradeInDB({...tradeSummary, txId: tx?.hash});
 
     return {success: true, warnings, tx: JSON.parse(JSON.stringify(tx))};
@@ -446,6 +697,24 @@ async function sendTrade({tradeSummary, args, onlyEstimate}) {
   }
 }
 function savePendingOrder(order) {
+  // Validate token addresses before saving
+  const fromTokenAddress = order.fromToken?.address;
+  const toTokenAddress = order.toToken?.address;
+  const senderAddress = order.sender?.address;
+  
+  if (!fromTokenAddress || !ethers.utils.isAddress(fromTokenAddress)) {
+    console.error('Invalid fromToken address in savePendingOrder:', fromTokenAddress);
+    return;
+  }
+  if (!toTokenAddress || !ethers.utils.isAddress(toTokenAddress)) {
+    console.error('Invalid toToken address in savePendingOrder:', toTokenAddress);
+    return;
+  }
+  if (!senderAddress || !ethers.utils.isAddress(senderAddress)) {
+    console.error('Invalid sender address in savePendingOrder:', senderAddress);
+    return;
+  }
+  
   const sql = `
     INSERT INTO PendingOrder (
       id, 
@@ -471,15 +740,15 @@ function savePendingOrder(order) {
     order.id,
     order.fromAmount,
     order.toAmount,
-    order.fromToken?.address,
+    fromTokenAddress,
     order.fromToken?.symbol,
-    order.toToken?.address,
+    toTokenAddress,
     order.toToken?.symbol,
     order.priceLimit,
     order.currentMarketPrice,
     order.orderType || 'take_profit',
     order.shouldSwitchTokensForLimit ? 1 : 0,
-    order.sender?.address,
+    senderAddress,
     order.sender?.name,
     order.status || 'pending',
     order.createdAt || new Date().toISOString(),
@@ -531,7 +800,28 @@ function getAllPendingOrders() {
         console.error('Failed to fetch pending orders:', err);
         resolve([]); // Return empty array instead of rejecting
       } else {
-        resolve(rows || []);
+        // Filter out orders with invalid addresses before returning
+        const validOrders = (rows || []).filter(order => {
+          const isValid = order.fromTokenAddress && 
+                          order.toTokenAddress && 
+                          order.senderAddress &&
+                          ethers.utils.isAddress(order.fromTokenAddress) &&
+                          ethers.utils.isAddress(order.toTokenAddress) &&
+                          ethers.utils.isAddress(order.senderAddress);
+          
+          if (!isValid) {
+            console.warn('Filtering out order with invalid addresses:', {
+              id: order.id,
+              fromTokenAddress: order.fromTokenAddress,
+              toTokenAddress: order.toTokenAddress,
+              senderAddress: order.senderAddress
+            });
+          }
+          
+          return isValid;
+        });
+        
+        resolve(validOrders);
       }
     });
   });
@@ -787,6 +1077,16 @@ function createWindow() {
   ipcMain.handle('send-trade', (event, trade) => {
     return sendTrade(trade);
   });
+  
+  ipcMain.handle('get-current-nonce', async (event, address) => {
+    try {
+      const nonce = await nonceManager.getNonce(address.toLowerCase());
+      return { success: true, nonce };
+    } catch (err) {
+      console.error('Failed to get nonce:', err);
+      return { success: false, error: err.message };
+    }
+  });
 
   ipcMain.handle('approve-spender', (event, from, contractAddress, spender, permit2Spender) => {
     return approveSpender({from, contractAddress, spender, permit2Spender});
@@ -1018,6 +1318,14 @@ function createWindow() {
 app.whenReady().then(() => {
   createWindow();
   initDatabase();
+  
+  // Set up periodic cleanup for stale nonces (every 5 minutes)
+  const nonceCleanupInterval = setInterval(() => {
+    nonceManager.cleanupStale();
+  }, 5 * 60 * 1000);
+  
+  // Store interval ID for cleanup on quit
+  global.nonceCleanupInterval = nonceCleanupInterval;
 
   // For macOS: Re-create a window when the dock icon is clicked and no windows are open
   app.on('activate', () => {
@@ -1053,6 +1361,10 @@ app.on('before-quit', () => {
 // Listen for the 'will-quit' event to handle final cleanup before the application exits
 app.on('will-quit', () => {
   console.log('App will quit now. Final cleanup can be performed here.');
+  // Clear the nonce cleanup interval
+  if (global.nonceCleanupInterval) {
+    clearInterval(global.nonceCleanupInterval);
+  }
   // This is the last chance to clean up resources before the app completely shuts down.
 });
   

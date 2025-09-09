@@ -31,9 +31,9 @@
         </span>
         <span class="from">{{ t.senderName || t.sender?.name }} | {{ t.protocol }}</span>
         <span class="date">{{ (new Date(t.sentDate || t.timestamp)).toLocaleString() }}</span>
-        <span class="gas"> ${{ t.gasCost?.substring(0, 4)}} </span>
+        <span class="gas">{{ t.txId && t.txId.toString().startsWith('TEST') ? 'TEST' : '$' + (t.gasCost?.substring(0, 4) || '0') }}</span>
         <span class="gas" v-if="t.type"> {{ t.type }} </span>
-        <span @click.stop="openTxDetails(t.txId)" class="view">View</span>
+        <span v-if="!t.txId || !t.txId.toString().startsWith('TEST')" @click.stop="openTxDetails(t.txId)" class="view">View</span>
         <span @click.stop="deleteTrade(t, index)" class="delete">Delete</span>
       </li>
     </transition-group>
@@ -62,6 +62,9 @@ export default {
   },
   emits: ['confirmedTrade'],
   setup(props, {emit}) {
+    // Map to track which txIds have checkTx running
+    const runningChecks = new Map();
+    
     // Utility function to format UNIX timestamps.
     function formatTimestamp(timestamp) {
       const date = new Date(timestamp);
@@ -140,34 +143,88 @@ export default {
     }
 
     const checkTx = async (trade) => {
-      if (trade.isConfirmed) return;
+      // Validate input
+      if (!trade || !trade.txId || trade.isConfirmed) return;
+      
+      // Skip checking TEST transactions (they don't exist on blockchain)
+      if (trade.txId.toString().startsWith('TEST')) {
+        trade.isConfirmed = true;
+        trade.gasCost = 'TEST';
+        return;
+      }
+
+      // Check if this txId is already being checked
+      if (runningChecks.has(trade.txId)) {
+        console.log(`checkTx already running for ${trade.txId}, skipping`);
+        return;
+      }
+
+      // Mark this txId as being checked
+      runningChecks.set(trade.txId, true);
 
       const providersList = [
         new ethers.providers.JsonRpcProvider('https://eth1.lava.build', { chainId: 1, name: 'homestead' }),
         new ethers.providers.JsonRpcProvider('https://mainnet.gateway.tenderly.co', { chainId: 1, name: 'homestead' }),
-        new ethers.providers.JsonRpcProvider('https://eth-pokt.nodies.app', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://0xrpc.io/eth', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://eth.drpc.org', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://ethereum.therpc.io', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://eth.merkle.io', { chainId: 1, name: 'homestead' }),
+        new ethers.providers.JsonRpcProvider('https://eth.llamarpc.com', { chainId: 1, name: 'homestead' }),
       ];
 
       let i = 0;
-      while (!trade.isConfirmed && trade.txId && !trade.hasFailed) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const receipt = await providersList[i % providersList.length].getTransactionReceipt(trade.txId)
-        if (receipt) {
-          emit('confirmedTrade', trade);
-          if (receipt.status === '1' || receipt.status === 1) {
-            trade.isConfirmed = true;
-            const {gas, tokens} = await analyseReceipt(trade, receipt, toRaw(props.provider))
-            trade.gasCost = gas.paidUsd + '';
-            trade.toAmount = tokens[0]?.amount || 'unknown';
-            window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, trade.toAmount);
-          } else {
-            const {gas} = await analyseReceipt(trade, receipt, toRaw(props.provider))
-            trade.hasFailed = true;
-            trade.gasCost = gas.paidUsd + '';
-            window.electronAPI.failTrade(trade.txId, trade.gasCost);
+      const maxRetries = 100; // Prevent infinite loop - ~5 minutes with 3s delay
+      
+      try {
+        while (!trade.isConfirmed && trade.txId && !trade.hasFailed && i < maxRetries) {
+          await new Promise((r) => setTimeout(r, 4000));
+          
+          try {
+            const receipt = await providersList[i % providersList.length].getTransactionReceipt(trade.txId)
+            if (receipt) {
+              // Include receipt status in the event
+              const isSuccessful = receipt.status === '1' || receipt.status === 1;
+              emit('confirmedTrade', { ...trade, receiptStatus: isSuccessful });
+              try {
+                if (isSuccessful) {
+                  trade.isConfirmed = true;
+                  const {gas, tokens} = await analyseReceipt(trade, receipt, toRaw(props.provider))
+                  trade.gasCost = gas.paidUsd + '';
+                  trade.toAmount = tokens[0]?.amount || 'unknown';
+                  window.electronAPI.confirmTrade(trade.txId, gas.paidUsd, trade.toAmount);
+                } else {
+                  const {gas} = await analyseReceipt(trade, receipt, toRaw(props.provider))
+                  trade.hasFailed = true;
+                  trade.gasCost = gas.paidUsd + '';
+                  window.electronAPI.failTrade(trade.txId, trade.gasCost);
+                }
+              } catch (analyseError) {
+                console.error('Error analyzing receipt:', analyseError);
+                // Still mark as confirmed/failed even if analysis fails
+                if (receipt.status === '1' || receipt.status === 1) {
+                  trade.isConfirmed = true;
+                  window.electronAPI.confirmTrade(trade.txId, 0, 'unknown');
+                } else {
+                  trade.hasFailed = true;
+                  window.electronAPI.failTrade(trade.txId, '0');
+                }
+              }
+              break; // Exit loop once receipt is found
+            }
+          } catch (error) {
+            console.error(`Provider ${i % providersList.length} failed:`, error.message);
+            // Continue to next provider
           }
+          
+          ++i;
         }
-        ++i;
+        
+        if (i >= maxRetries) {
+          console.error(`Transaction ${trade.txId} check timed out after ${maxRetries} attempts`);
+        }
+      } finally {
+        // Always clean up the running check entry
+        runningChecks.delete(trade.txId);
       }
     }
 
@@ -216,7 +273,7 @@ export default {
           const status = t.hasFailed ? 'Failed' : (t.isConfirmed ? 'Confirmed' : 'Pending');
           const toAmount = (!t.toAmount || t.toAmount === 'unknown') ? t.expectedToAmount : t.toAmount;
           const date = new Date(t.sentDate || t.timestamp).toISOString();
-          const gasCost = t.gasCost || '0';
+          const gasCost = (t.txId && t.txId.toString().startsWith('TEST')) ? 'TEST' : (t.gasCost || '0');
           
           return [
             status,

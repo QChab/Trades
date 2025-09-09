@@ -1,6 +1,6 @@
 {
   "name": "trades",
-  "version": "1.3.0",
+  "version": "1.9.1",
   "description": "App for manual and automated trades of ERC20 tokens.",
   "main": "main.mjs",
   "repository": {
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "NODE_ENV=development electron .",
-    "lint": "eslint --ext .js,.vue src/ tests/",
+    "lint": "eslint --ext .js,.vue src/",
     "test": "jest",
     "build": "vite build && electron-builder",
     "buildSign": "node scripts/buildSign.js",
