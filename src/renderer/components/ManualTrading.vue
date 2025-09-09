@@ -118,7 +118,7 @@
               v-if="fromAmount"
               class="usd-amount"
             >
-              ${{ spaceThousands((fromAmount * tokensByAddresses[fromTokenAddress]?.price).toFixed(1)) }}
+              ${{ spaceThousands((fromAmount * tokensByAddresses[fromTokenAddress]?.price).toFixed(2)) }}
             </span>
           </div>
 
@@ -181,7 +181,7 @@
               class="usd-amount"
             >
               <span v-if="tokensByAddresses[toTokenAddress]?.price">
-                ${{ spaceThousands((Number(tradeSummary.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(1)) }}
+                ${{ spaceThousands((Number(tradeSummary.toAmount) * tokensByAddresses[toTokenAddress].price).toFixed(2)) }}
               </span>
               <span v-if="tokensByAddresses[fromTokenAddress]?.price && tokensByAddresses[toTokenAddress]?.price">
                 ({{ -((fromAmount * tokensByAddresses[fromTokenAddress].price - Number(tradeSummary.toAmount) * tokensByAddresses[toTokenAddress].price) * 100 / (fromAmount * tokensByAddresses[fromTokenAddress].price)).toFixed(2) }}%)
@@ -527,7 +527,7 @@
                   <span>
                     {{ order.createdAt ? new Date(order.createdAt).toLocaleString() : 'Unknown' }}
                     <span v-if="order.currentMarketPrice">
-                      at {{ order.currentMarketPrice.toFixed(3) }}
+                      at {{ order.currentMarketPrice.toFixed(4) }}
                     </span>
                     <span
                       class="current-market-price"
@@ -933,7 +933,7 @@ export default {
       // If shouldInvert is true, show the inverse price
       const displayPrice = shouldInvert ? (1 / marketPrice) : marketPrice;
       
-      return displayPrice.toFixed(3);
+      return displayPrice.toFixed(4);
     };
 
     const balanceString = (ownerAddress, tokenAddr) => {

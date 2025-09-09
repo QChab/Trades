@@ -79,7 +79,7 @@
     <div class="market-price">
       <span class="price-value">
         1 {{ tokenA?.symbol }} = 
-        <span>{{ currentMarketPrice.toFixed(2) }} {{ tokenB?.symbol }}</span>
+        <span>{{ currentMarketPrice.toFixed(4) }} {{ tokenB?.symbol }}</span>
       </span>
     </div>
 
@@ -115,8 +115,8 @@
                   step="0.000001"
                   placeholder="0.0"
                   class="price-input"
-                  @focus="saveOriginalPrice('buy', index, level.triggerPrice)"
-                  @change="updateLevel('buy', index)"
+                  @focus="onPriceFocus('buy', index, level.triggerPrice)"
+                  @blur="onPriceBlur('buy', index)"
                   @keyup.enter="$event.target.blur()"
                 >
                 <span
@@ -203,8 +203,8 @@
                   step="0.000001"
                   placeholder="0.0"
                   class="price-input"
-                  @focus="saveOriginalPrice('sell', index, level.triggerPrice)"
-                  @change="updateLevel('sell', index)"
+                  @focus="onPriceFocus('sell', index, level.triggerPrice)"
+                  @blur="onPriceBlur('sell', index)"
                   @keyup.enter="$event.target.blur()"
                 >
                 <span
@@ -345,15 +345,15 @@ export default {
 
     // Initialize 3 sell levels and 3 buy levels
     const sellLevels = reactive([
-      { triggerPrice: null, balancePercentage: null, status: 'inactive' },
-      { triggerPrice: null, balancePercentage: null, status: 'inactive' },
-      { triggerPrice: null, balancePercentage: null, status: 'inactive' }
+      { triggerPrice: null, balancePercentage: null, status: 'inactive', isBeingEdited: false },
+      { triggerPrice: null, balancePercentage: null, status: 'inactive', isBeingEdited: false },
+      { triggerPrice: null, balancePercentage: null, status: 'inactive', isBeingEdited: false }
     ]);
     
     const buyLevels = reactive([
-      { triggerPrice: null, balancePercentage: null, status: 'inactive' },
-      { triggerPrice: null, balancePercentage: null, status: 'inactive' },
-      { triggerPrice: null, balancePercentage: null, status: 'inactive' }
+      { triggerPrice: null, balancePercentage: null, status: 'inactive', isBeingEdited: false },
+      { triggerPrice: null, balancePercentage: null, status: 'inactive', isBeingEdited: false },
+      { triggerPrice: null, balancePercentage: null, status: 'inactive', isBeingEdited: false }
     ]);
 
     const { tokenA, tokenB, tokensByAddresses } = toRefs(props);
@@ -680,6 +680,23 @@ export default {
       }
     };
     
+    const onPriceFocus = (type, index, price) => {
+      const levels = type === 'sell' ? sellLevels : buyLevels;
+      levels[index].isBeingEdited = true;
+      // Also save original price
+      const key = `${type}-${index}`;
+      originalPrices.value[key] = price;
+      // Emit update to notify parent that this level is being edited
+      emitOrderUpdate();
+    };
+    
+    const onPriceBlur = (type, index) => {
+      const levels = type === 'sell' ? sellLevels : buyLevels;
+      levels[index].isBeingEdited = false;
+      // Call updateLevel to validate and emit properly
+      updateLevel(type, index);
+    };
+    
     const saveOriginalPrice = (type, index, price) => {
       const key = `${type}-${index}`;
       originalPrices.value[key] = price;
@@ -779,8 +796,12 @@ export default {
     
     const onPercentageFocus = (type, index, event) => {
       const key = `${type}-${index}`;
+      const levels = type === 'sell' ? sellLevels : buyLevels;
+      levels[index].isBeingEdited = true;
       focusedPercentageInput.value = key;
       tempPercentageValue.value = event.target.value;
+      // Emit update to notify parent that this level is being edited
+      emitOrderUpdate();
     };
     
     const onPercentageInput = (event) => {
@@ -791,6 +812,9 @@ export default {
     const onPercentageBlur = (type, index, event) => {
       const levels = type === 'sell' ? sellLevels : buyLevels;
       const level = levels[index];
+      
+      // Clear editing flag
+      level.isBeingEdited = false;
       
       // Clear focus tracking
       focusedPercentageInput.value = null;
@@ -874,6 +898,9 @@ export default {
     };
 
     const getLevelStatus = computed(() => (type, level) => {
+      // Show "Not set" if level is being edited
+      if (level.isBeingEdited) return 'Not set';
+      
       if (!level.triggerPrice || !level.balancePercentage) return 'Not set';
       if (isPaused.value) return 'Paused';
       
@@ -890,6 +917,9 @@ export default {
 
     // Also update the getLevelStatusClass method
     const getLevelStatusClass = computed(() => (type, level) => {
+      // Show inactive status if level is being edited
+      if (level.isBeingEdited) return 'status-inactive';
+      
       if (!level.triggerPrice || !level.balancePercentage) return 'status-inactive';
       if (isPaused.value) return 'status-paused';
       
@@ -911,16 +941,40 @@ export default {
         isRandomMode: isRandomMode.value,
         minimumAmount: minimumAmount.value,
         limitPriceInDollars: limitPriceInDollars.value,
-        sellLevels: sellLevels.map((level, index) => ({
-          ...level,
-          index,
-          type: 'sell',
-        })),
-        buyLevels: buyLevels.map((level, index) => ({
-          ...level,
-          index,
-          type: 'buy',
-        })),
+        sellLevels: sellLevels.map((level, index) => {
+          // If level is being edited, emit an empty level to preserve indexes
+          if (level.isBeingEdited) {
+            return {
+              triggerPrice: null,
+              balancePercentage: null,
+              status: 'inactive',
+              index,
+              type: 'sell',
+            };
+          }
+          return {
+            ...level,
+            index,
+            type: 'sell',
+          };
+        }),
+        buyLevels: buyLevels.map((level, index) => {
+          // If level is being edited, emit an empty level to preserve indexes
+          if (level.isBeingEdited) {
+            return {
+              triggerPrice: null,
+              balancePercentage: null,
+              status: 'inactive',
+              index,
+              type: 'buy',
+            };
+          }
+          return {
+            ...level,
+            index,
+            type: 'buy',
+          };
+        }),
       };
       
       emit('orderUpdate', orderData);
@@ -975,14 +1029,20 @@ export default {
       if (newDetails) {
         if (newDetails.sellLevels) {
           for (let i = 0; i < newDetails.sellLevels.length; i++) {
-            // Update the reactive level object properties
-            Object.assign(sellLevels[i], newDetails.sellLevels[i]);
+            // Skip updating if this level is being edited
+            if (!sellLevels[i].isBeingEdited) {
+              // Update the reactive level object properties
+              Object.assign(sellLevels[i], newDetails.sellLevels[i]);
+            }
           }
         }
         if (newDetails.buyLevels) {
           for (let i = 0; i < newDetails.buyLevels.length; i++) {
-            // Update the reactive level object properties
-            Object.assign(buyLevels[i], newDetails.buyLevels[i]);
+            // Skip updating if this level is being edited
+            if (!buyLevels[i].isBeingEdited) {
+              // Update the reactive level object properties
+              Object.assign(buyLevels[i], newDetails.buyLevels[i]);
+            }
           }
         }
         if (newDetails.isPaused !== undefined)
@@ -1056,11 +1116,13 @@ export default {
       saveOriginalPrice,
       updatePercentage,
       
-      // Percentage input focus handling
+      // Input focus handling
       onPercentageFocus,
       onPercentageInput,
       onPercentageBlur,
       getPercentageInputValue,
+      onPriceFocus,
+      onPriceBlur,
     };
   }
 };
