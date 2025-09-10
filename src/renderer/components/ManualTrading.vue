@@ -1224,6 +1224,8 @@ export default {
           ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .75, senderAddr, false) : null,
         (shouldUseUniswapAndBalancerValue)
           ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .10, senderAddr, !shouldUseBalancerValue) : null,
+        (shouldUseUniswapAndBalancerValue)
+          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .01, senderAddr, !shouldUseBalancerValue) : null,
       ]);
 
       console.log(results);
@@ -1387,22 +1389,31 @@ export default {
 
         if (!bestMixedOption || (bestMixedOption?.fraction === 90)) {
           console.log('No mixed trades found');
-          const resultsSmaller = await Promise.allSettled([
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .01, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .02, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .03, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .05, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .07, senderAddr, false)
-          ]);
-          for (let i = 0 ; i < resultsSmaller.length ; i++) {
-            const res = resultsSmaller[i];
-            const fraction = [99, 98, 97, 95, 93][i]
-            if (res && res.status === 'fulfilled' && res.value) {
-              const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              console.log(trade)
-              // Include all trades, even negative (to find least bad option)
-              mixedOptions.push({ trade, fraction: fraction });
+          // Check if the 0.01 Balancer test from the initial batch succeeded
+          // results[5] is the 0.01 test from the initial Promise.allSettled
+          const balancer001Succeeded = results[5] && results[5].status === 'fulfilled' && results[5].value;
+          
+          if (balancer001Succeeded) {
+            // Only test larger amounts if 0.01 succeeded
+            const resultsSmaller = await Promise.allSettled([
+              results[5],
+              getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .02, senderAddr, false),
+              getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .03, senderAddr, false),
+              getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .05, senderAddr, false),
+              getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .07, senderAddr, false)
+            ]);
+            for (let i = 0 ; i < resultsSmaller.length ; i++) {
+              const res = resultsSmaller[i];
+              const fraction = [99, 98, 97, 95, 93][i]
+              if (res && res.status === 'fulfilled' && res.value) {
+                const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
+                console.log(trade)
+                // Include all trades, even negative (to find least bad option)
+                mixedOptions.push({ trade, fraction: fraction });
+              }
             }
+          } else {
+            console.log('Skipping additional Balancer tests since 0.01 amount failed');
           }
         }
 
@@ -3481,7 +3492,7 @@ export default {
           }
         }
         
-        console.log(`Multi-address execution completed. Order ${order.id}: ${order.status}, executed: ${totalExecuted}/${order.fromAmount}`);
+        console.log(`Multi-address execution completed. Order ${order.id}: ${order.status}, executed: ${totalExecuted}/${order.remainingAmount}`);
         
         // Update database with final order status
         await window.electronAPI.updatePendingOrder({
@@ -3704,6 +3715,11 @@ export default {
               continue;
             }
 
+            if (orderExecutionLocks.has(order.id)) {
+              console.log(`Order ${order.id} is already being executed, skipping...`);
+              continue;
+            }
+
             // Calculate current market price using token prices
             let currentMarketPrice;
             if (!order.shouldSwitchTokensForLimit) {
@@ -3759,47 +3775,95 @@ export default {
             const unit = order.limitPriceInDollars ? '$' : '';
             console.log(`Order ${order.id}: market price ${unit}${comparableMarketPrice.toFixed(6)} is close to limit ${unit}${comparablePriceLimit.toFixed(6)} - checking exact execution price`);
 
-            // Get exact trade execution price by fetching best trades
-            const bestTradeResult = await getBestTrades(
-              order.fromToken.address,
-              order.toToken.address,
-              (Number(order.fromAmount) * 0.01).toString(),
-              order?.sender?.address || senderDetails.value.address,
-              true,
-              true,
-              tokensByAddresses.value[order.fromToken.address].price * Number(order.fromAmount) >= 100,
-            );
-
-            // Calculate exact execution price using the helper (with small test amount)
-            // No gas deduction for initial price check
-            const { executionPrice: exactExecutionPrice, comparableExecutionPrice } = calculateExecutionPrice(
-              order, 
-              bestTradeResult, 
-              Number(order.fromAmount) * 0.01,
-              toToken.price,
-              false  // Don't deduct gas cost for initial check
-            );
-            console.log({exactExecutionPrice, comparableExecutionPrice})
-
-            // Get the comparable price limit
-            comparablePriceLimit = order.priceLimit;
-            if (order.limitPriceInDollars) {
-              // For dollar-based orders, the priceLimit is already in dollars
-              comparablePriceLimit = order.priceLimit;
+            // Try progressively smaller test amounts to find the right range
+            // Calculate multipliers dynamically to ensure test amounts don't exceed $10,000
+            const fromTokenPrice = tokensByAddresses.value[order.fromToken.address]?.price || 0;
+            const orderValueUSD = Number(order.fromAmount) * fromTokenPrice;
+            
+            // Generate test multipliers from higher to lower so we can stop as soon as we find one that works
+            const testMultipliers = [];
+            const testAmountsUSD = [100000, 10000, 1000, 100, 1]; // Test amounts in USD, from high to low
+            
+            // Add multipliers for each test amount (only if they don't exceed the order value)
+            for (const testUSD of testAmountsUSD) {
+              const multiplier = testUSD / orderValueUSD;
+              if (multiplier <= 1) {
+                testMultipliers.push(multiplier);
+              }
             }
             
-            // Determine if order should be triggered based on new logic
-            if (!order.shouldSwitchTokensForLimit) {
-              // Normal case: trigger when execution price >= limit price
-              shouldTrigger = comparableExecutionPrice >= comparablePriceLimit;
-            } else {
-              // Inverted case: trigger when execution price <= limit price
-              shouldTrigger = comparableExecutionPrice <= comparablePriceLimit;
+            // If no standard test amounts work, add some percentage-based fallbacks
+            if (testMultipliers.length === 0 || testMultipliers[testMultipliers.length - 1] > 0.01) {
+              // Add 1%, 0.1%, 0.01% as fallbacks
+              testMultipliers.push(0.01, 0.001, 0.0001);
+            }
+            
+            console.log(`Order ${order.id}: Testing with multipliers (high to low): ${testMultipliers.map(m => `${(m * 100).toFixed(2)}%`).join(', ')}`);
+            
+            let exactExecutionPrice = null;
+            let comparableExecutionPrice = null;
+            let workingMultiplier = null;
+            
+            for (const multiplier of testMultipliers) {
+              const testAmount = Number(order.fromAmount) * multiplier;
+              const testValueUSD = testAmount * fromTokenPrice;
+              
+              console.log(`Order ${order.id}: Testing with ${(multiplier * 100)}% amount ($${testValueUSD.toFixed(2)} worth)`);
+              
+              // Get exact trade execution price by fetching best trades
+              const bestTradeResult = await getBestTrades(
+                order.fromToken.address,
+                order.toToken.address,
+                testAmount.toString(),
+                order?.sender?.address || senderDetails.value.address,
+                true,
+                true,
+                true,
+              );
+
+              // Calculate exact execution price using the helper (with small test amount)
+              // No gas deduction for initial price check
+              const priceResult = calculateExecutionPrice(
+                order, 
+                bestTradeResult, 
+                testAmount,
+                toToken.price,
+                false  // Don't deduct gas cost for initial check
+              );
+              
+              exactExecutionPrice = priceResult.executionPrice;
+              comparableExecutionPrice = priceResult.comparableExecutionPrice;
+              
+              console.log(`Order ${order.id}: Testing with ${(multiplier * 100)}% amount - execution price: ${comparableExecutionPrice?.toFixed(9) || 'N/A'}`);
+
+              // Get the comparable price limit
+              comparablePriceLimit = order.priceLimit;
+              if (order.limitPriceInDollars) {
+                // For dollar-based orders, the priceLimit is already in dollars
+                comparablePriceLimit = order.priceLimit;
+              }
+              
+              // Determine if order should be triggered based on new logic
+              if (!order.shouldSwitchTokensForLimit) {
+                // Normal case: trigger when execution price >= limit price
+                shouldTrigger = comparableExecutionPrice >= comparablePriceLimit;
+              } else {
+                // Inverted case: trigger when execution price <= limit price
+                shouldTrigger = comparableExecutionPrice <= comparablePriceLimit;
+              }
+
+              if (shouldTrigger) {
+                const unit = order.limitPriceInDollars ? '$' : '';
+                console.log(`Order ${order.id}: Found triggerable amount at ${(multiplier * 100)}% - execution price ${unit}${comparableExecutionPrice.toFixed(9)} vs limit ${unit}${comparablePriceLimit.toFixed(9)}`);
+                // Store the working multiplier in separate variable
+                workingMultiplier = multiplier;
+                break;
+              }
             }
 
             if (!shouldTrigger) {
               const unit = order.limitPriceInDollars ? '$' : '';
-              console.log(`Order ${order.id}: exact execution price ${unit}${comparableExecutionPrice.toFixed(9)} vs limit ${unit}${comparablePriceLimit.toFixed(9)} - not triggered`);
+              console.log(`Order ${order.id}: No test amount met trigger condition - smallest test execution price ${unit}${comparableExecutionPrice?.toFixed(9) || 'N/A'} vs limit ${unit}${comparablePriceLimit.toFixed(9)} - not triggered`);
               continue
             }
             
@@ -3834,7 +3898,7 @@ export default {
             }
           
             // Execute order asynchronously without blocking main loop
-            tryExecutePendingOrder(order, exactExecutionPrice);
+            tryExecutePendingOrder(order, exactExecutionPrice, workingMultiplier);
             
             await new Promise(r => setTimeout(r, 2000));
           } catch (error) {
@@ -3845,6 +3909,7 @@ export default {
         automaticMessage.value = err;
         console.error(err)
       }
+      console.log('SHOULD SET ISCHECKINGPENDINGORDERS TO FALSE')
       isCheckingPendingOrders = false;
     }
 
@@ -3961,7 +4026,7 @@ export default {
       return { meetsCondition, executionPrice: testExecutionPrice, tradeResult: testResult, unprofitable: false };
     }
 
-    async function tryExecutePendingOrder(order, exactExecutionPrice) {
+    async function tryExecutePendingOrder(order, exactExecutionPrice, workingMultiplier) {
       // Check if this order is already being executed (lock mechanism)
       if (orderExecutionLocks.has(order.id)) {
         console.log(`Order ${order.id} is already being executed, skipping...`);
@@ -4020,23 +4085,46 @@ export default {
           executableAmount = order.fromAmount;
           newRemainingAmount = 0;
         } else {
-          console.log(`Order ${order.id}: 100% amount doesn't meet conditions, using dichotomy algorithm...`);
+          // If we don't have a working multiplier from the initial test, we can't proceed
+          if (!workingMultiplier) {
+            console.log(`Order ${order.id}: No working multiplier provided, cannot determine executable range`);
+            return;
+          }
+
+          // The working multiplier is the smallest percentage that works
+          // We need to find the range between this and the next larger multiplier that doesn't work
+          let lowPercentage = remainingPercentage * workingMultiplier;
+          let highPercentage = remainingPercentage * workingMultiplier * 10; // Default to 10x the working multiplier
           
+          // If workingMultiplier * 10 is greater than remainingPercentage, cap it at remainingPercentage
+          if (highPercentage > remainingPercentage) {
+            highPercentage = remainingPercentage;
+          }
+          
+          console.log(`Order ${order.id}: Using working multiplier ${workingMultiplier} - range ${(lowPercentage * 100)}% to ${(highPercentage * 100)}%`);
+
           // Use dichotomy to find the maximum executable percentage of fromAmount
-          
-          let lowPercentage = 0;
-          let highPercentage = remainingPercentage;
-          let bestPercentage = 0;
-          const marginError = 0.007; // 0.7% margin error
+          let bestPercentage = lowPercentage;
+          // Adapt margin error based on the range we're working with
+          // Use 2.5% of the range size as margin error
+          const rangeSize = highPercentage - lowPercentage;
+          const marginError = rangeSize * 0.005; // 0,5% precision of the search range
           const minPercentage = marginError; // Minimum percentage to consider
+                    
           // Binary search to find maximum executable percentage
           while ((highPercentage - lowPercentage) > minPercentage) {
             const midPercentage = (lowPercentage + highPercentage) / 2;
-            const testAmount = originalFromAmount * midPercentage;
+            const testAmount = Number(remainingAmount) * midPercentage;
+            console.log('Dichotomy iteration:', {
+              remainingAmount,
+              midPercentage,
+              testAmount,
+              typeOfRemainingAmount: typeof remainingAmount
+            });
             
-            await new Promise(r => setTimeout(1000, r))
+            await new Promise(r => setTimeout(r, 4000));
             const testResult = await testExecutableAmount(order, testAmount);
-            
+            console.log(testResult)
             if (testResult.unprofitable) {
               // This amount is unprofitable, try lower percentage
               highPercentage = midPercentage;
@@ -4052,10 +4140,12 @@ export default {
             }
           }
           
+          console.log({bestPercentage})
           // If we couldn't find any executable percentage, release lock and return
-          if (bestPercentage < minPercentage) {
-            console.log(`Order ${order.id}: No executable amount found within price limits`);
-            // Important: This early return is OK because finally block will handle cleanup
+          if (!bestTestResult || bestPercentage < minPercentage) {
+            console.log(`Order ${order.id}: No executable amount found within price limits (bestTestResult: ${!!bestTestResult}, bestPercentage: ${bestPercentage})`);
+            orderExecutionLocks.delete(order.id);
+            console.log(`🔓 Released lock for order ${order.id}`);
             return;
           }
           
@@ -4425,6 +4515,7 @@ export default {
             delete cleanedLevel.executionPrice;
             delete cleanedLevel.executionDate;
             delete cleanedLevel.failureReason;
+            delete cleanedLevel.lastFailureDate;
             // Reset status if it was partially executed before, but preserve processed status
             if (cleanedLevel.status === 'partially_filled') {
               cleanedLevel.status = 'active';
@@ -4624,8 +4715,11 @@ export default {
               }
               
               if (fromAmount > 0 && meetsMinimumRequirement) {
+                // Generate a stable ID based on location instead of random
+                // This ensures the same order keeps the same ID across regenerations
+                const stableId = `auto_${i}_${j}_${k}_buy`;
                 orders.push({
-                  id: Math.floor(Math.random() * 10000000000000),
+                  id: stableId,
                   fromAmount,
                   remainingAmount: fromAmount,
                   fromToken: { ...fromToken },
@@ -4690,9 +4784,12 @@ export default {
                 }
               }
               
-              if (fromAmount > 0 && meetsMinimumRequirement) {             
+              if (fromAmount > 0 && meetsMinimumRequirement) {
+                // Generate a stable ID based on location instead of random
+                // This ensures the same order keeps the same ID across regenerations
+                const stableId = `auto_${i}_${j}_${k}_sell`;
                 orders.push({
-                  id: Math.floor(Math.random() * 10000000000000),
+                  id: stableId,
                   fromAmount,
                   remainingAmount: fromAmount,
                   fromToken: { ...fromToken },
