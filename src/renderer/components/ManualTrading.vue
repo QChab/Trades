@@ -3308,7 +3308,7 @@ export default {
         const outputValueUSD = Number(bestTradeResult.totalHuman) * toToken.price;
         const lossPercentage = ((inputValueUSD - outputValueUSD) / inputValueUSD) * 100;
         
-        if (lossPercentage > props.priceDeviationPercentage) {
+        if (lossPercentage > 99.99) {
           return { 
             valid: false, 
             exactExecutionPrice,
@@ -3316,7 +3316,7 @@ export default {
             currentMarketPrice,
             priceDifference: 0,
             bestTradeResult,
-            reason: `Excessive loss: ${lossPercentage.toFixed(1)}% (max ${props.priceDeviationPercentage}% allowed)` 
+            reason: `Excessive loss: ${lossPercentage.toFixed(1)}% (max ${99.99}% allowed)` 
           };
         }
 
@@ -3810,7 +3810,7 @@ export default {
               testMultipliers.push(0.1);
             }
             
-            console.log(`Order ${order.id}: Testing with multipliers (high to low): ${testMultipliers.map(m => `${(m * 100).toFixed(2)}%`).join(', ')}`);
+            console.log(`Order ${order.id}: Testing with multipliers (high to low): ${testMultipliers.map(m => `${(m * 100)}%`).join(', ')}`);
             
             let exactExecutionPrice = null;
             let comparableExecutionPrice = null;
@@ -3977,7 +3977,7 @@ export default {
       const outputValueUSD = Number(testResult.totalHuman) * toTokenData.price;
       const lossPercentage = ((inputValueUSD - outputValueUSD) / inputValueUSD) * 100;
       
-      if (lossPercentage > 40) {
+      if (lossPercentage > 99.999) {
         // Trade rejected due to excessive loss - treat as unprofitable
         return { meetsCondition: false, executionPrice: undefined, tradeResult: testResult, unprofitable: true };
       }
@@ -4104,14 +4104,14 @@ export default {
             return;
           }
 
-          // The working multiplier is the smallest percentage that works
-          // We need to find the range between this and the next larger multiplier that doesn't work
-          let lowPercentage = remainingPercentage * workingMultiplier;
-          let highPercentage = remainingPercentage * workingMultiplier * 10; // Default to 10x the working multiplier
+          // The working multiplier is already a percentage of remainingAmount
+          // Search between this and 10x this value (since test amounts are in factors of 10)
+          let lowPercentage = workingMultiplier;
+          let highPercentage = workingMultiplier * 10;
           
-          // If workingMultiplier * 10 is greater than remainingPercentage, cap it at remainingPercentage
-          if (highPercentage > remainingPercentage) {
-            highPercentage = remainingPercentage;
+          // Cap at 100% if needed
+          if (highPercentage > 1) {
+            highPercentage = 1;
           }
           
           console.log(`Order ${order.id}: Using working multiplier ${workingMultiplier} - range ${(lowPercentage * 100)}% to ${(highPercentage * 100)}%`);

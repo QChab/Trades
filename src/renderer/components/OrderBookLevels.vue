@@ -171,10 +171,10 @@
             </label>
             <div v-if="level.triggerPrice && level.balancePercentage && level.status !== 'isBeingEdited'" class="amount-display">
               <span v-if="level.status === 'partially_filled' && level.executedAmount != null">
-                {{ removeTrailingZeros(level.executedAmount, 6) }} / {{ removeTrailingZeros(level.originalAmount || 0, 6) }}
+                {{ removeTrailingZeros(level.executedAmount, 4) }} / {{ removeTrailingZeros(level.originalAmount || 0, 4) }}
               </span>
               <span v-else-if="level.originalAmount != null && level.status !== 'processing' && level.status !== 'processed'">
-                {{ removeTrailingZeros(level.originalAmount, 6) }}
+                {{ removeTrailingZeros(level.originalAmount, 4) }}
               </span>
               <span class="amount-symbol">{{ tokenA?.symbol }}</span>
             </div>
@@ -268,10 +268,10 @@
             </label>
             <div v-if="level.triggerPrice && level.balancePercentage && level.status !== 'isBeingEdited'" class="amount-display">
               <span v-if="level.status === 'partially_filled' && level.executedAmount != null">
-                {{ removeTrailingZeros(level.executedAmount, 6) }} / {{ removeTrailingZeros(level.originalAmount || 0, 6) }}
+                {{ removeTrailingZeros(level.executedAmount, 4) }} / {{ removeTrailingZeros(level.originalAmount || 0, 4) }}
               </span>
               <span v-else-if="level.originalAmount != null && level.status !== 'processing' && level.status !== 'processed'">
-                {{ removeTrailingZeros(level.originalAmount, 6) }}
+                {{ removeTrailingZeros(level.originalAmount, 4) }}
               </span>
               <span class="amount-symbol">{{ tokenA?.symbol }}</span>
             </div>
@@ -1034,7 +1034,7 @@ export default {
       const tokenAmount = (balance * percentage) / 100;
       const tokenSymbol = tokenA.value?.symbol || 'TOKEN';
       
-      return `${percentage}% = ${removeTrailingZeros(tokenAmount, 6)} ${tokenSymbol}`;
+      return `${percentage}% = ${removeTrailingZeros(tokenAmount, 4)} ${tokenSymbol}`;
     };
     
     // Watch orders prop to update levels with execution data
