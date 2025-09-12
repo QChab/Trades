@@ -343,6 +343,7 @@
                     :details="token.details"
                     :price-deviation-percentage="priceDeviationPercentage"
                     :existing-orders="allExistingOrders"
+                    :orders="getOrdersForColumn(i, j)"
                     @order-update="(details) => updateDetailsOrder(i, j, details)"
                     @delete="deleteColumn(i, j)"
                   ></OrderBookLevels>
@@ -1099,14 +1100,6 @@ export default {
                   levels[levelIndex].partialExecutionDate = new Date().toISOString();
                   levels[levelIndex].executedAmount = executedAmount;
                   levels[levelIndex].originalPercentage = levels[levelIndex].balancePercentage;
-                  
-                  // Calculate new percentage based on remaining amount
-                  const executedRatio = executedAmount / originalAmount;
-                  const remainingRatio = 1 - executedRatio;
-                  const newPercentage = levels[levelIndex].originalPercentage * remainingRatio;
-                  levels[levelIndex].balancePercentage = Number(newPercentage.toFixed(2));
-                  
-                  console.log(`Level ${levelIndex} marked as partially_filled (${fillPercentage.toFixed(1)}% filled, new percentage: ${newPercentage.toFixed(2)}%)`);
                 }
                 
                 levels[levelIndex].executionPrice = confirmed.executionPrice || null;
@@ -1216,16 +1209,8 @@ export default {
           getTradesUniswap(fromTokenAddr, toTokenAddr, amount) : null,
         (shouldUseBalancerValue) ? 
           getTradesBalancer(fromTokenAddr, toTokenAddr, amount, senderAddr, true) : null,
-        (shouldUseUniswapAndBalancerValue)
-          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .25, senderAddr, false) : null,
-        (shouldUseUniswapAndBalancerValue)
-          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .50, senderAddr, false) : null,
-        (shouldUseUniswapAndBalancerValue) 
-          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .75, senderAddr, false) : null,
-        (shouldUseUniswapAndBalancerValue)
-          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .10, senderAddr, !shouldUseBalancerValue) : null,
-        (shouldUseUniswapAndBalancerValue)
-          ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .01, senderAddr, !shouldUseBalancerValue) : null,
+        (shouldUseUniswapAndBalancerValue) ? 
+          getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .01, senderAddr, true) : null,
       ]);
 
       console.log(results);
@@ -1329,17 +1314,29 @@ export default {
 
       // Handle mixed trades if enabled
       let bestMixed, fractionMixed;
-      if (shouldUseUniswapAndBalancerValue && results[0]?.value && results[0].value[100]) {
+      if (shouldUseUniswapAndBalancerValue && results[0]?.value && results[0].value[100] && results[2].status === 'fulfilled') {
+        const balancerResults = await Promise.allSettled([
+          (shouldUseUniswapAndBalancerValue)
+            ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .10, senderAddr, false) : null,
+          (shouldUseUniswapAndBalancerValue)
+            ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .25, senderAddr, false) : null,
+          (shouldUseUniswapAndBalancerValue)
+            ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .50, senderAddr, false) : null,
+          (shouldUseUniswapAndBalancerValue) 
+            ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .75, senderAddr, false) : null,
+        ])
         // Only proceed with mixed if we have valid Balancer results
         let best25U, best50U, best75U, best90U;
-        if (results[4].status === 'fulfilled') 
-          best25U = findBestMixedTrades(results[0].value[25], results[4], toTokenAddr, results[4].value.gasLimit);
-        if (results[3].status === 'fulfilled')
-          best50U = findBestMixedTrades(results[0].value[50], results[3], toTokenAddr, results[3].value.gasLimit);
-        if (results[2].status === 'fulfilled')
-          best75U = findBestMixedTrades(results[0].value[75], results[2], toTokenAddr, results[2].value.gasLimit);
-        if (results[5].status === 'fulfilled')
-          best90U = findBestMixedTrades(results[0].value[90], results[5], toTokenAddr, results[5].value.gasLimit);
+        // Use gasLimit from the small Balancer test trade, or fallback to Uniswap gasLimit or default
+        const gasLimitForMixed = results[2]?.value?.gasLimit || uniswapGasLimit || 300000;
+        if (balancerResults[3].status === 'fulfilled') 
+          best25U = findBestMixedTrades(results[0].value[25], balancerResults[3], toTokenAddr, gasLimitForMixed);
+        if (balancerResults[2].status === 'fulfilled')
+          best50U = findBestMixedTrades(results[0].value[50], balancerResults[2], toTokenAddr, gasLimitForMixed);
+        if (balancerResults[1].status === 'fulfilled')
+          best75U = findBestMixedTrades(results[0].value[75], balancerResults[1], toTokenAddr, gasLimitForMixed);
+        if (balancerResults[0].status === 'fulfilled')
+          best90U = findBestMixedTrades(results[0].value[90], balancerResults[0], toTokenAddr, gasLimitForMixed);
 
         console.log({
           best90U: best90U?.outputAmount?.toString(),
@@ -1391,30 +1388,24 @@ export default {
           console.log('No mixed trades found');
           // Check if the 0.01 Balancer test from the initial batch succeeded
           // results[5] is the 0.01 test from the initial Promise.allSettled
-          const balancer001Succeeded = results[5] && results[5].status === 'fulfilled' && results[5].value;
-          
-          if (balancer001Succeeded) {
-            // Only test larger amounts if 0.01 succeeded
-            const resultsSmaller = await Promise.allSettled([
-              results[5],
-              getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .02, senderAddr, false),
-              getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .03, senderAddr, false),
-              getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .05, senderAddr, false),
-              getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .07, senderAddr, false)
-            ]);
-            for (let i = 0 ; i < resultsSmaller.length ; i++) {
-              const res = resultsSmaller[i];
-              const fraction = [99, 98, 97, 95, 93][i]
-              if (res && res.status === 'fulfilled' && res.value) {
-                const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-                console.log(trade)
-                // Include all trades, even negative (to find least bad option)
-                mixedOptions.push({ trade, fraction: fraction });
-              }
+
+          const resultsSmaller = await Promise.allSettled([
+            Promise.resolve(results[2].value || null),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .02, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .03, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .05, senderAddr, false),
+            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .07, senderAddr, false)
+          ]);
+          for (let i = 0 ; i < resultsSmaller.length ; i++) {
+            const res = resultsSmaller[i];
+            const fraction = [99, 98, 97, 95, 93][i]
+            if (res && res.status === 'fulfilled' && res.value) {
+              const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
+              // Include all trades, even negative (to find least bad option)
+              mixedOptions.push({ trade, fraction: fraction });
             }
-          } else {
-            console.log('Skipping additional Balancer tests since 0.01 amount failed');
           }
+          
         }
 
         if (bestMixedOption?.fraction === 50) {
@@ -1963,8 +1954,12 @@ export default {
             gasLimit = 400000;
         }
       } catch (err) {
-        console.log('Error in estimateGas');
-        console.error(err);
+        if (err?.toString()?.includes('execution reverted'))
+          console.log('Error in estimateGas: execution reverted');
+        else {
+          console.log('Error in estimateGas');
+          console.error(err);
+        }
       }
       // console.log(gasLimit);
 
@@ -3396,17 +3391,21 @@ export default {
             totalExecuted += execution.executedAmount;
             console.log(`✅ Successfully executed ${execution.executedAmount} ${order.fromToken.symbol} from ${name}. Total executed: ${totalExecuted}/${order.remainingAmount}`);
             
+            // Track cumulative executed amount on the order
+            if (!order.executedAmount) order.executedAmount = execution.executedAmount;
+            else order.executedAmount += execution.executedAmount;
+
             // Add delay before next address (except for last address)
             if (i < addressSelection.addresses.length - 1 && totalExecuted < order.remainingAmount) {
               console.log(`⏳ Waiting 25 seconds before next address execution...`);
               await new Promise(resolve => setTimeout(resolve, 25000)); 
             }
           } else {
-            console.error(`❌ Failed to execute trade with address ${address.name}: ${execution.error}`);
+            console.error(`❌ Failed to execute trade with address ${addressInfo?.name}: ${execution.error}`);
             allExecutionSuccessful = false;
             
             // Check if failure is due to price conditions
-            if (execution.error && execution.error.includes('Price condition no longer valid')) {
+            if (execution?.error?.toString()?.includes('Price condition no longer valid')) {
               validationFailures++;
               console.log(`Price-related failure count: ${validationFailures}/${maxValidationFailures}`);
               
@@ -3430,7 +3429,7 @@ export default {
           order.status = totalExecuted > 0 ? 'partially_filled' : 'failed';
           
           // If partial execution due to price conditions, update level percentage
-          if (totalExecuted > 0 && !allExecutionSuccessful && order.automatic && order.sourceLocation) {
+          if (totalExecuted > 0 && order.automatic && order.sourceLocation) {
             const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
             if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
               const levels = levelType === 'sell' 
@@ -3438,22 +3437,33 @@ export default {
                 : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
                 
               if (levels[levelIndex]) {
-                // Calculate new percentage based on remaining amount
-                const originalPercentage = levels[levelIndex].balancePercentage;
-                const executedRatio = totalExecuted / order.fromAmount;
-                const remainingRatio = 1 - executedRatio;
-                const newPercentage = originalPercentage * remainingRatio;
+                // Use the order's cumulative executedAmount which tracks all executions
+                const totalExecutedSoFar = order.executedAmount || totalExecuted;
                 
-                console.log(`Updating level percentage from ${originalPercentage}% to ${newPercentage.toFixed(2)}% due to partial execution`);
+                console.log(`Marking level as partially filled. Executed: ${totalExecutedSoFar}/${order.fromAmount}`);
                 
-                // Update the level with new percentage and set partially filled status
-                levels[levelIndex].balancePercentage = Number(newPercentage.toFixed(2));
+                // Update the level status to partially filled (keep original percentage)
                 levels[levelIndex].status = 'partially_filled'; // Mark as partially filled, not active
                 levels[levelIndex].partialExecutionDate = new Date().toISOString();
-                levels[levelIndex].executedAmount = totalExecuted;
-                levels[levelIndex].originalPercentage = originalPercentage;
+                levels[levelIndex].executedAmount = totalExecutedSoFar;
+                
+                console.log(`Setting executedAmount for level ${levelIndex}:`, {
+                  orderExecutedAmount: order.executedAmount,
+                  currentExecuted: totalExecuted,
+                  totalExecutedSoFar,
+                  status: levels[levelIndex].status,
+                  levelExecutedAmount: levels[levelIndex].executedAmount,
+                  originalAmount: order.fromAmount
+                });
                 
                 updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                
+                // Verify the data after update
+                console.log(`After updateDetailsOrder, level ${levelIndex} data:`, {
+                  status: levels[levelIndex].status,
+                  executedAmount: levels[levelIndex].executedAmount,
+                  partialExecutionDate: levels[levelIndex].partialExecutionDate
+                });
               }
             }
             
@@ -3778,11 +3788,14 @@ export default {
             // Try progressively smaller test amounts to find the right range
             // Calculate multipliers dynamically to ensure test amounts don't exceed $10,000
             const fromTokenPrice = tokensByAddresses.value[order.fromToken.address]?.price || 0;
-            const orderValueUSD = Number(order.fromAmount) * fromTokenPrice;
+            // Calculate remaining amount for this order
+            const executedSoFar = order.executedAmount || 0;
+            const remainingAmount = Number(order.fromAmount) - executedSoFar;
+            const orderValueUSD = remainingAmount * fromTokenPrice;  // Use remaining amount, not original
             
             // Generate test multipliers from higher to lower so we can stop as soon as we find one that works
             const testMultipliers = [];
-            const testAmountsUSD = [100000, 10000, 1000, 100, 1]; // Test amounts in USD, from high to low
+            const testAmountsUSD = [50000, 5000, 500, 50, 5]; // Test amounts in USD, from high to low
             
             // Add multipliers for each test amount (only if they don't exceed the order value)
             for (const testUSD of testAmountsUSD) {
@@ -3793,9 +3806,8 @@ export default {
             }
             
             // If no standard test amounts work, add some percentage-based fallbacks
-            if (testMultipliers.length === 0 || testMultipliers[testMultipliers.length - 1] > 0.01) {
-              // Add 1%, 0.1%, 0.01% as fallbacks
-              testMultipliers.push(0.01, 0.001, 0.0001);
+            if (testMultipliers.length === 0) {
+              testMultipliers.push(0.1);
             }
             
             console.log(`Order ${order.id}: Testing with multipliers (high to low): ${testMultipliers.map(m => `${(m * 100).toFixed(2)}%`).join(', ')}`);
@@ -4042,9 +4054,10 @@ export default {
       try {
         console.log(`🔄 Executing order ${order.id} asynchronously...`);
         
-        const remainingAmount = order.remainingAmount || order.fromAmount;
+        const executedSoFar = order.executedAmount || 0;
         const originalFromAmount = Number(order.fromAmount);
-        const remainingPercentage = Number(remainingAmount) / originalFromAmount;
+        const remainingAmount = originalFromAmount - executedSoFar;
+        const remainingPercentage = remainingAmount / originalFromAmount;
         
         // First, try 100% of the remaining amount
         console.log(`Order ${order.id}: Testing 100% of remaining amount (${remainingAmount}) first...`);
@@ -4082,7 +4095,7 @@ export default {
           }
 
           bestTestResult = fullAmountTest;
-          executableAmount = order.fromAmount;
+          executableAmount = remainingAmount;  // Use remaining amount, not original fromAmount
           newRemainingAmount = 0;
         } else {
           // If we don't have a working multiplier from the initial test, we can't proceed
@@ -4108,7 +4121,7 @@ export default {
           // Adapt margin error based on the range we're working with
           // Use 2.5% of the range size as margin error
           const rangeSize = highPercentage - lowPercentage;
-          const marginError = rangeSize * 0.005; // 0,5% precision of the search range
+          const marginError = rangeSize * 0.01; // 1% precision of the search range
           const minPercentage = marginError; // Minimum percentage to consider
                     
           // Binary search to find maximum executable percentage
@@ -4122,7 +4135,7 @@ export default {
               typeOfRemainingAmount: typeof remainingAmount
             });
             
-            await new Promise(r => setTimeout(r, 4000));
+            await new Promise(r => setTimeout(r, 6000));
             const testResult = await testExecutableAmount(order, testAmount);
             console.log(testResult)
             if (testResult.unprofitable) {
@@ -4150,16 +4163,19 @@ export default {
           }
           
           // Calculate the best executable amount from the percentage
-          executableAmount = (originalFromAmount * bestPercentage).toString();
+          executableAmount = (remainingAmount * bestPercentage).toString();
           console.log(`Order ${order.id}: Found optimal executable amount: ${executableAmount} (${(bestPercentage*100).toFixed(1)}% of original)`);
           
           // Update order status to processing while processing
           order.status = props.isTestMode ? 'processed': 'processing';
           
-          // Update remaining amount immediately
-          newRemainingAmount = Number(remainingAmount) - (originalFromAmount * bestPercentage);
+          // Update executed amount immediately
+          const executedThisTime = originalFromAmount * bestPercentage;
+          const newExecutedAmount = (order.executedAmount || 0) + executedThisTime;
+          newRemainingAmount = originalFromAmount - newExecutedAmount;
           window.electronAPI.updatePendingOrder({
             ...JSON.parse(JSON.stringify(order)),
+            executedAmount: newExecutedAmount,
             remainingAmount: newRemainingAmount.toString(),
             status: 'processing'
           });
@@ -4277,12 +4293,17 @@ export default {
           let execution = await executeTradeWithAddress(order, singleAddress, executableAmount);
           
           if (execution.success) {
-            // Check if order is 97.5% or more filled
-            const originalAmount = Number(order.fromAmount);
-            const filledAmount = originalAmount - newRemainingAmount;
-            const fillPercentage = (filledAmount / originalAmount) * 100;
+            // Track cumulative executed amount
+            if (!order.executedAmount) order.executedAmount = Number(executableAmount);
+            else order.executedAmount += Number(executableAmount);
             
-            if (fillPercentage >= 97.5 || newRemainingAmount < originalAmount * 0.025) {
+            // Check if order is 97.5% or more filled based on cumulative execution
+            const originalAmount = Number(order.fromAmount);
+            const totalExecutedAmount = order.executedAmount;
+            const fillPercentage = (totalExecutedAmount / originalAmount) * 100;
+            const actualRemainingAmount = originalAmount - totalExecutedAmount;
+            
+            if (fillPercentage >= 97.5 || actualRemainingAmount < originalAmount * 0.025) {
               // Mark order as completed
               order.status = 'completed';
               order.completedAt = new Date().toISOString();
@@ -4315,7 +4336,8 @@ export default {
               // Update database AFTER UI update
               await window.electronAPI.updatePendingOrder({
                 ...JSON.parse(JSON.stringify(order)),
-                remainingAmount: newRemainingAmount.toString(),
+                remainingAmount: actualRemainingAmount.toString(),
+                executedAmount: totalExecutedAmount,
                 status: order.status
               });
               
@@ -4325,11 +4347,13 @@ export default {
             } else {
               // Order partially filled, set back to pending for future executions
               order.status = 'pending';
-              console.log(`Order ${order.id} partially filled - ${fillPercentage.toFixed(1)}% complete, remaining: ${newRemainingAmount}`);
+              order.remainingAmount = actualRemainingAmount;
+              console.log(`Order ${order.id} partially filled - ${fillPercentage.toFixed(1)}% complete, remaining: ${actualRemainingAmount}`);
               
               await window.electronAPI.updatePendingOrder({
                 ...JSON.parse(JSON.stringify(order)),
-                remainingAmount: newRemainingAmount.toString(),
+                remainingAmount: actualRemainingAmount.toString(),
+                executedAmount: totalExecutedAmount,
                 status: order.status
               });
             }
@@ -4508,7 +4532,10 @@ export default {
         buyLevels: details.buyLevels.map(level => {
           // Remove execution-related properties when level is modified
           const cleanedLevel = { ...level };
-          if (cleanedLevel.triggerPrice !== undefined || cleanedLevel.balancePercentage !== undefined) {
+          // Only clean if the level is being user-modified (has triggerPrice or balancePercentage changes)
+          // AND is not currently in partially_filled status (preserve execution data for partial fills)
+          if ((cleanedLevel.triggerPrice !== undefined || cleanedLevel.balancePercentage !== undefined) 
+              && cleanedLevel.status !== 'partially_filled') {
             delete cleanedLevel.partialExecutionDate;
             delete cleanedLevel.executedAmount; 
             delete cleanedLevel.originalPercentage;
@@ -4516,10 +4543,6 @@ export default {
             delete cleanedLevel.executionDate;
             delete cleanedLevel.failureReason;
             delete cleanedLevel.lastFailureDate;
-            // Reset status if it was partially executed before, but preserve processed status
-            if (cleanedLevel.status === 'partially_filled') {
-              cleanedLevel.status = 'active';
-            }
             // Never reset processed status - once processed, always processed
             if (cleanedLevel.status === 'processed') {
               // Keep as processed, don't reset
@@ -4530,17 +4553,16 @@ export default {
         sellLevels: details.sellLevels.map(level => {
           // Remove execution-related properties when level is modified
           const cleanedLevel = { ...level };
-          if (cleanedLevel.triggerPrice !== undefined || cleanedLevel.balancePercentage !== undefined) {
+          // Only clean if the level is being user-modified (has triggerPrice or balancePercentage changes)
+          // AND is not currently in partially_filled status (preserve execution data for partial fills)
+          if ((cleanedLevel.triggerPrice !== undefined || cleanedLevel.balancePercentage !== undefined) 
+              && cleanedLevel.status !== 'partially_filled') {
             delete cleanedLevel.partialExecutionDate;
             delete cleanedLevel.executedAmount;
             delete cleanedLevel.originalPercentage;
             delete cleanedLevel.executionPrice;
             delete cleanedLevel.executionDate;
             delete cleanedLevel.failureReason;
-            // Reset status if it was partially executed before, but preserve processed status
-            if (cleanedLevel.status === 'partially_filled') {
-              cleanedLevel.status = 'active';
-            }
             // Never reset processed status - once processed, always processed
             if (cleanedLevel.status === 'processed') {
               // Keep as processed, don't reset
@@ -4600,6 +4622,15 @@ export default {
       return result;
     });
 
+    const getOrdersForColumn = (rowIndex, colIndex) => {
+      // Filter automaticOrders for this specific column
+      return automaticOrders.value.filter(order => 
+        order.sourceLocation &&
+        order.sourceLocation.rowIndex === rowIndex &&
+        order.sourceLocation.colIndex === colIndex
+      );
+    };
+    
     const generateOrdersFromLevels = async () => {
       const orders = [];
       const sender = senderDetails.value;
@@ -4691,9 +4722,22 @@ export default {
               }
               
               const balance = balances[fromTokenAddr] || 0;
-              const fromAmount = (buyLevel.balancePercentage * 0.01 * balance);
+              const originalFromAmount = (buyLevel.balancePercentage * 0.01 * balance);
               
-              console.log(`Buy level ${k}: Token ${fromToken.symbol}, balance: ${balance}, amount: ${fromAmount}, trigger price: ${buyLevel.triggerPrice}`);
+              // Check if this level has already been partially executed
+              const existingExecutedAmount = buyLevel.executedAmount || 0;
+              
+              // If the level has already executed 97.5% or more, skip it
+              if (existingExecutedAmount >= originalFromAmount * 0.975) {
+                console.log(`Buy level ${k}: Already executed ${existingExecutedAmount}/${originalFromAmount} (>97.5%), marking as processed`);
+                buyLevel.status = 'processed';
+                return;
+              }
+              
+              // Calculate remaining amount to execute
+              const fromAmount = originalFromAmount - existingExecutedAmount;
+              
+              console.log(`Buy level ${k}: Token ${fromToken.symbol}, balance: ${balance}, amount: ${fromAmount}, already executed: ${existingExecutedAmount}`);
               
               // Check minimum amount requirement for output token (toToken)
               const minimumAmount = col.details?.minimumAmount || 0;
@@ -4720,8 +4764,8 @@ export default {
                 const stableId = `auto_${i}_${j}_${k}_buy`;
                 orders.push({
                   id: stableId,
-                  fromAmount,
-                  remainingAmount: fromAmount,
+                  fromAmount: originalFromAmount,  // Use original amount for calculations
+                  remainingAmount: fromAmount,     // This is what's left to execute
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
                   priceLimit: buyLevel.triggerPrice,
@@ -4731,6 +4775,8 @@ export default {
                   createdAt: new Date().toISOString(),
                   automatic: true,
                   limitPriceInDollars: col.details.limitPriceInDollars || false,
+                  // Initialize with any existing executedAmount from the level
+                  executedAmount: existingExecutedAmount,
                   sourceLocation: {
                     rowIndex: i,
                     colIndex: j,
@@ -4768,9 +4814,22 @@ export default {
               }
               
               const balance = balances[fromTokenAddr] || 0;
-              const fromAmount = (sellLevel.balancePercentage * 0.01 * balance);
+              const originalFromAmount = (sellLevel.balancePercentage * 0.01 * balance);
               
-              console.log(`Sell level ${k}: Token ${fromToken.symbol}, balance: ${balance}, amount: ${fromAmount}, trigger price: ${sellLevel.triggerPrice}`);
+              // Check if this level has already been partially executed
+              const existingExecutedAmount = sellLevel.executedAmount || 0;
+              
+              // If the level has already executed 97.5% or more, skip it
+              if (existingExecutedAmount >= originalFromAmount * 0.975) {
+                console.log(`Sell level ${k}: Already executed ${existingExecutedAmount}/${originalFromAmount} (>97.5%), marking as processed`);
+                sellLevel.status = 'processed';
+                return;
+              }
+              
+              // Calculate remaining amount to execute
+              const fromAmount = originalFromAmount - existingExecutedAmount;
+              
+              console.log(`Sell level ${k}: Token ${fromToken.symbol}, balance: ${balance}, amount: ${fromAmount}, already executed: ${existingExecutedAmount}`);
               
               // Check minimum amount requirement for input token (fromToken being sold)
               const minimumAmount = col.details?.minimumAmount || 0;
@@ -4790,8 +4849,8 @@ export default {
                 const stableId = `auto_${i}_${j}_${k}_sell`;
                 orders.push({
                   id: stableId,
-                  fromAmount,
-                  remainingAmount: fromAmount,
+                  fromAmount: originalFromAmount,  // Use original amount for calculations
+                  remainingAmount: fromAmount,     // This is what's left to execute
                   fromToken: { ...fromToken },
                   toToken: { ...toToken },
                   priceLimit: sellLevel.triggerPrice,
@@ -4801,6 +4860,8 @@ export default {
                   createdAt: new Date().toISOString(),
                   automatic: true,
                   limitPriceInDollars: col.details.limitPriceInDollars || false,
+                  // Initialize with any existing executedAmount from the level
+                  executedAmount: existingExecutedAmount,
                   sourceLocation: {
                     rowIndex: i,
                     colIndex: j,
@@ -5007,6 +5068,7 @@ export default {
       automaticMessage,
       isGloballyPaused,
       toggleGlobalPause,
+      getOrdersForColumn,
     };
   }
 };

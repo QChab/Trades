@@ -462,7 +462,7 @@
 
         // if (isTestMode.value) {
         //   return addressDetail.balances[token.address.toLowerCase()] = 999999999999;
-        }
+        // }
         let balance;
         try {
           balance = await getBalance(addressDetail.address, token);
@@ -871,7 +871,7 @@
   }
   
   .price-deviation-setting input.small-number {
-    width: 30px;
+    width: 35px;
     padding: 2px 5px;
     border: 1px solid #ddd;
     border-radius: 3px;
