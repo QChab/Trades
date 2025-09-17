@@ -2334,6 +2334,12 @@ export default {
     }
     async function findSymbol(index, contractAddress) {
       try {
+        // Convert to lowercase immediately
+        if (contractAddress && typeof contractAddress === 'string') {
+          contractAddress = contractAddress.toLowerCase();
+          tokens.value[index].address = contractAddress;
+        }
+        
         if (contractAddress === ethers.constants.AddressZero) {
           tokens.value[index].decimals = 18;
           tokens.value[index].symbol = 'ETH';
@@ -2345,7 +2351,6 @@ export default {
         } else {
           tokens.value[index].symbol = null;
         }
-        tokens.value[index].address = tokens.value[index].address.toLowerCase();
       } catch {
         tokens.value[index].symbol = null;
       }
@@ -3575,13 +3580,12 @@ export default {
           type: order.automatic ? 'automatic' : 'limit',
         };
 
-        
         // Handle mixed trades if applicable
         if (bestTradeResult.bestMixed) {
           limitOrderTradeSummary.fromAmountU = (Number(amount) * bestTradeResult.fractionMixed / 100).toFixed(7);
           limitOrderTradeSummary.fromAmountB = (Number(amount) - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
           limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
-          limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
+          limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
         }
 
 
@@ -3921,7 +3925,6 @@ export default {
         automaticMessage.value = err;
         console.error(err)
       }
-      console.log('SHOULD SET ISCHECKINGPENDINGORDERS TO FALSE')
       isCheckingPendingOrders = false;
     }
 
@@ -4982,7 +4985,7 @@ export default {
         });
 
         const outdateOrders = dbOrders.filter(o => !tokensByAddresses.value[o.fromTokenAddress] || !tokensByAddresses.value[o.toTokenAddress])
-        outdateOrders.map(o => deletePendingOrder(o.id))
+        outdateOrders.map(o => window.electronAPI.deletePendingOrder(o.id))
       }
       stopEthBalanceMonitoring();
     });

@@ -269,11 +269,12 @@
             <div v-if="level.triggerPrice && level.balancePercentage && level.status !== 'isBeingEdited'" class="amount-display">
               <span v-if="level.status === 'partially_filled' && level.executedAmount != null">
                 {{ removeTrailingZeros(level.executedAmount, 4) }} / {{ removeTrailingZeros(level.originalAmount || 0, 4) }}
+                <span class="amount-symbol">{{ tokenA?.symbol }}</span>
               </span>
               <span v-else-if="level.originalAmount != null && level.status !== 'processing' && level.status !== 'processed'">
                 {{ removeTrailingZeros(level.originalAmount, 4) }}
+                <span class="amount-symbol">{{ tokenA?.symbol }}</span>
               </span>
-              <span class="amount-symbol">{{ tokenA?.symbol }}</span>
             </div>
           </div>
         </div>
