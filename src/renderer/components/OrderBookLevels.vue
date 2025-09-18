@@ -169,6 +169,15 @@
                 {{ getLevelStatus('buy', level) }}
               </span>
             </label>
+            <div v-if="level.triggerPrice && level.balancePercentage && level.status !== 'isBeingEdited'" class="amount-display">
+              <span v-if="level.status === 'partially_filled' && level.executedAmount != null">
+                {{ removeTrailingZeros(level.executedAmount, 4) }} / {{ removeTrailingZeros(level.originalAmount || 0, 4) }}
+              </span>
+              <span v-else-if="level.originalAmount != null && level.status !== 'processing' && level.status !== 'processed'">
+                {{ removeTrailingZeros(level.originalAmount, 4) }}
+              </span>
+              <span class="amount-symbol">{{ tokenA?.symbol }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -257,6 +266,16 @@
                 {{ getLevelStatus('sell', level) }}
               </span>
             </label>
+            <div v-if="level.triggerPrice && level.balancePercentage && level.status !== 'isBeingEdited'" class="amount-display">
+              <span v-if="level.status === 'partially_filled' && level.executedAmount != null">
+                {{ removeTrailingZeros(level.executedAmount, 4) }} / {{ removeTrailingZeros(level.originalAmount || 0, 4) }}
+                <span class="amount-symbol">{{ tokenA?.symbol }}</span>
+              </span>
+              <span v-else-if="level.originalAmount != null && level.status !== 'processing' && level.status !== 'processed'">
+                {{ removeTrailingZeros(level.originalAmount, 4) }}
+                <span class="amount-symbol">{{ tokenA?.symbol }}</span>
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -310,6 +329,10 @@ export default {
       default: 20
     },
     existingOrders: {
+      type: Array,
+      default: () => []
+    },
+    orders: {
       type: Array,
       default: () => []
     },
@@ -999,7 +1022,7 @@ export default {
     const getTokenPriceFromDollar = (dollarPrice) => {
       if (!dollarPrice || !tokenBPrice.value) return '0.00';
       const tokenPrice = dollarPrice / tokenBPrice.value;
-      return removeTrailingZeros(tokenPrice, 2);
+      return removeTrailingZeros(tokenPrice, 4);
     };
 
     const getPercentageTooltip = (type, percentage) => {
@@ -1012,8 +1035,34 @@ export default {
       const tokenAmount = (balance * percentage) / 100;
       const tokenSymbol = tokenA.value?.symbol || 'TOKEN';
       
-      return `${percentage}% = ${removeTrailingZeros(tokenAmount, 6)} ${tokenSymbol}`;
+      return `${percentage}% = ${removeTrailingZeros(tokenAmount, 4)} ${tokenSymbol}`;
     };
+    
+    // Watch orders prop to update levels with execution data
+    watch(() => props.orders, (newOrders) => {
+      if (!newOrders || newOrders.length === 0) return;
+      
+      // Update buy levels with order data
+      newOrders.forEach(order => {
+        if (order.sourceLocation) {
+          const { levelType, levelIndex } = order.sourceLocation;
+          
+          if (levelType === 'buy' && buyLevels[levelIndex]) {
+            // Only set originalAmount if it hasn't been set before
+            // if (!buyLevels[levelIndex].originalAmount) {
+            buyLevels[levelIndex].originalAmount = Number(order.fromAmount);
+            // }
+            // buyLevels[levelIndex].executedAmount = order.executedAmount;
+          } else if (levelType === 'sell' && sellLevels[levelIndex]) {
+            // Only set originalAmount if it hasn't been set before
+            // if (!sellLevels[levelIndex].originalAmount) {
+            sellLevels[levelIndex].originalAmount = Number(order.fromAmount);
+            // }
+            // sellLevels[levelIndex].executedAmount = order.executedAmount;
+          }
+        }
+      });
+    }, { deep: true, immediate: true });
 
     watch(() => props.tokensByAddresses, (newTokens) => {
       if (newTokens[props.tokenA.address]) {
@@ -1494,7 +1543,7 @@ input:checked + .slider:before {
 }
 
 .percentage-input {
-  max-width: 50px; /* Reduced from 60px */
+  max-width: 60px; /* Reduced from 60px */
 }
 
 .percentage-symbol {
@@ -1673,7 +1722,7 @@ input.percentage-input {
 }
 
 .status-partially-filled {
-  background-color: #fd7e14;
+  background-color: #7514fd;
   color: white;
   border: 1px solid #fd7e14;
   font-weight: 600;
@@ -1706,5 +1755,19 @@ input.percentage-input {
 
 .slider-selected {
   font-weight: 700;
+}
+
+.amount-display {
+  text-align: center;
+  margin-top: 4px;
+  font-size: 10px;
+  color: #666;
+  font-weight: 500;
+}
+
+.amount-display .amount-symbol {
+  margin-left: 2px;
+  font-size: 9px;
+  color: #888;
 }
 </style>

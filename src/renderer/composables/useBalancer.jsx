@@ -118,7 +118,10 @@ export function useBalancerV3() {
       expectedAmountOut: updated.expectedAmountOut.amount,
     }
     } catch (error) {
-      console.error(`Balancer API error for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}:`, error);
+      if (error?.toString().includes('No Balancer swap paths')) 
+        console.log(`No Balancer swap paths for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}`);
+      else
+        console.error(`Balancer API error for ${tokenInObject.symbol} -> ${tokenOutObject.symbol}:`, error);
       throw error;
     }
   }
