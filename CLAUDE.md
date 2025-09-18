@@ -154,6 +154,35 @@ When working with this codebase, pay special attention to the order type determi
 - **Direct Contract Usage**: Technically possible but impractical due to proprietary routing algorithm
 - **Recommendation**: Use direct DEX integration instead of 1inch aggregation
 
+### Balancer V3 Integration
+- **Pool Discovery**: Queries Balancer V3 subgraph for pool data, handles decimal balance parsing
+- **Dynamic Pool Type Detection**: 
+  - Queries pool contracts directly to detect WeightedPool vs StablePool
+  - Extracts exact weight ratios (80/20, 50/50, 98/2, 95/5, etc.) via `getNormalizedWeights()`
+  - Retrieves amplification parameters for stable pools (100000, 500000, 1000000, 4000000)
+  - Detects multi-asset weighted pools (30/10/15/10/15/5/15 for 7-token pools)
+- **Pool Data Caching System**:
+  - Stores pool data in `balancerPoolsCache.json` to avoid repeated blockchain queries
+  - Cache includes: pool type, weights, amplification parameters, token balances, addresses, symbols
+  - `getPoolData()` checks cache first, only queries blockchain if pool not cached
+  - Automatically updates cache when new pools are discovered
+  - Cache statistics available via `getCacheStats()` function
+  - Dramatically improves performance - cached pools load instantly vs blockchain queries
+- **Optimal Pathfinding Algorithm**:
+  - Prioritizes common intermediate tokens (WETH, USDC, USDT, DAI) for 2-hop paths
+  - Finds direct paths first, then 2-hop through intermediates, then 3-hop via DFS
+  - Reduces fees by finding shortest paths (e.g., ONE→WETH→USDC instead of ONE→WETH→WBTC→USDC)
+  - Processes WETH-containing pools first for better routing
+- **Swap Calculations**: 
+  - WeightedPool: Uses weight-adjusted ratios for accurate pricing
+  - StablePool: Implements stable swap invariant with amplification parameter
+  - ConstantProduct: Standard x*y=k formula for pools without weights
+  - Handles pools with very small decimal balances correctly
+- **Implementation Files**:
+  - `useBalancerV3.js`: Main implementation with pool discovery, caching, and pathfinding
+  - `testBalancerV3.js`: Test suite for pool detection and routing verification
+  - `balancerPoolsCache.json`: JSON cache file storing pool data to avoid repeated queries
+
 ### Development Pain Points to Avoid
 - **Price Inversion Logic**: Complex interaction between `shouldSwitchTokensForLimit` and order types
 - **Gas Cost Edge Cases**: When gas exceeds trade output, requires special handling

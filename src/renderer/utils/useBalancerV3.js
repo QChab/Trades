@@ -1,0 +1,744 @@
+import { ethers } from 'ethers';
+import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Balancer V3 uses a different architecture than V2
+const BALANCER_V3_SUBGRAPH = 'https://gateway.thegraph.com/api/d692082c59f956790647e889e75fa84d/subgraphs/id/4rixbLvpuBCwXTJSwyAzQgsLR8KprnyMfyCuXT8Fj5cd';
+
+// Cache file path
+const CACHE_FILE_PATH = path.join(__dirname, 'balancerPoolsCache.json');
+
+// Load pool cache from file
+function loadPoolCache() {
+  try {
+    if (fs.existsSync(CACHE_FILE_PATH)) {
+      const data = fs.readFileSync(CACHE_FILE_PATH, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Error loading pool cache:', error.message);
+  }
+  return { pools: {}, lastUpdated: '', version: '1.0.0' };
+}
+
+// Save pool cache to file
+function savePoolCache(cache) {
+  try {
+    cache.lastUpdated = new Date().toISOString();
+    fs.writeFileSync(CACHE_FILE_PATH, JSON.stringify(cache, null, 2));
+  } catch (error) {
+    console.error('Error saving pool cache:', error.message);
+  }
+}
+
+// Get pool data from cache or detect
+async function getPoolData(poolAddress, provider, poolInfo = null) {
+  const cache = loadPoolCache();
+  
+  // Check if pool data is already cached
+  if (cache.pools[poolAddress.toLowerCase()]) {
+    const cachedData = cache.pools[poolAddress.toLowerCase()];
+    console.log(`✓ Using cached data for pool ${poolAddress.slice(0, 10)}...`);
+    return cachedData;
+  }
+  
+  // Not in cache, detect pool type and get data
+  console.log(`⚙ Detecting type for pool ${poolAddress.slice(0, 10)}...`);
+  const poolData = await detectPoolType(poolAddress, provider);
+  
+  // Calculate total liquidity from token balances (simplified - in USD would need prices)
+  let totalLiquidity = '0';
+  if (poolInfo && poolInfo.tokens && poolInfo.tokens.length > 0) {
+    // For now, just sum up token balances as a rough metric
+    // In production, you'd multiply by token prices to get USD value
+    totalLiquidity = poolInfo.tokens.reduce((sum, token) => {
+      const balance = parseFloat(token.balance || '0');
+      return sum + balance;
+    }, 0).toString();
+  }
+  
+  // Add additional useful data
+  const enrichedData = {
+    ...poolData,
+    address: poolAddress,
+    id: poolAddress, // In V3, ID is the address
+    tokens: poolInfo?.tokens || [],
+    totalLiquidity,
+    totalShares: poolInfo?.totalShares || '0',
+    swapFee: poolInfo?.swapFee || '0.003',
+    queriedAt: new Date().toISOString()
+  };
+  
+  // Cache the result
+  cache.pools[poolAddress.toLowerCase()] = enrichedData;
+  savePoolCache(cache);
+  
+  return enrichedData;
+}
+
+// Get cache statistics
+export function getCacheStats() {
+  const cache = loadPoolCache();
+  const poolCount = Object.keys(cache.pools).length;
+  const poolTypes = {};
+  const weightDistributions = {};
+  
+  Object.values(cache.pools).forEach(pool => {
+    // Count pool types
+    poolTypes[pool.poolType] = (poolTypes[pool.poolType] || 0) + 1;
+    
+    // Track weight distributions
+    if (pool.weights) {
+      const weightStr = pool.weights.join('/');
+      weightDistributions[weightStr] = (weightDistributions[weightStr] || 0) + 1;
+    }
+  });
+  
+  return {
+    totalPools: poolCount,
+    lastUpdated: cache.lastUpdated,
+    poolTypes,
+    weightDistributions,
+    cacheSize: JSON.stringify(cache).length
+  };
+}
+
+// Pool type detection ABIs
+const WEIGHTED_POOL_ABI = [
+  'function getNormalizedWeights() external view returns (uint256[] memory)',
+  'function getSwapFeePercentage() external view returns (uint256)',
+  'function getPoolId() external view returns (bytes32)',
+  'function totalSupply() external view returns (uint256)',
+  'function getVault() external view returns (address)'
+];
+
+const STABLE_POOL_ABI = [
+  'function getAmplificationParameter() external view returns (uint256 value, bool isUpdating, uint256 precision)',
+  'function getSwapFeePercentage() external view returns (uint256)',
+  'function getPoolId() external view returns (bytes32)',
+  'function totalSupply() external view returns (uint256)',
+  'function getVault() external view returns (address)'
+];
+
+// Generic pool ABI for basic operations
+const POOL_ABI = [
+  'function getPoolId() external view returns (bytes32)',
+  'function getSwapFeePercentage() external view returns (uint256)',
+  'function totalSupply() external view returns (uint256)',
+  'function symbol() external view returns (string)',
+  'function name() external view returns (string)'
+];
+
+export async function useBalancerV3({ tokenInAddress, tokenOutAddress, amountIn, slippageTolerance = 0.5, provider }) {
+  try {
+    console.log('🔍 Discovering Balancer V3 pools for tokens:', tokenInAddress, tokenOutAddress);
+    
+    const pools = await discoverV3Pools(tokenInAddress, tokenOutAddress, provider);
+    console.log(`Found ${pools.length} V3 pools containing one or both tokens`);
+    
+    // Debug: Show which tokens are in the pools
+    const tokenSet = new Set();
+    pools.forEach(p => p.tokens.forEach(t => tokenSet.add(t.symbol || t.address.slice(0, 6))));
+    console.log(`Tokens in pools: ${Array.from(tokenSet).slice(0, 10).join(', ')}...`);
+    
+    // Check for optimal intermediate pools
+    const weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'.toLowerCase();
+    const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'.toLowerCase();
+    const intermediates = [weth, usdc, '0xdAC17F958D2ee523a2206206994597C13D831ec7', '0x6B175474E89094C44Da98b954EedeAC495271d0F'];
+    
+    let optimalPoolsCount = 0;
+    for (const inter of intermediates) {
+      const hasInter = pools.filter(p => p.tokens.some(t => t.address.toLowerCase() === inter)).length;
+      if (hasInter > 0) optimalPoolsCount += hasInter;
+    }
+    console.log(`Found ${optimalPoolsCount} pools with optimal intermediates (WETH, USDC, USDT, DAI)`);
+    
+    // Enrich pools with on-chain data (weights, pool types)
+    const enrichedPools = await enrichPoolData(pools, provider);
+    
+    const paths = await findOptimalPaths(
+      tokenInAddress,
+      tokenOutAddress,
+      amountIn,
+      enrichedPools,
+      provider,
+      3
+    );
+    
+    if (paths.length === 0) {
+      console.log('❌ No valid paths found');
+      return null;
+    }
+    
+    const bestPath = paths[0];
+    console.log('✅ Best path found:', {
+      hops: bestPath.hops.length,
+      expectedOutput: ethers.utils.formatEther(bestPath.amountOut),
+      pools: bestPath.hops.map(h => ({
+        pool: h.poolAddress.slice(0, 10) + '...',
+        type: h.poolType,
+        weights: h.weights
+      }))
+    });
+    
+    const minAmountOut = calculateMinAmountOut(bestPath.amountOut, slippageTolerance);
+    
+    return {
+      amountOut: bestPath.amountOut.toString(),
+      minAmountOut: minAmountOut.toString(),
+      path: bestPath,
+      priceImpact: bestPath.priceImpact || '0',
+      fees: bestPath.totalFees || '0',
+      poolAddresses: bestPath.hops.map(h => h.poolAddress),
+      poolTypes: bestPath.hops.map(h => h.poolType),
+      weights: bestPath.hops.map(h => h.weights)
+    };
+    
+  } catch (error) {
+    console.error('❌ Error in useBalancerV3:', error);
+    return null;
+  }
+}
+
+async function discoverV3Pools(tokenA, tokenB, provider) {
+  try {
+    const query = `
+      {
+        pools(
+          first: 200,
+          orderBy: totalShares
+          orderDirection: desc
+        ) {
+          id
+          address
+          swapFee
+          totalShares
+          tokens {
+            address
+            balance
+            decimals
+            symbol
+            priceRate
+          }
+          totalLiquidity
+          poolType
+          swapEnabled
+        }
+      }
+    `;
+    
+    const response = await axios.post(BALANCER_V3_SUBGRAPH, { query });
+    
+    if (!response.data || !response.data.data) {
+      console.log('No data from V3 subgraph');
+      return [];
+    }
+    
+    const allPools = response.data.data.pools;
+    
+    // Filter pools that contain either tokenA or tokenB
+    const relevantPools = allPools.filter(pool => {
+      const tokenAddresses = pool.tokens.map(t => t.address.toLowerCase());
+      return tokenAddresses.includes(tokenA.toLowerCase()) || 
+             tokenAddresses.includes(tokenB.toLowerCase());
+    });
+    
+    // Also get pools with common intermediate tokens for multi-hop
+    const weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'.toLowerCase();
+    const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'.toLowerCase();
+    const usdt = '0xdAC17F958D2ee523a2206206994597C13D831ec7'.toLowerCase();
+    const dai = '0x6B175474E89094C44Da98b954EedeAC495271d0F'.toLowerCase();
+    const wbtc = '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'.toLowerCase();
+    
+    const intermediateTokens = [weth, usdc, usdt, dai, wbtc];
+    
+    // Get all pools that contain intermediate tokens
+    // These will be used to bridge between tokenA and tokenB
+    const additionalPools = allPools.filter(pool => {
+      const tokenAddresses = pool.tokens.map(t => t.address.toLowerCase());
+      // Include any pool with an intermediate token
+      const hasIntermediate = tokenAddresses.some(addr => intermediateTokens.includes(addr));
+      return hasIntermediate && !relevantPools.includes(pool);
+    });
+    
+    return [...relevantPools, ...additionalPools.slice(0, 50)]; // Limit to prevent too many queries
+    
+  } catch (error) {
+    console.error('Error fetching V3 pools:', error);
+    return [];
+  }
+}
+
+async function enrichPoolData(pools, provider) {
+  const enrichedPools = [];
+  
+  // Prioritize pools with WETH for better routing
+  const weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'.toLowerCase();
+  const wethPools = pools.filter(p => 
+    p.tokens.some(t => t.address.toLowerCase() === weth)
+  );
+  const otherPools = pools.filter(p => 
+    !p.tokens.some(t => t.address.toLowerCase() === weth)
+  );
+  
+  // Process WETH pools first, then others, limit to 20 total
+  const poolsToProcess = [...wethPools.slice(0, 15), ...otherPools.slice(0, 5)];
+  console.log(`Processing ${poolsToProcess.length} pools (${wethPools.length} with WETH)...`);
+  
+  for (const pool of poolsToProcess) {
+    try {
+      const poolAddress = pool.address || pool.id;
+      
+      // Use cached pool data or detect if not cached
+      const poolData = await getPoolData(poolAddress, provider, pool);
+      
+      enrichedPools.push({
+        ...pool,
+        poolType: poolData.poolType,
+        weights: poolData.weights,
+        amplificationParameter: poolData.amplificationParameter,
+        poolAddress: poolAddress,
+        cachedData: true
+      });
+      
+    } catch (error) {
+      console.error(`Failed to enrich pool ${pool.id}:`, error.message);
+      enrichedPools.push({
+        ...pool,
+        poolType: 'Unknown',
+        weights: null,
+        poolAddress: pool.address || pool.id
+      });
+    }
+  }
+  
+  return enrichedPools;
+}
+
+async function detectPoolType(poolAddress, provider) {
+  try {
+    // Try to detect if it's a weighted pool
+    const weightedPool = new ethers.Contract(poolAddress, WEIGHTED_POOL_ABI, provider);
+    try {
+      const weights = await weightedPool.getNormalizedWeights();
+      console.log(`Pool ${poolAddress.slice(0, 10)}... is a Weighted Pool`);
+      
+      // Convert weights from uint256 to percentages
+      const totalWeight = ethers.utils.parseEther('1');
+      const normalizedWeights = weights.map(w => {
+        const percentage = ethers.BigNumber.from(w).mul(100).div(totalWeight);
+        return percentage.toNumber();
+      });
+      
+      return {
+        poolType: 'WeightedPool',
+        weights: normalizedWeights,
+        amplificationParameter: null
+      };
+    } catch (e) {
+      // Not a weighted pool, continue
+    }
+    
+    // Try to detect if it's a stable pool
+    const stablePool = new ethers.Contract(poolAddress, STABLE_POOL_ABI, provider);
+    try {
+      const ampData = await stablePool.getAmplificationParameter();
+      console.log(`Pool ${poolAddress.slice(0, 10)}... is a Stable Pool`);
+      
+      return {
+        poolType: 'StablePool',
+        weights: null, // Stable pools don't have weights
+        amplificationParameter: ampData.value.toString()
+      };
+    } catch (e) {
+      // Not a stable pool, continue
+    }
+    
+    // Check if it has basic pool functions (might be composable stable or other type)
+    const basicPool = new ethers.Contract(poolAddress, POOL_ABI, provider);
+    try {
+      const name = await basicPool.name();
+      
+      // Try to infer pool type from name
+      if (name.toLowerCase().includes('weighted')) {
+        return {
+          poolType: 'WeightedPool',
+          weights: [50, 50], // Default to 50/50 if we can't get actual weights
+          amplificationParameter: null
+        };
+      } else if (name.toLowerCase().includes('stable')) {
+        return {
+          poolType: 'StablePool',
+          weights: null,
+          amplificationParameter: '100' // Default amplification
+        };
+      } else if (name.toLowerCase().includes('linear')) {
+        return {
+          poolType: 'LinearPool',
+          weights: null,
+          amplificationParameter: null
+        };
+      }
+    } catch (e) {
+      // Can't determine from name
+    }
+    
+    // Default to constant product if we can't determine
+    return {
+      poolType: 'ConstantProduct',
+      weights: [50, 50],
+      amplificationParameter: null
+    };
+    
+  } catch (error) {
+    console.error(`Error detecting pool type for ${poolAddress}:`, error.message);
+    return {
+      poolType: 'Unknown',
+      weights: null,
+      amplificationParameter: null
+    };
+  }
+}
+
+async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, maxHops = 3) {
+  const paths = [];
+  const visited = new Set();
+  
+  // Define priority intermediate tokens for optimal routing
+  const priorityIntermediates = [
+    '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
+    '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+    '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
+    '0x6B175474E89094C44Da98b954EedeAC495271d0F', // DAI
+  ].map(t => t.toLowerCase());
+  
+  // First, try direct paths and 2-hop paths through priority intermediates
+  await findDirectAndPriorityPaths();
+  
+  // Then use DFS for more complex paths if needed
+  async function findDirectAndPriorityPaths() {
+    const tokenInLower = tokenIn.toLowerCase();
+    const tokenOutLower = tokenOut.toLowerCase();
+    
+    // Check for direct path
+    for (const pool of pools) {
+      const poolTokens = pool.tokens.map(t => t.address.toLowerCase());
+      if (poolTokens.includes(tokenInLower) && poolTokens.includes(tokenOutLower)) {
+        // Direct pool exists!
+        try {
+          const result = await calculateSingleHop(pool, tokenIn, tokenOut, amountIn);
+          if (result) {
+            paths.push({
+              hops: [result],
+              amountOut: result.amountOut,
+              totalFees: result.swapFee,
+              priceImpact: '0' // Direct path has minimal impact
+            });
+          }
+        } catch (e) {
+          console.error(`Error calculating direct path: ${e.message}`);
+        }
+      }
+    }
+    
+    // Try 2-hop paths through each priority intermediate
+    for (const intermediate of priorityIntermediates) {
+      if (intermediate === tokenInLower || intermediate === tokenOutLower) continue;
+      
+      // Find pools: tokenIn -> intermediate
+      const firstHopPools = pools.filter(p => {
+        const addrs = p.tokens.map(t => t.address.toLowerCase());
+        return addrs.includes(tokenInLower) && addrs.includes(intermediate);
+      });
+      
+      // Find pools: intermediate -> tokenOut
+      const secondHopPools = pools.filter(p => {
+        const addrs = p.tokens.map(t => t.address.toLowerCase());
+        return addrs.includes(intermediate) && addrs.includes(tokenOutLower);
+      });
+      
+      // Try all combinations
+      for (const firstPool of firstHopPools) {
+        for (const secondPool of secondHopPools) {
+          try {
+            const hop1 = await calculateSingleHop(firstPool, tokenIn, 
+              firstPool.tokens.find(t => t.address.toLowerCase() === intermediate).address, 
+              amountIn);
+            if (!hop1) continue;
+            
+            const hop2 = await calculateSingleHop(secondPool, 
+              secondPool.tokens.find(t => t.address.toLowerCase() === intermediate).address,
+              secondPool.tokens.find(t => t.address.toLowerCase() === tokenOutLower).address,
+              hop1.amountOut);
+            if (!hop2) continue;
+            
+            paths.push({
+              hops: [hop1, hop2],
+              amountOut: hop2.amountOut,
+              totalFees: calculateTotalFees([hop1, hop2]),
+              priceImpact: calculatePriceImpact(amountIn, hop2.amountOut, [hop1, hop2])
+            });
+          } catch (e) {
+            // Skip this combination
+          }
+        }
+      }
+    }
+  }
+  
+  async function calculateSingleHop(pool, tokenIn, tokenOut, amountIn) {
+    const tokens = pool.tokens.map(t => t.address.toLowerCase());
+    const tokenInIndex = tokens.indexOf(tokenIn.toLowerCase());
+    const tokenOutIndex = tokens.indexOf(tokenOut.toLowerCase());
+    
+    if (tokenInIndex === -1 || tokenOutIndex === -1) return null;
+    
+    // Get token balances
+    const balanceInStr = pool.tokens[tokenInIndex].balance;
+    const balanceOutStr = pool.tokens[tokenOutIndex].balance;
+    
+    let balanceIn, balanceOut;
+    try {
+      if (balanceInStr.includes('.')) {
+        const decimalsIn = pool.tokens[tokenInIndex].decimals || 18;
+        balanceIn = ethers.utils.parseUnits(balanceInStr, decimalsIn);
+      } else {
+        balanceIn = ethers.BigNumber.from(balanceInStr);
+      }
+      
+      if (balanceOutStr.includes('.')) {
+        const decimalsOut = pool.tokens[tokenOutIndex].decimals || 18;
+        balanceOut = ethers.utils.parseUnits(balanceOutStr, decimalsOut);
+      } else {
+        balanceOut = ethers.BigNumber.from(balanceOutStr);
+      }
+    } catch (e) {
+      return null;
+    }
+    
+    // Calculate output
+    const outputAmount = calculateSwapOutput(
+      ethers.BigNumber.from(amountIn),
+      balanceIn,
+      balanceOut,
+      pool.swapFee,
+      pool.poolType,
+      pool.weights ? pool.weights[tokenInIndex] : null,
+      pool.weights ? pool.weights[tokenOutIndex] : null,
+      pool.amplificationParameter
+    );
+    
+    return {
+      poolAddress: pool.poolAddress,
+      poolType: pool.poolType,
+      tokenIn: tokenIn,
+      tokenOut: tokenOut,
+      amountIn: amountIn,
+      amountOut: outputAmount,
+      swapFee: pool.swapFee,
+      weights: pool.weights ? `${pool.weights[tokenInIndex]}/${pool.weights[tokenOutIndex]}` : null
+    };
+  }
+  
+  async function dfs(currentToken, targetToken, remainingAmount, currentPath, hopsLeft) {
+    if (hopsLeft === 0) return;
+    
+    const pathKey = `${currentToken}-${currentPath.map(p => p.poolAddress).join(',')}`;
+    if (visited.has(pathKey)) return;
+    visited.add(pathKey);
+    
+    for (const pool of pools) {
+      const tokens = pool.tokens.map(t => t.address.toLowerCase());
+      const currentTokenLower = currentToken.toLowerCase();
+      
+      if (!tokens.includes(currentTokenLower)) continue;
+      
+      for (let i = 0; i < tokens.length; i++) {
+        const nextToken = tokens[i];
+        if (nextToken === currentTokenLower) continue;
+        
+        try {
+          const tokenInIndex = tokens.indexOf(currentTokenLower);
+          const tokenOutIndex = i;
+          
+          // Get token balances from pool data
+          // Handle decimal balances by converting to wei
+          const balanceInStr = pool.tokens[tokenInIndex].balance;
+          const balanceOutStr = pool.tokens[tokenOutIndex].balance;
+          
+          let balanceIn, balanceOut;
+          try {
+            // If balance is a decimal string, parse it properly
+            if (balanceInStr.includes('.')) {
+              const decimalsIn = pool.tokens[tokenInIndex].decimals || 18;
+              balanceIn = ethers.utils.parseUnits(balanceInStr, decimalsIn);
+            } else {
+              balanceIn = ethers.BigNumber.from(balanceInStr);
+            }
+            
+            if (balanceOutStr.includes('.')) {
+              const decimalsOut = pool.tokens[tokenOutIndex].decimals || 18;
+              balanceOut = ethers.utils.parseUnits(balanceOutStr, decimalsOut);
+            } else {
+              balanceOut = ethers.BigNumber.from(balanceOutStr);
+            }
+          } catch (e) {
+            console.error(`Error parsing balances for pool ${pool.poolAddress}: ${e.message}`);
+            continue;
+          }
+          
+          // Calculate weights for this specific swap
+          let weightIn = null;
+          let weightOut = null;
+          if (pool.weights && pool.weights.length > 0) {
+            weightIn = pool.weights[tokenInIndex];
+            weightOut = pool.weights[tokenOutIndex];
+          }
+          
+          const outputAmount = calculateSwapOutput(
+            remainingAmount,
+            balanceIn,
+            balanceOut,
+            pool.swapFee,
+            pool.poolType,
+            weightIn,
+            weightOut,
+            pool.amplificationParameter
+          );
+          
+          const hop = {
+            poolAddress: pool.poolAddress,
+            poolType: pool.poolType,
+            tokenIn: currentToken,
+            tokenOut: pool.tokens[tokenOutIndex].address,
+            amountIn: remainingAmount,
+            amountOut: outputAmount,
+            swapFee: pool.swapFee,
+            weights: pool.weights ? `${weightIn}/${weightOut}` : null
+          };
+          
+          const newPath = [...currentPath, hop];
+          
+          if (nextToken === targetToken.toLowerCase()) {
+            const totalFees = calculateTotalFees(newPath);
+            
+            paths.push({
+              hops: newPath,
+              amountOut: outputAmount,
+              totalFees: totalFees.toString(),
+              priceImpact: calculatePriceImpact(amountIn, outputAmount, newPath)
+            });
+          } else if (hopsLeft > 1) {
+            await dfs(pool.tokens[tokenOutIndex].address, targetToken, outputAmount, newPath, hopsLeft - 1);
+          }
+        } catch (error) {
+          console.error(`Error processing pool ${pool.poolAddress}:`, error.message);
+        }
+      }
+    }
+  }
+  
+  // If we didn't find enough good paths with priority routing, try DFS for 3-hop paths
+  if (paths.length < 3) {
+    await dfs(tokenIn, tokenOut, ethers.BigNumber.from(amountIn), [], maxHops);
+  }
+  
+  // Sort paths by best output
+  paths.sort((a, b) => {
+    const aOut = ethers.BigNumber.from(a.amountOut);
+    const bOut = ethers.BigNumber.from(b.amountOut);
+    return bOut.gt(aOut) ? 1 : -1;
+  });
+  
+  console.log(`Found ${paths.length} total paths, returning best ${Math.min(5, paths.length)}`);
+  return paths.slice(0, 5);
+}
+
+function calculateSwapOutput(amountIn, balanceIn, balanceOut, swapFee, poolType, weightIn, weightOut, amplificationParameter) {
+  const fee = ethers.BigNumber.from(Math.floor(parseFloat(swapFee) * 1e18));
+  const oneEther = ethers.utils.parseEther('1');
+  const amountInAfterFee = amountIn.mul(oneEther.sub(fee)).div(oneEther);
+  
+  if (poolType === 'WeightedPool') {
+    // Weighted pool with proper weight ratios
+    // Formula: outAmount = balanceOut * (1 - (balanceIn / (balanceIn + inAmount))^(weightIn/weightOut))
+    
+    // Convert weights to basis points for calculation
+    const wi = weightIn ? ethers.BigNumber.from(weightIn) : ethers.BigNumber.from(50);
+    const wo = weightOut ? ethers.BigNumber.from(weightOut) : ethers.BigNumber.from(50);
+    
+    // Simplified calculation using linear approximation for BigNumber compatibility
+    // More accurate would require power function which is complex with BigNumbers
+    const ratio = amountInAfterFee.mul(oneEther).div(balanceIn.add(amountInAfterFee));
+    const weightAdjustedRatio = ratio.mul(wo).div(wi);
+    
+    return balanceOut.mul(weightAdjustedRatio).div(oneEther);
+    
+  } else if (poolType === 'StablePool') {
+    // Stable pool with amplification parameter
+    const amp = amplificationParameter ? ethers.BigNumber.from(amplificationParameter) : ethers.BigNumber.from('100');
+    
+    // Simplified StableSwap calculation
+    // Real implementation would use iterative solving
+    const sum = balanceIn.add(balanceOut);
+    const prod = balanceIn.mul(balanceOut);
+    
+    const newBalanceIn = balanceIn.add(amountInAfterFee);
+    
+    // Approximate the new balance out
+    // This is simplified - real stable math is more complex
+    const invariant = sum.mul(amp).add(prod.mul(2).div(sum));
+    const newProd = invariant.mul(newBalanceIn).div(amp.add(1));
+    const newBalanceOut = newProd.div(newBalanceIn);
+    
+    return balanceOut.gt(newBalanceOut) ? balanceOut.sub(newBalanceOut) : ethers.BigNumber.from(0);
+    
+  } else {
+    // Constant product (x * y = k) - default
+    const product = balanceIn.mul(balanceOut);
+    const newBalanceIn = balanceIn.add(amountInAfterFee);
+    const newBalanceOut = product.div(newBalanceIn);
+    return balanceOut.gt(newBalanceOut) ? balanceOut.sub(newBalanceOut) : ethers.BigNumber.from(0);
+  }
+}
+
+function calculateTotalFees(path) {
+  return path.reduce((total, hop) => {
+    const fee = ethers.BigNumber.from(hop.amountIn)
+      .mul(Math.floor(parseFloat(hop.swapFee) * 10000))
+      .div(10000);
+    return total.add(fee);
+  }, ethers.BigNumber.from(0));
+}
+
+function calculatePriceImpact(amountIn, amountOut, path) {
+  if (!amountOut || amountOut.isZero()) return '100'; // 100% impact if no output
+  
+  const inputBN = ethers.BigNumber.from(amountIn);
+  const outputBN = ethers.BigNumber.from(amountOut);
+  
+  // Calculate expected price without slippage (using first pool's ratio)
+  const firstHop = path[0];
+  const spotPrice = firstHop.amountOut.mul(ethers.utils.parseEther('1')).div(firstHop.amountIn);
+  
+  // Calculate actual price
+  const actualPrice = outputBN.mul(ethers.utils.parseEther('1')).div(inputBN);
+  
+  // Price impact = (spotPrice - actualPrice) / spotPrice * 100
+  if (spotPrice.isZero()) return '0';
+  
+  const impact = spotPrice.sub(actualPrice).mul(10000).div(spotPrice);
+  return impact.abs().toString();
+}
+
+function calculateMinAmountOut(amountOut, slippageTolerance) {
+  const slippageFactor = Math.floor((100 - slippageTolerance) * 100);
+  return amountOut.mul(slippageFactor).div(10000);
+}
+
+export default useBalancerV3;
