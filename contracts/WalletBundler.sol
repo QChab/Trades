@@ -12,6 +12,7 @@ interface IPermit2 {
  */
 contract WalletBundlerOptimized {
     address public immutable owner;
+    address private immutable self;
     
     // Pack constants to save deployment gas
     address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
@@ -30,6 +31,7 @@ contract WalletBundlerOptimized {
     
     constructor() {
         owner = msg.sender;
+        self = address(this);
     }
     
     /**
@@ -48,8 +50,12 @@ contract WalletBundlerOptimized {
             mstore(add(ptr, 0x24), to)     // recipient
             mstore(add(ptr, 0x44), amount) // amount
             
-            let success := call(gas(), token, 0, ptr, 0x64, 0, 0)
+            let success := call(gas(), token, 0, ptr, 0x64, ptr, 0x20)
             if iszero(success) { revert(0, 0) }
+            
+            // Check return value (some tokens return false instead of reverting)
+            let returnValue := mload(ptr)
+            if iszero(returnValue) { revert(0, 0) }
         }
     }
     
@@ -102,7 +108,7 @@ contract WalletBundlerOptimized {
         
         // Transfer input tokens if needed
         if (fromToken != address(0) && fromAmount != 0) {
-            _transferFromToken(fromToken, owner, address(this), fromAmount);
+            _transferFromToken(fromToken, owner, self, fromAmount);
         }
         
         // Execute calls with minimal memory allocation
@@ -119,15 +125,15 @@ contract WalletBundlerOptimized {
             address token = outputTokens[i];
             if (token == address(0)) {
                 // ETH transfer
-                uint256 balance = address(this).balance;
+                uint256 balance = self.balance;
                 if (balance != 0) {
                     _sendETH(owner, balance);
                 }
             } else {
                 // ERC20 transfer
-                uint256 balance = _getTokenBalance(token, address(this));
+                uint256 balance = _getTokenBalance(token, self);
                 if (balance > 0) {
-                    _transferFromToken(token, address(this), owner, balance);
+                    _transferFromToken(token, self, owner, balance);
                 }
             }
             unchecked { ++i; }
@@ -135,9 +141,9 @@ contract WalletBundlerOptimized {
         
         // Return remaining input token if different from outputs
         if (fromToken != address(0)) {
-            uint256 balance = _getTokenBalance(fromToken, address(this));
+            uint256 balance = _getTokenBalance(fromToken, self);
             if (balance > 0) {
-                _transferFromToken(fromToken, address(this), owner, balance);
+                _transferFromToken(fromToken, self, owner, balance);
             }
         }
     }
@@ -179,7 +185,7 @@ contract WalletBundlerOptimized {
                     mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000) // approve selector
                     mstore(add(ptr, 0x04), token) // token
                     mstore(add(ptr, 0x24), permit2Spender) // spender
-                    mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffffffffffff) // MAX_ALLOWANCE
+                    mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffffffffffff) // MAX_ALLOWANCE                    
                     mstore(add(ptr, 0x64), add(timestamp(), 1577836800)) // EXPIRATION_OFFSET
                     
                     let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
@@ -196,14 +202,14 @@ contract WalletBundlerOptimized {
      */
     function withdraw(address token, uint256 amount) external auth {
         if (token == address(0)) {
-            uint256 balance = amount == 0 ? address(this).balance : amount;
+            uint256 balance = amount == 0 ? self.balance : amount;
             _sendETH(owner, balance);
         } else {
-            uint256 balance = _getTokenBalance(token, address(this));
+            uint256 balance = _getTokenBalance(token, self);
             uint256 withdrawAmount = amount == 0 ? balance : amount;
             if (withdrawAmount > balance) revert TransferFailed();
             
-            _transferFromToken(token, address(this), owner, withdrawAmount);
+            _transferFromToken(token, self, owner, withdrawAmount);
         }
     }
     
