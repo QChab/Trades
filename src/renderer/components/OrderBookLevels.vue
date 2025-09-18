@@ -1722,7 +1722,7 @@ input.percentage-input {
 }
 
 .status-partially-filled {
-  background-color: #d2fd14;
+  background-color: #7514fd;
   color: white;
   border: 1px solid #fd7e14;
   font-weight: 600;
