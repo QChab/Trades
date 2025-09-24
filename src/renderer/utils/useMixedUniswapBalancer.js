@@ -281,7 +281,9 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
       poolTypes: result.poolTypes,
       weights: result.weights,
       hops: result.path.hops.length,
-      fees: result.fees
+      fees: result.fees,
+      // Pass through poolData for exact AMM calculations
+      poolData: result.poolData
     };
 
   } catch (error) {
@@ -351,7 +353,7 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
                 token: { symbol: 'WETH', decimals: 18 },
                 outputAmount: balancerLeg1.outputAmount,
                 inputAmount: amountIn,
-                poolData: balancerLeg1.poolData
+                poolData: balancerLeg1.poolData  // This is now properly passed from discoverBalancerPaths
               },
               {
                 protocol: 'uniswap',
@@ -1388,6 +1390,18 @@ async function optimizeWithExactAMM(balancerLeg, uniswapLeg, secondHopLeg, amoun
  */
 async function optimizeDirectSplit(balancerLeg, uniswapLeg, amountIn, tokenIn, tokenOut) {
   console.log('\n⚡ Optimizing direct split (both legs reach target)...');
+  console.log('   Balancer leg has poolData:', !!balancerLeg.poolData);
+  console.log('   Uniswap leg has trade:', !!uniswapLeg.trade);
+  console.log('   Uniswap leg trade.swaps:', uniswapLeg.trade?.swaps?.length);
+  const testPool = uniswapLeg.pool || uniswapLeg.trade?.swaps?.[0]?.route?.pools?.[0];
+  console.log('   Uniswap leg has accessible pool:', !!testPool);
+
+  if (!balancerLeg.poolData) {
+    console.log('   ⚠️ WARNING: Using LINEAR approximation for Balancer (no poolData)');
+  }
+  if (!testPool) {
+    console.log('   ⚠️ WARNING: Using LINEAR approximation for Uniswap (no pool data)');
+  }
 
   // Helper function to calculate output for a given split
   const calculateOutputForSplit = async (fraction) => {
@@ -1398,10 +1412,11 @@ async function optimizeDirectSplit(balancerLeg, uniswapLeg, amountIn, tokenIn, t
       calculateBalancerExactOutput(balancerAmount, balancerLeg.poolData, 0, 1) :
       balancerLeg.outputAmount.mul(balancerAmount).div(amountIn);
 
-    const uniOut = uniswapLeg.pool || uniswapLeg.trade?.route?.pools?.[0] ?
+    const uniswapPool = uniswapLeg.pool || uniswapLeg.trade?.swaps?.[0]?.route?.pools?.[0];
+    const uniOut = uniswapPool ?
       await calculateUniswapExactOutput(
         uniswapAmount,
-        uniswapLeg.pool || uniswapLeg.trade.route.pools[0],
+        uniswapPool,
         tokenIn.symbol,
         uniswapLeg.token?.symbol || tokenOut.symbol
       ) : uniswapLeg.outputAmount.mul(uniswapAmount).div(amountIn);

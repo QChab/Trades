@@ -265,7 +265,9 @@ export async function useBalancerV3({ tokenInAddress, tokenOutAddress, amountIn,
       fees: bestPath.totalFees || '0',
       poolAddresses: bestPath.hops.map(h => h.poolAddress),
       poolTypes: bestPath.hops.map(h => h.poolType),
-      weights: bestPath.hops.map(h => h.weights)
+      weights: bestPath.hops.map(h => h.weights),
+      // Include poolData for exact AMM calculations in optimization
+      poolData: bestPath.hops.length > 0 ? bestPath.hops[0].poolData : null
     };
     
   } catch (error) {
@@ -615,7 +617,15 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
       amountIn: amountIn,
       amountOut: outputAmount,
       swapFee: pool.swapFee,
-      weights: pool.weights ? `${pool.weights[tokenInIndex]}/${pool.weights[tokenOutIndex]}` : null
+      weights: pool.weights ? `${pool.weights[tokenInIndex]}/${pool.weights[tokenOutIndex]}` : null,
+      // Add full pool data for exact AMM calculations
+      poolData: {
+        tokens: pool.tokens,
+        poolType: pool.poolType,
+        weights: pool.weights,
+        swapFee: pool.swapFee,
+        amplificationParameter: pool.amplificationParameter
+      }
     };
   }
   
@@ -693,7 +703,15 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
             amountIn: remainingAmount,
             amountOut: outputAmount,
             swapFee: pool.swapFee,
-            weights: pool.weights ? `${weightIn}/${weightOut}` : null
+            weights: pool.weights ? `${weightIn}/${weightOut}` : null,
+            // Add full pool data for exact AMM calculations
+            poolData: {
+              tokens: pool.tokens,
+              poolType: pool.poolType,
+              weights: pool.weights,
+              swapFee: pool.swapFee,
+              amplificationParameter: pool.amplificationParameter
+            }
           };
           
           const newPath = [...currentPath, hop];
@@ -776,12 +794,12 @@ function calculateExactPower(base, numerator, denominator) {
 
 export function calculateSwapOutput(amountIn, balanceIn, balanceOut, swapFee, poolType, weightIn, weightOut, amplificationParameter) {
   // Convert swap fee to BigNumber (handle both decimal and wei formats)
-  const feeValue = typeof swapFee === 'string' && swapFee.includes('.') 
+  const feeValue = typeof swapFee === 'string' && swapFee.includes('.')
     ? ethers.utils.parseEther(swapFee)
     : ethers.BigNumber.from(String(swapFee));
   const oneEther = ethers.utils.parseEther('1');
   const amountInAfterFee = amountIn.mul(oneEther.sub(feeValue)).div(oneEther);
-  
+
   if (poolType === 'WeightedPool') {
     // Exact Balancer weighted pool formula:
     // outAmount = balanceOut * (1 - (balanceIn / (balanceIn + inAmount * (1 - fee)))^(weightIn/weightOut))

@@ -71,8 +71,17 @@ export function calculateBalancerExactOutput(amountIn, pool, tokenInIndex, token
     return BigNumber.from(0);
   }
 
-  const balanceIn = BigNumber.from(tokenIn.balanceRaw || tokenIn.balance);
-  const balanceOut = BigNumber.from(tokenOut.balanceRaw || tokenOut.balance);
+  // Handle balance that might be a decimal string
+  const balanceInValue = tokenIn.balanceRaw || tokenIn.balance;
+  const balanceOutValue = tokenOut.balanceRaw || tokenOut.balance;
+
+  const balanceIn = typeof balanceInValue === 'string' && balanceInValue.includes('.')
+    ? ethers.utils.parseEther(balanceInValue)
+    : BigNumber.from(balanceInValue);
+
+  const balanceOut = typeof balanceOutValue === 'string' && balanceOutValue.includes('.')
+    ? ethers.utils.parseEther(balanceOutValue)
+    : BigNumber.from(balanceOutValue);
   const weightIn = pool.weights?.[tokenInIndex] || 50;  // Use 50 for default 50/50 pools
   const weightOut = pool.weights?.[tokenOutIndex] || 50;
   const swapFee = pool.swapFee || '3000000000000000'; // 0.3%
