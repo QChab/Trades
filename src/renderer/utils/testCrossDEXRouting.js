@@ -42,7 +42,7 @@ async function testCrossDEXRouting() {
 
   const tokensTraded = {
     tokenInObject: ONE,
-    tokenOutObject: ETH,
+    tokenOutObject: SEV,
   }
   
   try {
