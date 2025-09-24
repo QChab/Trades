@@ -1,13 +1,10 @@
 import { ethers, BigNumber } from 'ethers';
 import { useUniswapV4 } from '../composables/useUniswap.js';
 import { useBalancerV3, getCacheStats } from './useBalancerV3.js';
-import { 
-  discoverAllPools, 
-  buildPossiblePaths, 
-  findOptimalMixedStrategy,
+import {
   calculateUniswapExactOutput,
-  calculateBalancerExactOutput 
-} from './crossDEXOptimizer.js';
+  calculateBalancerExactOutput
+} from './exactAMMOutputs.js'
 
 // Constants for ETH/WETH handling
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
@@ -711,356 +708,6 @@ function selectBestVariant(paths) {
 }
 
 /**
- * DEPRECATED - Uses linear approximations instead of exact AMM calculations
- * This function should be replaced with exact calculations using:
- * - calculateUniswapExactOutput for Uniswap paths
- * - calculateBalancerExactOutput for Balancer paths
- *
- * Use optimizeDirectSplit or optimizeWithExactAMM instead.
- */
-
-/**
- * DEPRECATED - Uses linear approximations instead of exact AMM calculations
- * This incorrectly assumes linear scaling: output = (inputAmount/referenceInput) * referenceOutput
- * Real AMMs have diminishing returns due to constant product formula.
- */
-
-
-
-/**
- * Find optimal split between Uniswap and Balancer using advanced optimization
- * Combines binary search, genetic algorithm concepts, and price impact modeling
- */
-async function findOptimalMixedSplit(uniswapPath, balancerPath, amountIn, tokenIn, tokenOut) {
-  // Configuration for advanced optimization with high precision
-  const CONFIG = {
-    BINARY_PRECISION: 0.0001,      // 0.01% precision for binary search
-    FINE_TUNE_PRECISION: 0.00001,  // 0.001% precision for final fine-tuning
-    MAX_ITERATIONS: 100,            // Maximum iterations
-    FINE_TUNE_ITERATIONS: 20,       // Additional iterations for fine-tuning
-    PRICE_IMPACT_FACTOR: 0.997,     // Approximate price impact per unit
-    LIQUIDITY_DRAIN_FACTOR: 0.95,   // Liquidity reduction factor
-    CONVERGENCE_THRESHOLD: 0.00001, // When to stop optimizing (0.001%)
-    ADAPTIVE_PRECISION: true        // Enable adaptive precision based on trade size
-  };
-
-  // Calculate price impact for each protocol based on liquidity depth
-  async function calculatePriceImpact(protocol, amount, pathData) {
-    // Simulate non-linear price impact based on trade size
-    const baseImpact = 0.003; // 0.3% base impact
-    const sizeRatio = amount.mul(10000).div(amountIn).toNumber() / 10000;
-    
-    // Quadratic impact model: impact increases with square of size
-    const impactMultiplier = 1 + (sizeRatio * sizeRatio * 2);
-    const totalImpact = baseImpact * impactMultiplier;
-    
-    // Adjust output based on price impact
-    const adjustedOutput = pathData.outputAmount
-      .mul(amount)
-      .div(pathData.inputAmount)
-      .mul(Math.floor((1 - totalImpact) * 10000))
-      .div(10000);
-    
-    return {
-      output: adjustedOutput,
-      priceImpact: totalImpact,
-      liquidityDrain: totalImpact * CONFIG.LIQUIDITY_DRAIN_FACTOR
-    };
-  }
-
-  // Binary search for optimal split with ultra-high precision
-  async function binarySearchOptimal() {
-    let left = 0;
-    let right = 1;
-    let bestSplit = null;
-    let bestOutput = BigNumber.from(0);
-    let iterations = 0;
-    
-    // Cache for already calculated splits - use higher precision key
-    const cache = new Map();
-    
-    // Determine adaptive precision based on trade size
-    let currentPrecision = CONFIG.BINARY_PRECISION;
-    if (CONFIG.ADAPTIVE_PRECISION) {
-      // Larger trades need more precision (smaller percentages matter more)
-      const tradeSize = parseFloat(ethers.utils.formatEther(amountIn));
-      if (tradeSize > 1000) {
-        currentPrecision = CONFIG.FINE_TUNE_PRECISION; // 0.001% for large trades
-      } else if (tradeSize > 100) {
-        currentPrecision = CONFIG.BINARY_PRECISION / 10; // 0.001% for medium trades
-      }
-    }
-    
-    while (right - left > currentPrecision && iterations < CONFIG.MAX_ITERATIONS) {
-      iterations++;
-      
-      // Use more test points for better precision
-      const points = [
-        left + (right - left) * 0.25,    // Quarter point
-        left + (right - left) * 0.382,   // Golden ratio point 1
-        left + (right - left) * 0.5,     // Middle
-        left + (right - left) * 0.618,   // Golden ratio point 2
-        left + (right - left) * 0.75     // Three-quarter point
-      ];
-      
-      const results = await Promise.all(points.map(async (fraction) => {
-        // Use higher precision cache key (100,000 instead of 1,000)
-        const key = Math.floor(fraction * 100000);
-        if (cache.has(key)) {
-          return cache.get(key);
-        }
-        
-        // Use higher precision for amount calculations (1,000,000 instead of 10,000)
-        const uniswapAmount = amountIn.mul(Math.floor(fraction * 1000000)).div(1000000);
-        const balancerAmount = amountIn.sub(uniswapAmount);
-        
-        // Calculate outputs with price impact
-        const [uniResult, balResult] = await Promise.all([
-          calculatePriceImpact('uniswap', uniswapAmount, uniswapPath),
-          calculatePriceImpact('balancer', balancerAmount, balancerPath)
-        ]);
-        
-        const result = {
-          fraction,
-          totalOutput: uniResult.output.add(balResult.output),
-          uniswapAmount,
-          balancerAmount,
-          uniswapOutput: uniResult.output,
-          balancerOutput: balResult.output,
-          totalPriceImpact: (uniResult.priceImpact * fraction) + (balResult.priceImpact * (1 - fraction)),
-          cascadingEffect: uniResult.liquidityDrain + balResult.liquidityDrain
-        };
-        
-        cache.set(key, result);
-        return result;
-      }));
-      
-      // Find best result and adjust search space
-      let bestIdx = 0;
-      for (let i = 0; i < results.length; i++) {
-        if (results[i].totalOutput.gt(results[bestIdx].totalOutput)) {
-          bestIdx = i;
-        }
-      }
-      
-      if (results[bestIdx].totalOutput.gt(bestOutput)) {
-        bestOutput = results[bestIdx].totalOutput;
-        bestSplit = results[bestIdx];
-      }
-      
-      // More sophisticated narrowing based on which point was best
-      if (bestIdx === 0) {
-        // Best at 25%, search lower
-        right = points[2]; // Cut at middle
-      } else if (bestIdx === 1) {
-        // Best at 38.2%, narrow around golden ratio
-        left = points[0];
-        right = points[3];
-      } else if (bestIdx === 2) {
-        // Best at middle, narrow symmetrically
-        left = points[1];
-        right = points[3];
-      } else if (bestIdx === 3) {
-        // Best at 61.8%, narrow around golden ratio
-        left = points[1];
-        right = points[4];
-      } else {
-        // Best at 75%, search higher
-        left = points[2]; // Cut at middle
-      }
-      
-      // Dynamic convergence check
-      if (iterations > 10) {
-        const recentOutputs = points.map((_, i) => results[i].totalOutput);
-        const maxOutput = recentOutputs.reduce((max, o) => o.gt(max) ? o : max);
-        const minOutput = recentOutputs.reduce((min, o) => o.lt(min) ? o : min);
-        const spread = maxOutput.sub(minOutput);
-        
-        // Check if spread is less than convergence threshold
-        if (spread.lt(amountIn.mul(Math.floor(CONFIG.CONVERGENCE_THRESHOLD * 1000000)).div(1000000))) {
-          console.log(`✅ Converged after ${iterations} iterations (precision: ${(currentPrecision * 100).toFixed(3)}%)`);
-          break;
-        }
-      }
-    }
-    
-    return bestSplit;
-  }
-  
-  // Fine-tuning phase for ultra-high precision (0.001% granularity)
-  async function fineTuneSplit(initialSplit) {
-    if (!CONFIG.FINE_TUNE_PRECISION) return initialSplit;
-    
-    console.log(`🔬 Fine-tuning around ${(initialSplit.fraction * 100).toFixed(3)}% with 0.001% precision...`);
-    
-    let bestSplit = initialSplit;
-    let bestOutput = initialSplit.totalOutput;
-    const searchRadius = 0.001; // Search within 0.1% of current best
-    
-    for (let i = 0; i < CONFIG.FINE_TUNE_ITERATIONS; i++) {
-      const testFraction = Math.max(0, Math.min(1, 
-        bestSplit.fraction + (Math.random() - 0.5) * searchRadius * 2
-      ));
-      
-      // Ultra-high precision calculation
-      const uniswapAmount = amountIn.mul(Math.floor(testFraction * 10000000)).div(10000000);
-      const balancerAmount = amountIn.sub(uniswapAmount);
-      
-      const [uniResult, balResult] = await Promise.all([
-        calculatePriceImpact('uniswap', uniswapAmount, uniswapPath),
-        calculatePriceImpact('balancer', balancerAmount, balancerPath)
-      ]);
-      
-      const totalOutput = uniResult.output.add(balResult.output);
-      
-      if (totalOutput.gt(bestOutput)) {
-        bestOutput = totalOutput;
-        bestSplit = {
-          fraction: testFraction,
-          totalOutput,
-          uniswapAmount,
-          balancerAmount,
-          uniswapOutput: uniResult.output,
-          balancerOutput: balResult.output,
-          totalPriceImpact: (uniResult.priceImpact * testFraction) + 
-                           (balResult.priceImpact * (1 - testFraction)),
-          cascadingEffect: uniResult.liquidityDrain + balResult.liquidityDrain
-        };
-      }
-    }
-    
-    console.log(`   Fine-tuned to ${(bestSplit.fraction * 100).toFixed(4)}%`);
-    return bestSplit;
-  }
-
-  // Genetic-inspired perturbation for escaping local optima
-  async function perturbAndReoptimize(currentBest) {
-    const perturbations = [];
-    const numPerturbations = 5;
-    
-    for (let i = 0; i < numPerturbations; i++) {
-      // Random perturbation within ±10% of current best
-      const perturbation = currentBest.fraction + (Math.random() - 0.5) * 0.2;
-      const fraction = Math.max(0, Math.min(1, perturbation));
-      
-      const uniswapAmount = amountIn.mul(Math.floor(fraction * 10000)).div(10000);
-      const balancerAmount = amountIn.sub(uniswapAmount);
-      
-      const [uniResult, balResult] = await Promise.all([
-        calculatePriceImpact('uniswap', uniswapAmount, uniswapPath),
-        calculatePriceImpact('balancer', balancerAmount, balancerPath)
-      ]);
-      
-      perturbations.push({
-        fraction,
-        totalOutput: uniResult.output.add(balResult.output),
-        uniswapAmount,
-        balancerAmount,
-        uniswapOutput: uniResult.output,
-        balancerOutput: balResult.output
-      });
-    }
-    
-    // Return best perturbation if it's better than current
-    const bestPerturbation = perturbations.reduce((best, current) => 
-      current.totalOutput.gt(best.totalOutput) ? current : best
-    );
-    
-    return bestPerturbation.totalOutput.gt(currentBest.totalOutput) ? bestPerturbation : currentBest;
-  }
-
-  // Main optimization flow
-  console.log('🔬 Running advanced split optimization with ultra-high precision...');
-  
-  // Step 1: Binary search for initial optimal
-  let bestSplit = await binarySearchOptimal();
-  
-  // Step 2: Fine-tune with ultra-high precision (0.001% granularity)
-  bestSplit = await fineTuneSplit(bestSplit);
-  
-  // Step 3: Try to escape local optima with perturbations
-  bestSplit = await perturbAndReoptimize(bestSplit);
-  
-  // Step 4: Final fine-tuning after perturbation
-  bestSplit = await fineTuneSplit(bestSplit);
-  
-  // Step 5: Calculate arbitrage opportunity and cascading effects
-  const arbitrageRisk = bestSplit.totalPriceImpact * bestSplit.cascadingEffect;
-  console.log(`📊 Arbitrage risk factor: ${(arbitrageRisk * 100).toFixed(3)}%`);
-  
-  // Step 4: Check if mixed split is worth the complexity
-  const singleUniswapImpact = await calculatePriceImpact('uniswap', amountIn, uniswapPath);
-  const singleBalancerImpact = await calculatePriceImpact('balancer', amountIn, balancerPath);
-  
-  const bestSingleOutput = singleUniswapImpact.output.gt(singleBalancerImpact.output) 
-    ? singleUniswapImpact.output 
-    : singleBalancerImpact.output;
-  
-  // Require at least 0.5% improvement to justify mixed routing
-  const improvementThreshold = bestSingleOutput.mul(10050).div(10000);
-  
-  if (bestSplit.totalOutput.lt(improvementThreshold)) {
-    console.log('Mixed split not sufficiently better than single protocol');
-    return null;
-  }
-  
-  // Display with appropriate precision based on optimization results
-  const displayPrecision = bestSplit.fraction === 0 || bestSplit.fraction === 1 ? 0 : 
-                          bestSplit.fraction * 100 % 1 < 0.01 ? 2 : 
-                          bestSplit.fraction * 100 % 0.1 < 0.01 ? 1 : 
-                          4; // Show up to 4 decimal places for precise splits
-  
-  console.log(`✅ Optimal split found: ${(bestSplit.fraction * 100).toFixed(displayPrecision)}% Uniswap, ${((1 - bestSplit.fraction) * 100).toFixed(displayPrecision)}% Balancer`);
-  console.log(`   Improvement: ${ethers.utils.formatUnits(bestSplit.totalOutput.sub(bestSingleOutput), 18)} tokens`);
-  console.log(`   Split precision: ${displayPrecision > 2 ? '0.001%' : displayPrecision > 1 ? '0.01%' : '0.1%'}`);
-
-  return {
-    type: 'mixed-optimal-advanced',
-    protocol: 'mixed',
-    totalOutput: bestSplit.totalOutput,
-    paths: [
-      { ...uniswapPath, inputAmount: bestSplit.uniswapAmount, outputAmount: bestSplit.uniswapOutput },
-      { ...balancerPath, inputAmount: bestSplit.balancerAmount, outputAmount: bestSplit.balancerOutput }
-    ],
-    splits: [
-      {
-        protocol: 'uniswap',
-        percentage: bestSplit.fraction,
-        input: bestSplit.uniswapAmount,
-        output: bestSplit.uniswapOutput
-      },
-      {
-        protocol: 'balancer',
-        percentage: 1 - bestSplit.fraction,
-        input: bestSplit.balancerAmount,
-        output: bestSplit.balancerOutput
-      }
-    ],
-    metrics: {
-      priceImpact: bestSplit.totalPriceImpact,
-      cascadingEffect: bestSplit.cascadingEffect,
-      arbitrageRisk,
-      improvementOverSingle: ethers.utils.formatUnits(bestSplit.totalOutput.sub(bestSingleOutput), 18)
-    },
-    estimatedGas: estimateGasForMixedRoute()
-  };
-}
-
-/**
- * Calculate exact Uniswap output using the SDK's constant product formula
- */
-async function calculateExactUniswapOutput(amountIn, pool, tokenInSymbol, tokenOutSymbol) {
-  try {
-    const crossOptimizer = await import('./crossDEXOptimizer.js');
-    const output = await crossOptimizer.calculateUniswapExactOutput(amountIn, tokenInSymbol, tokenOutSymbol);
-    return output || BigNumber.from(0);
-  } catch (error) {
-    console.warn('Failed to calculate exact Uniswap output:', error);
-    return BigNumber.from(0);
-  }
-}
-
-/**
  * Calculate real AMM output with price impact for Balancer Weighted Pool
  */
 function calculateBalancerWeightedOutput(amountIn, poolData, tokenInIndex, tokenOutIndex) {
@@ -1094,7 +741,6 @@ async function findAdvancedSplit(uniswapPaths, balancerPaths, amountIn, tokenIn,
  * Optimize 3-way split using nested golden section search
  */
 async function optimizeThreeWaySplit(legs, amountIn, tokenIn, tokenOut) {
-  const crossOptimizer = await import('./crossDEXOptimizer.js');
 
   // Golden ratio
   const phi = (Math.sqrt(5) - 1) / 2;
@@ -1111,8 +757,8 @@ async function optimizeThreeWaySplit(legs, amountIn, tokenIn, tokenOut) {
 
   while (Math.abs(b1 - a1) > tolerance) {
     // For each leg1 fraction, optimize leg2 fraction
-    const outputC = await optimizeLeg2Given(c1, legs, amountIn, tokenIn, tokenOut, crossOptimizer);
-    const outputD = await optimizeLeg2Given(d1, legs, amountIn, tokenIn, tokenOut, crossOptimizer);
+    const outputC = await optimizeLeg2Given(c1, legs, amountIn, tokenIn, tokenOut);
+    const outputD = await optimizeLeg2Given(d1, legs, amountIn, tokenIn, tokenOut);
 
     if (outputC.output.gt(outputD.output)) {
       b1 = d1;
@@ -1137,7 +783,7 @@ async function optimizeThreeWaySplit(legs, amountIn, tokenIn, tokenOut) {
   for (let i = 0; i < legs.length; i++) {
     const leg = legs[i];
     const legAmount = amountIn.mul(Math.floor(bestSplit[i] * 1000000)).div(1000000);
-    const legOutput = await calculateLegOutput(leg, legAmount, tokenIn, tokenOut, crossOptimizer);
+    const legOutput = await calculateLegOutput(leg, legAmount, tokenIn, tokenOut);
 
     splits.push({
       protocol: leg.protocol,
@@ -1159,7 +805,7 @@ async function optimizeThreeWaySplit(legs, amountIn, tokenIn, tokenOut) {
 /**
  * Helper to optimize leg2 fraction given leg1 fraction
  */
-async function optimizeLeg2Given(leg1Frac, legs, amountIn, tokenIn, tokenOut, crossOptimizer) {
+async function optimizeLeg2Given(leg1Frac, legs, amountIn, tokenIn, tokenOut) {
   const phi = (Math.sqrt(5) - 1) / 2;
   const tolerance = 0.00001;
 
@@ -1173,11 +819,11 @@ async function optimizeLeg2Given(leg1Frac, legs, amountIn, tokenIn, tokenOut, cr
 
   while (Math.abs(b2 - a2) > tolerance) {
     const split = [leg1Frac, c2, 1 - leg1Frac - c2];
-    const outputC = await calculateThreeWayOutput(split, legs, amountIn, tokenIn, tokenOut, crossOptimizer);
+    const outputC = await calculateThreeWayOutput(split, legs, amountIn, tokenIn, tokenOut);
 
     split[1] = d2;
     split[2] = 1 - leg1Frac - d2;
-    const outputD = await calculateThreeWayOutput(split, legs, amountIn, tokenIn, tokenOut, crossOptimizer);
+    const outputD = await calculateThreeWayOutput(split, legs, amountIn, tokenIn, tokenOut);
 
     if (outputC.gt(outputD)) {
       b2 = d2;
@@ -1206,14 +852,14 @@ async function optimizeLeg2Given(leg1Frac, legs, amountIn, tokenIn, tokenOut, cr
 /**
  * Calculate total output for 3-way split
  */
-async function calculateThreeWayOutput(split, legs, amountIn, tokenIn, tokenOut, crossOptimizer) {
+async function calculateThreeWayOutput(split, legs, amountIn, tokenIn, tokenOut) {
   let totalOutput = BigNumber.from(0);
 
   for (let i = 0; i < legs.length; i++) {
     if (split[i] <= 0) continue;
 
     const legAmount = amountIn.mul(Math.floor(split[i] * 1000000)).div(1000000);
-    const legOutput = await calculateLegOutput(legs[i], legAmount, tokenIn, tokenOut, crossOptimizer);
+    const legOutput = await calculateLegOutput(legs[i], legAmount, tokenIn, tokenOut);
     totalOutput = totalOutput.add(legOutput);
   }
 
@@ -1223,12 +869,17 @@ async function calculateThreeWayOutput(split, legs, amountIn, tokenIn, tokenOut,
 /**
  * Calculate exact output for a single leg
  */
-async function calculateLegOutput(leg, amountIn, tokenIn, tokenOut, crossOptimizer) {
+async function calculateLegOutput(leg, amountIn, tokenIn, tokenOut) {
   if (leg.protocol === 'uniswap') {
-    // Use exact Uniswap calculation
+    // Use exact Uniswap calculation - need the pool from the leg
+    if (!leg.pool && !leg.pools) {
+      console.warn('No pool data in Uniswap leg');
+      return BigNumber.from(0);
+    }
+    const pool = leg.pool || leg.pools?.[0];
     const tokenInSymbol = tokenIn.symbol || 'UNKNOWN';
     const tokenOutSymbol = tokenOut.symbol || 'UNKNOWN';
-    return await crossOptimizer.calculateUniswapOutput(amountIn, tokenInSymbol, tokenOutSymbol);
+    return await calculateUniswapExactOutput(amountIn, pool, tokenInSymbol, tokenOutSymbol);
   } else if (leg.protocol === 'balancer' && leg.poolData) {
     // Use exact Balancer calculation
     const tokenInIndex = leg.poolData.tokens.findIndex(t =>
@@ -1260,7 +911,6 @@ async function optimizePairwiseSplit(legs, amountIn, tokenIn, tokenOut) {
   // For now, just split equally among all legs
   // TODO: Implement proper n-dimensional optimization
   const equalSplit = 1 / legs.length;
-  const crossOptimizer = await import('./crossDEXOptimizer.js');
 
   let totalOutput = BigNumber.from(0);
   const splits = [];
@@ -1268,7 +918,7 @@ async function optimizePairwiseSplit(legs, amountIn, tokenIn, tokenOut) {
   for (let i = 0; i < legs.length; i++) {
     const leg = legs[i];
     const legAmount = amountIn.mul(Math.floor(equalSplit * 1000000)).div(1000000);
-    const legOutput = await calculateLegOutput(leg, legAmount, tokenIn, tokenOut, crossOptimizer);
+    const legOutput = await calculateLegOutput(leg, legAmount, tokenIn, tokenOut);
 
     totalOutput = totalOutput.add(legOutput);
     splits.push({
@@ -1614,13 +1264,26 @@ async function optimizeWithExactAMM(balancerLeg, uniswapLeg, secondHopLeg, amoun
   let b = 1.0;
   const tolerance = 0.000001; // 0.0001% precision (100x better than before)
   let iterations = 0;
-  
+
   // Initial points using golden ratio
   let x1 = a + (1 - goldenRatio) * (b - a);
   let x2 = a + goldenRatio * (b - a);
   let f1 = await calculateOutputForSplit(x1);
   let f2 = await calculateOutputForSplit(x2);
-  
+
+  console.log(`   Iteration 0: Testing ${(x1 * 100).toFixed(2)}% Balancer -> Output: ${ethers.utils.formatUnits(f1, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
+  console.log(`   Iteration 0: Testing ${(x2 * 100).toFixed(2)}% Balancer -> Output: ${ethers.utils.formatUnits(f2, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
+
+  // Track the best value found during search
+  if (f1.gt(bestOutput)) {
+    bestOutput = f1;
+    bestFraction = x1;
+  }
+  if (f2.gt(bestOutput)) {
+    bestOutput = f2;
+    bestFraction = x2;
+  }
+
   while (Math.abs(b - a) > tolerance) {
     iterations++;
     if (f1.gt(f2)) {
@@ -1629,17 +1292,32 @@ async function optimizeWithExactAMM(balancerLeg, uniswapLeg, secondHopLeg, amoun
       f2 = f1;
       x1 = a + (1 - goldenRatio) * (b - a);
       f1 = await calculateOutputForSplit(x1);
+      console.log(`   Iteration ${iterations}: Testing ${(x1 * 100).toFixed(2)}% Balancer -> Output: ${ethers.utils.formatUnits(f1, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
+      // Track if this new point is better
+      if (f1.gt(bestOutput)) {
+        bestOutput = f1;
+        bestFraction = x1;
+        console.log(`      ✓ New best found!`);
+      }
     } else {
       a = x1;
       x1 = x2;
       f1 = f2;
       x2 = a + goldenRatio * (b - a);
       f2 = await calculateOutputForSplit(x2);
+      console.log(`   Iteration ${iterations}: Testing ${(x2 * 100).toFixed(2)}% Balancer -> Output: ${ethers.utils.formatUnits(f2, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
+      // Track if this new point is better
+      if (f2.gt(bestOutput)) {
+        bestOutput = f2;
+        bestFraction = x2;
+        console.log(`      ✓ New best found!`);
+      }
     }
   }
-  
-  bestFraction = (a + b) / 2;
-  bestOutput = await calculateOutputForSplit(bestFraction);
+
+  console.log(`\n   Search completed after ${iterations} iterations`);
+  console.log(`   Final interval: [${(a * 100).toFixed(4)}%, ${(b * 100).toFixed(4)}%]`);
+  console.log(`   Best fraction found at: ${(bestFraction * 100).toFixed(4)}% Balancer`);
   console.log(`   Golden section found optimal at ${(bestFraction * 100).toFixed(4)}% Balancer / ${((1 - bestFraction) * 100).toFixed(4)}% Uniswap`);
   console.log(`   Converged in ${iterations} iterations`);
   
@@ -1747,8 +1425,18 @@ async function optimizeDirectSplit(balancerLeg, uniswapLeg, amountIn, tokenIn, t
   let f1 = await calculateOutputForSplit(x1);
   let f2 = await calculateOutputForSplit(x2);
 
-  console.log(`   Output: ${ethers.utils.formatUnits(f1, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
-  console.log(`   Output: ${ethers.utils.formatUnits(f2, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
+  console.log(`   Iteration 0: Testing ${(x1 * 100).toFixed(2)}% Balancer -> Output: ${ethers.utils.formatUnits(f1, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
+  console.log(`   Iteration 0: Testing ${(x2 * 100).toFixed(2)}% Balancer -> Output: ${ethers.utils.formatUnits(f2, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
+
+  // Track best from initial evaluations
+  if (f1.gt(bestOutput)) {
+    bestOutput = f1;
+    bestFraction = x1;
+  }
+  if (f2.gt(bestOutput)) {
+    bestOutput = f2;
+    bestFraction = x2;
+  }
 
   while (Math.abs(b - a) > tolerance && iterations < 50) {
     iterations++;
@@ -1762,6 +1450,10 @@ async function optimizeDirectSplit(balancerLeg, uniswapLeg, amountIn, tokenIn, t
         bestOutput = f1;
         bestFraction = x1;
       }
+      console.log(`   Iteration ${iterations}: Testing ${(x1 * 100).toFixed(2)}% Balancer -> Output: ${ethers.utils.formatUnits(f1, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
+      if (f1.gt(bestOutput)) {
+        console.log(`      ✓ New best found!`);
+      }
     } else {
       a = x1;
       x1 = x2;
@@ -1771,13 +1463,17 @@ async function optimizeDirectSplit(balancerLeg, uniswapLeg, amountIn, tokenIn, t
       if (f2.gt(bestOutput)) {
         bestOutput = f2;
         bestFraction = x2;
+        console.log(`      ✓ New best found!`);
       }
+      console.log(`   Iteration ${iterations}: Testing ${(x2 * 100).toFixed(2)}% Balancer -> Output: ${ethers.utils.formatUnits(f2, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
     }
-    console.log(`   Output: ${ethers.utils.formatUnits(f1.gt(f2) ? f1 : f2, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
   }
 
-  bestFraction = (a + b) / 2;
-  bestOutput = await calculateOutputForSplit(bestFraction);
+  // Don't overwrite - we have the best fraction from the search
+  console.log(`\n   Search completed after ${iterations} iterations`);
+  console.log(`   Final interval: [${(a * 100).toFixed(4)}%, ${(b * 100).toFixed(4)}%]`);
+  console.log(`   Best fraction found: ${(bestFraction * 100).toFixed(4)}% Balancer`);
+  console.log(`   Best output: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
 
   console.log(`   Golden section found optimal at ${(bestFraction * 100).toFixed(4)}% Balancer / ${((1 - bestFraction) * 100).toFixed(4)}% Uniswap`);
   console.log(`   Converged in ${iterations} iterations`);
@@ -1821,30 +1517,6 @@ async function optimizeDirectSplit(balancerLeg, uniswapLeg, amountIn, tokenIn, t
       }
     ]
   };
-}
-
-/**
- * Calculate output with price impact using constant product formula
- */
-function calculateOutputWithImpact(amountIn, referenceOutput, referenceInput, feeMultiplier = 0.997) {
-  if (!amountIn || amountIn.eq(0)) return BigNumber.from(0);
-  if (!referenceOutput || !referenceInput) return BigNumber.from(0);
-  
-  // Apply fee
-  const amountInAfterFee = amountIn.mul(Math.floor(feeMultiplier * 10000)).div(10000);
-  
-  // Linear approximation with diminishing returns for large trades
-  const ratio = amountInAfterFee.mul(10000).div(referenceInput);
-  
-  if (ratio.lte(10000)) {
-    // For trades up to reference size, use linear
-    return referenceOutput.mul(amountInAfterFee).div(referenceInput);
-  } else {
-    // For larger trades, apply price impact
-    // Output reduces as input increases (diminishing returns)
-    const impactFactor = BigNumber.from(10000).add(ratio.div(2)); // Impact increases with size
-    return referenceOutput.mul(amountInAfterFee).mul(10000).div(referenceInput).div(impactFactor);
-  }
 }
 
 // Export additional utilities
