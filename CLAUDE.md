@@ -173,15 +173,80 @@ When working with this codebase, pay special attention to the order type determi
   - Finds direct paths first, then 2-hop through intermediates, then 3-hop via DFS
   - Reduces fees by finding shortest paths (e.g., ONE→WETH→USDC instead of ONE→WETH→WBTC→USDC)
   - Processes WETH-containing pools first for better routing
-- **Swap Calculations**: 
-  - WeightedPool: Uses weight-adjusted ratios for accurate pricing
-  - StablePool: Implements stable swap invariant with amplification parameter
-  - ConstantProduct: Standard x*y=k formula for pools without weights
-  - Handles pools with very small decimal balances correctly
+- **Exact AMM Calculations (NO APPROXIMATIONS)**: 
+  - **WeightedPool**: Exact weight-adjusted constant product formula
+    - `outputAmount = balanceOut * (1 - (balanceIn / (balanceIn + inputAmount * (1 - fee)))^(weightIn/weightOut))`
+  - **StablePool**: Full stable swap invariant with amplification parameter
+    - Iterative solver for D invariant (sum + amplification factor)
+    - Newton's method for exact output calculations
+  - **ConstantProduct**: Standard x*y=k formula with exact fee calculations
+  - All calculations use exact BigNumber arithmetic, no floating point approximations
 - **Implementation Files**:
-  - `useBalancerV3.js`: Main implementation with pool discovery, caching, and pathfinding
+  - `useBalancerV3.js`: Main implementation with pool discovery, caching, and exact AMM math
   - `testBalancerV3.js`: Test suite for pool detection and routing verification
   - `balancerPoolsCache.json`: JSON cache file storing pool data to avoid repeated queries
+
+### Cross-DEX Optimizer (crossDEXOptimizer.js)
+- **Purpose**: Provides exact AMM calculations for cross-DEX optimization
+- **Core Principle**: ALL calculations must use exact AMM formulas - NO LINEAR APPROXIMATIONS
+- **Uniswap Exact Output Calculation**:
+  - Handles pool direction correctly (token0/token1 ordering)
+  - ETH/WETH equivalence: Automatically maps ETH to WETH for pool lookups
+  - Uses Uniswap V3/V4 SDK's `getOutputAmount` for exact constant product calculations
+  - Properly determines swap direction based on input token symbol
+- **Balancer Exact Output Calculation**:
+  - WeightedPool: Exact power law formula with weight ratios
+  - StablePool: Full iterative stable swap invariant calculation
+  - Applies exact fee calculations (no approximations)
+- **Token Direction Handling**:
+  - Dynamic token symbol parameters (not hardcoded to specific tokens)
+  - Supports both pool directions (ONE→ETH and ETH→ONE pools)
+  - Automatic WETH substitution when ETH is used
+- **Implementation Philosophy**:
+  - Never use linear approximations or simplified formulas
+  - All values must be computed using exact AMM mathematics
+  - Token parameters must be fully generic (no hardcoded ONE, SEV, ETH)
+
+### Mixed Uniswap-Balancer Router (useMixedUniswapBalancer.js)
+- **Purpose**: Optimally routes trades across both Uniswap V4 and Balancer V3 to maximize output
+- **Key Innovation**: Handles fragmented liquidity where tokens exist on different DEXs
+- **Golden Section Search Optimization**:
+  - **Mathematical Foundation**: Uses golden ratio φ = (√5 - 1) / 2 ≈ 0.618
+  - **High Precision**: Single-phase with tolerance of 0.00001 (0.001%)
+  - **Efficient Convergence**: Typically 24 iterations to find global optimum
+  - **Guaranteed Convergence**: O(log(1/ε)) complexity for ε precision
+  - **Superior to Alternatives**: 
+    - Dichotomy/binary search would need similar iterations but golden ratio minimizes function evaluations
+    - Gradient ascent takes 200+ iterations and can oscillate near optimum
+  - **Example Performance**: Finds 45.25% Balancer / 54.75% Uniswap split in 24 iterations
+- **NO HARDCODED VALUES Policy**:
+  - Starting split: Always 50/50 (generic, not token-specific)
+  - Intermediate token: Dynamically determined from available pools
+  - Token addresses/symbols: Passed as parameters, never hardcoded
+  - Target outputs: Only exist in test files for validation
+- **Second Hop Calculation**:
+  - Uses actual combined output from optimized first hop split
+  - Properly handles ETH/WETH fungibility between protocols
+  - Exact AMM calculations for all legs (no approximations)
+- **Cross-DEX Optimization Flow**:
+  1. Find available paths on both Uniswap and Balancer
+  2. Initialize golden section search at 50/50 split
+  3. Calculate exact outputs for each split percentage
+  4. Converge to optimal split using golden ratio
+  5. Apply gradient ascent for fine-tuning if needed
+  6. Return optimized route with exact split percentages
+- **Performance Characteristics**:
+  - Golden section: O(log(1/ε)) convergence for ε precision
+  - Typically 15-20 iterations for 0.01% precision
+  - Example results: 45.25% Balancer / 54.75% Uniswap for ONE→SEV
+- **ETH/WETH Handling**:
+  - Treats ETH and WETH as equivalent (1:1 conversion)
+  - No penalties for wrap/unwrap in optimization
+  - Seamless routing between Uniswap ETH pools and Balancer WETH pools
+- **Implementation Files**:
+  - `useMixedUniswapBalancer.js`: Core router with golden section search
+  - `crossDEXOptimizer.js`: Exact AMM calculations for both protocols
+  - `testCrossDEXRouting.js`: Test file with target values for validation
 
 ### Development Pain Points to Avoid
 - **Price Inversion Logic**: Complex interaction between `shouldSwitchTokensForLimit` and order types

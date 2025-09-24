@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import axios from 'axios';
+import Decimal from 'decimal.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,6 +13,53 @@ const BALANCER_V3_SUBGRAPH = 'https://gateway.thegraph.com/api/d692082c59f956790
 
 // Cache file path
 const CACHE_FILE_PATH = path.join(__dirname, 'balancerPoolsCache.json');
+
+// Calculate spot prices from pool data
+function calculateSpotPrices(poolData) {
+  let spotPrices = {};
+  
+  if (poolData.poolType === 'Weighted' && poolData.weights && poolData.tokens) {
+    for (let i = 0; i < poolData.tokens.length - 1; i++) {
+      for (let j = i + 1; j < poolData.tokens.length; j++) {
+        const tokenA = poolData.tokens[i];
+        const tokenB = poolData.tokens[j];
+        const weightA = poolData.weights[i];
+        const weightB = poolData.weights[j];
+        
+        // Parse balances (already from GraphQL, no need for RPC)
+        let balanceA, balanceB;
+        try {
+          // Balance from GraphQL is already a string
+          if (tokenA.balance.includes('.')) {
+            balanceA = ethers.utils.parseUnits(tokenA.balance, tokenA.decimals || 18);
+          } else {
+            balanceA = ethers.BigNumber.from(tokenA.balance);
+          }
+          
+          if (tokenB.balance.includes('.')) {
+            balanceB = ethers.utils.parseUnits(tokenB.balance, tokenB.decimals || 18);
+          } else {
+            balanceB = ethers.BigNumber.from(tokenB.balance);
+          }
+        } catch (e) {
+          continue;
+        }
+        
+        // Spot price = (balanceB/weightB) / (balanceA/weightA)
+        if (balanceA.gt(0) && balanceB.gt(0)) {
+          const price = balanceB.mul(Math.floor(weightA * 1000))
+            .div(balanceA.mul(Math.floor(weightB * 1000)));
+          
+          spotPrices[`${tokenA.symbol}/${tokenB.symbol}`] = price.toString();
+          spotPrices[`${tokenB.symbol}/${tokenA.symbol}`] = 
+            ethers.BigNumber.from(10).pow(18).div(price).toString();
+        }
+      }
+    }
+  }
+  
+  return spotPrices;
+}
 
 // Load pool cache from file
 function loadPoolCache() {
@@ -40,10 +88,29 @@ function savePoolCache(cache) {
 async function getPoolData(poolAddress, provider, poolInfo = null) {
   const cache = loadPoolCache();
   
-  // Check if pool data is already cached
+  // Check if pool data is already cached (static data like weights, type)
   if (cache.pools[poolAddress.toLowerCase()]) {
     const cachedData = cache.pools[poolAddress.toLowerCase()];
-    console.log(`✓ Using cached data for pool ${poolAddress.slice(0, 10)}...`);
+    console.log(`✓ Found cached data for pool ${poolAddress.slice(0, 10)}...`);
+    
+    // If we have fresh poolInfo from GraphQL, use its balances
+    if (poolInfo && poolInfo.tokens) {
+      console.log(`  📊 Using fresh balances from GraphQL`);
+      // Merge cached static data with fresh GraphQL data
+      const mergedData = {
+        ...cachedData,
+        tokens: poolInfo.tokens, // Fresh balances from GraphQL
+        swapFee: poolInfo.swapFee || cachedData.swapFee,
+        spotPrices: calculateSpotPrices({
+          ...cachedData,
+          tokens: poolInfo.tokens
+        }),
+        isFresh: true,
+        fetchedAt: Date.now()
+      };
+      return mergedData;
+    }
+    
     return cachedData;
   }
   
@@ -51,15 +118,20 @@ async function getPoolData(poolAddress, provider, poolInfo = null) {
   console.log(`⚙ Detecting type for pool ${poolAddress.slice(0, 10)}...`);
   const poolData = await detectPoolType(poolAddress, provider);
   
-  // Calculate total liquidity from token balances (simplified - in USD would need prices)
-  let totalLiquidity = '0';
+  // Calculate total liquidity (sum of token balances)
+  let totalLiquidity = 0;
   if (poolInfo && poolInfo.tokens && poolInfo.tokens.length > 0) {
-    // For now, just sum up token balances as a rough metric
-    // In production, you'd multiply by token prices to get USD value
+    // Sum up token balances as a rough liquidity metric
     totalLiquidity = poolInfo.tokens.reduce((sum, token) => {
       const balance = parseFloat(token.balance || '0');
       return sum + balance;
-    }, 0).toString();
+    }, 0);
+  }
+  
+  // Skip pools with less than 1 total tokens (too small to be useful)
+  if (totalLiquidity < 1) {
+    console.log(`  ⚠️ Pool has insufficient liquidity (${totalLiquidity.toFixed(4)} total tokens)`);
+    return null;
   }
   
   // Add additional useful data
@@ -69,7 +141,6 @@ async function getPoolData(poolAddress, provider, poolInfo = null) {
     id: poolAddress, // In V3, ID is the address
     tokens: poolInfo?.tokens || [],
     totalLiquidity,
-    totalShares: poolInfo?.totalShares || '0',
     swapFee: poolInfo?.swapFee || '0.003',
     queriedAt: new Date().toISOString()
   };
@@ -207,27 +278,44 @@ export async function useBalancerV3({ tokenInAddress, tokenOutAddress, amountIn,
 
 async function discoverV3Pools(tokenA, tokenB, provider) {
   try {
+    // Intermediate tokens for multi-hop routing
+    const weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'.toLowerCase();
+    const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'.toLowerCase();
+    const usdt = '0xdAC17F958D2ee523a2206206994597C13D831ec7'.toLowerCase();
+    const dai = '0x6B175474E89094C44Da98b954EedeAC495271d0F'.toLowerCase();
+    const wbtc = '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'.toLowerCase();
+    
+    // Build array of all tokens to search for
+    const searchTokens = [
+      tokenA.toLowerCase(),
+      tokenB.toLowerCase(),
+      weth, usdc, usdt, dai, wbtc
+    ];
+    
     const query = `
       {
         pools(
           first: 200,
-          orderBy: totalShares
-          orderDirection: desc
+          where: {
+            isInitialized: true,
+            isPaused: false,
+            isInRecoveryMode: false,
+            tokens_: {
+              address_in: ${JSON.stringify(searchTokens)}
+            }
+          }
         ) {
           id
           address
+          name
+          symbol
           swapFee
-          totalShares
           tokens {
             address
             balance
             decimals
             symbol
-            priceRate
           }
-          totalLiquidity
-          poolType
-          swapEnabled
         }
       }
     `;
@@ -239,34 +327,22 @@ async function discoverV3Pools(tokenA, tokenB, provider) {
       return [];
     }
     
-    const allPools = response.data.data.pools;
+    const allPools = response.data.data.pools || [];
     
-    // Filter pools that contain either tokenA or tokenB
-    const relevantPools = allPools.filter(pool => {
-      const tokenAddresses = pool.tokens.map(t => t.address.toLowerCase());
-      return tokenAddresses.includes(tokenA.toLowerCase()) || 
-             tokenAddresses.includes(tokenB.toLowerCase());
+    // Filter out pools with insufficient liquidity
+    const validPools = allPools.filter(pool => {
+      const totalBalance = pool.tokens.reduce((sum, token) => {
+        return sum + parseFloat(token.balance || '0');
+      }, 0);
+      
+      return totalBalance >= 1; // Skip tiny pools
     });
     
-    // Also get pools with common intermediate tokens for multi-hop
-    const weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'.toLowerCase();
-    const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'.toLowerCase();
-    const usdt = '0xdAC17F958D2ee523a2206206994597C13D831ec7'.toLowerCase();
-    const dai = '0x6B175474E89094C44Da98b954EedeAC495271d0F'.toLowerCase();
-    const wbtc = '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'.toLowerCase();
+    console.log(`Found ${validPools.length} pools with sufficient liquidity`);
     
-    const intermediateTokens = [weth, usdc, usdt, dai, wbtc];
-    
-    // Get all pools that contain intermediate tokens
-    // These will be used to bridge between tokenA and tokenB
-    const additionalPools = allPools.filter(pool => {
-      const tokenAddresses = pool.tokens.map(t => t.address.toLowerCase());
-      // Include any pool with an intermediate token
-      const hasIntermediate = tokenAddresses.some(addr => intermediateTokens.includes(addr));
-      return hasIntermediate && !relevantPools.includes(pool);
-    });
-    
-    return [...relevantPools, ...additionalPools.slice(0, 50)]; // Limit to prevent too many queries
+    // Since we already filtered by tokens in the GraphQL query,
+    // all these pools are relevant (they contain tokenA, tokenB, or intermediates)
+    return validPools;
     
   } catch (error) {
     console.error('Error fetching V3 pools:', error);
@@ -659,29 +735,81 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
   return paths.slice(0, 5);
 }
 
-function calculateSwapOutput(amountIn, balanceIn, balanceOut, swapFee, poolType, weightIn, weightOut, amplificationParameter) {
-  const fee = ethers.BigNumber.from(Math.floor(parseFloat(swapFee) * 1e18));
+/**
+ * Calculate exact power using decimal.js for precise decimal exponents
+ * base^(numerator/denominator) with arbitrary precision
+ */
+function calculateExactPower(base, numerator, denominator) {
+  // Handle edge cases
+  if (base.isZero()) return ethers.BigNumber.from(0);
+  if (numerator === 0) return ethers.utils.parseEther('1');
+  if (numerator === denominator) return base;
+
+  // Convert ethers.BigNumber to string for decimal.js
+  const baseStr = ethers.utils.formatEther(base);
+
+  // Configure decimal.js for high precision
+  Decimal.set({
+    precision: 50,
+    rounding: Decimal.ROUND_DOWN
+  });
+
+  // Create Decimal instances
+  const baseDecimal = new Decimal(baseStr);
+  const exponent = new Decimal(numerator).div(denominator);
+
+  // Calculate base^(numerator/denominator) with exact precision
+  const resultDecimal = baseDecimal.pow(exponent);
+
+  // Convert back to ethers.BigNumber
+  // Ensure we have exactly 18 decimal places for Wei conversion
+  const resultStr = resultDecimal.toFixed(18, Decimal.ROUND_DOWN);
+
+  try {
+    return ethers.utils.parseEther(resultStr);
+  } catch (e) {
+    // Handle very small numbers that might underflow
+    if (resultDecimal.lessThan(1e-18)) {
+      return ethers.BigNumber.from(0);
+    }
+    throw e;
+  }
+}
+
+export function calculateSwapOutput(amountIn, balanceIn, balanceOut, swapFee, poolType, weightIn, weightOut, amplificationParameter) {
+  // Convert swap fee to BigNumber (handle both decimal and wei formats)
+  const feeValue = typeof swapFee === 'string' && swapFee.includes('.') 
+    ? ethers.utils.parseEther(swapFee)
+    : ethers.BigNumber.from(String(swapFee));
   const oneEther = ethers.utils.parseEther('1');
-  const amountInAfterFee = amountIn.mul(oneEther.sub(fee)).div(oneEther);
+  const amountInAfterFee = amountIn.mul(oneEther.sub(feeValue)).div(oneEther);
   
   if (poolType === 'WeightedPool') {
-    // Weighted pool with proper weight ratios
-    // Formula: outAmount = balanceOut * (1 - (balanceIn / (balanceIn + inAmount))^(weightIn/weightOut))
-    
-    // Convert weights to basis points for calculation
-    const wi = weightIn ? ethers.BigNumber.from(weightIn) : ethers.BigNumber.from(50);
-    const wo = weightOut ? ethers.BigNumber.from(weightOut) : ethers.BigNumber.from(50);
-    
-    // Simplified calculation using linear approximation for BigNumber compatibility
-    // More accurate would require power function which is complex with BigNumbers
-    const ratio = amountInAfterFee.mul(oneEther).div(balanceIn.add(amountInAfterFee));
-    const weightAdjustedRatio = ratio.mul(wo).div(wi);
-    
-    return balanceOut.mul(weightAdjustedRatio).div(oneEther);
+    // Exact Balancer weighted pool formula:
+    // outAmount = balanceOut * (1 - (balanceIn / (balanceIn + inAmount * (1 - fee)))^(weightIn/weightOut))
+
+    // Get weights, default to 50/50 if not specified
+    const wi = weightIn || 50;
+    const wo = weightOut || 50;
+
+    // Calculate new balance after input
+    const newBalanceIn = balanceIn.add(amountInAfterFee);
+
+    // Calculate the ratio: balanceIn / newBalanceIn
+    const ratio = balanceIn.mul(oneEther).div(newBalanceIn);
+
+    // Use exact power calculation for ratio^(weightIn/weightOut)
+    const ratioPower = calculateExactPower(ratio, wi, wo);
+
+    // Calculate (1 - ratioPower)
+    const oneMinus = oneEther.sub(ratioPower);
+
+    // Calculate final output
+    return balanceOut.mul(oneMinus).div(oneEther);
     
   } else if (poolType === 'StablePool') {
     // Stable pool with amplification parameter
-    const amp = amplificationParameter ? ethers.BigNumber.from(amplificationParameter) : ethers.BigNumber.from('100');
+    const amp = amplificationParameter ? ethers.BigNumber.from(String(amplificationParameter)) : ethers.BigNumber.from('100');
     
     // Simplified StableSwap calculation
     // Real implementation would use iterative solving

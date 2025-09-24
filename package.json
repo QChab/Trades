@@ -3,6 +3,7 @@
   "version": "1.9.9",
   "description": "App for manual and automated trades of ERC20 tokens.",
   "main": "main.mjs",
+  "type": "module",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/QChab/Trades.git"
@@ -38,6 +39,8 @@
     "@uniswap/v3-sdk": "^3.25.2",
     "@uniswap/v4-sdk": "^1.21.4",
     "axios": "^1.12.2",
+    "bignumber.js": "^9.3.1",
+    "decimal.js": "^10.6.0",
     "dotenv": "^16.5.0",
     "ethers": "^5.8.0",
     "fs": "^0.0.1-security",
