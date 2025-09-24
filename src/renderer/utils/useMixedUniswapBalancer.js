@@ -1709,18 +1709,17 @@ export function convertExecutionPlanToContractArgs(executionPlan, tokenIn, token
   const targets = [];
   const data = [];
   const values = [];
-  const wrapOperations = [];
+  const inputAmounts = [];
   const outputTokens = [];
-
-  // Track which tokens need to be returned to the user
-  const outputTokenSet = new Set();
-  outputTokenSet.add(tokenOut.address || ETH_ADDRESS);
+  const wrapOperations = [];
 
   // Process each execution step
   for (const step of executionPlan.executionSteps) {
     let target;
     let callData;
     let value = BigNumber.from(0);
+    let inputAmount = BigNumber.from(0);
+    let stepOutputToken = ETH_ADDRESS; // Default to ETH
     let wrapOp = 0; // Default: no operation
 
     if (step.protocol === 'uniswap') {
@@ -1750,33 +1749,52 @@ export function convertExecutionPlanToContractArgs(executionPlan, tokenIn, token
       }
     }
 
-    // Determine wrap/unwrap operations
+    // Determine wrap/unwrap operations and input amounts
     if (step.wrapBefore) {
       wrapOp = 1; // Wrap ETH to WETH before call
+      inputAmount = step.input || BigNumber.from(0);
     } else if (step.wrapAfter) {
       wrapOp = 2; // Wrap ETH to WETH after call
+      // Input amount will be 0 since we calculate output dynamically
+      inputAmount = BigNumber.from(0);
     } else if (step.unwrapBefore) {
       wrapOp = 3; // Unwrap WETH to ETH before call
+      inputAmount = step.input || BigNumber.from(0);
     } else if (step.unwrapAfter) {
       wrapOp = 4; // Unwrap WETH to ETH after call
+      // Input amount will be 0 since we calculate output dynamically
+      inputAmount = BigNumber.from(0);
+    } else {
+      // No wrap/unwrap - use step input amount if available
+      inputAmount = step.input || BigNumber.from(0);
     }
 
-    // Track intermediate tokens that might need to be returned
+    // Set the output token for this step
     if (step.outputToken) {
-      const outputAddr = step.outputToken === 'ETH' ? ETH_ADDRESS :
-                         step.outputToken === 'WETH' ? WETH_ADDRESS :
-                         step.outputToken.address;
-      outputTokenSet.add(outputAddr);
+      if (step.outputToken === 'ETH') {
+        stepOutputToken = ETH_ADDRESS;
+      } else if (step.outputToken === 'WETH') {
+        stepOutputToken = WETH_ADDRESS;
+      } else if (typeof step.outputToken === 'object' && step.outputToken.address) {
+        stepOutputToken = step.outputToken.address;
+      } else {
+        // Infer from tokenOut for last step
+        stepOutputToken = (step.hop === executionPlan.executionSteps.length) ?
+                         (tokenOut.address || ETH_ADDRESS) : ETH_ADDRESS;
+      }
+    } else {
+      // Default to final output token for last step
+      stepOutputToken = (step === executionPlan.executionSteps[executionPlan.executionSteps.length - 1]) ?
+                       (tokenOut.address || ETH_ADDRESS) : ETH_ADDRESS;
     }
 
     targets.push(target);
     data.push(callData);
     values.push(value);
+    inputAmounts.push(inputAmount);
+    outputTokens.push(stepOutputToken);
     wrapOperations.push(wrapOp);
   }
-
-  // Convert output tokens set to array
-  outputTokens.push(...Array.from(outputTokenSet));
 
   // Calculate minimum output amount with slippage
   const minOutputAmount = executionPlan.minOutput || BigNumber.from(0);
@@ -1789,6 +1807,7 @@ export function convertExecutionPlanToContractArgs(executionPlan, tokenIn, token
     targets,
     data,
     values,
+    inputAmounts,
     outputTokens,
     wrapOperations,
     minOutputAmount,

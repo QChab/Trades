@@ -21,9 +21,6 @@ contract WalletBundlerOptimized {
     uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
 
     error Unauthorized();
-    error InvalidLength();
-    error CallFailed();
-    error TransferFailed();
     error InsufficientOutput();
     
     modifier auth() {
@@ -96,9 +93,11 @@ contract WalletBundlerOptimized {
     /**
      * @notice Execute trades with minimal gas overhead and wrap/unwrap support
      * @dev Optimized version with reduced operations and memory usage
+     * @param inputAmounts Array of input amounts for wrap/unwrap operations
+     * @param outputTokens Array of output tokens for each step (same length as targets)
      * @param wrapOperations Array indicating wrap/unwrap operations for each call:
      *        0 = no operation, 1 = wrap before, 2 = wrap after, 3 = unwrap before, 4 = unwrap after
-     * @param minOutputAmount Minimum acceptable output amount for the first output token
+     * @param minOutputAmount Minimum acceptable output amount for the final output
      */
     function execute(
         address fromToken,
@@ -106,88 +105,126 @@ contract WalletBundlerOptimized {
         address[] calldata targets,
         bytes[] calldata data,
         uint256[] calldata values,
+        uint256[] calldata inputAmounts,
         address[] calldata outputTokens,
         uint8[] calldata wrapOperations,
         uint256 minOutputAmount
     ) external payable auth returns (bool[] memory results) {
         uint256 targetsLength = targets.length;
-        if (targetsLength != data.length || targetsLength != values.length || targetsLength != wrapOperations.length) revert InvalidLength();
-        
+        // Same length as data, values, inputAmounts, outputTokens, wrapOperations
+
         // Transfer input tokens if needed
         if (fromToken != address(0) && fromAmount != 0) {
             _transferFromToken(fromToken, owner, self, fromAmount);
         }
+        // Note: If fromToken is address(0), ETH is already received via msg.value
         
         // Execute calls with minimal memory allocation and wrap/unwrap support
         results = new bool[](targetsLength);
+        address finalOutputToken = outputTokens[targetsLength - 1];
+
         for (uint256 i; i < targetsLength;) {
             uint8 wrapOp = wrapOperations[i];
+            uint256 inputAmount = inputAmounts[i];
+            address stepOutputToken = outputTokens[i];
 
             // Handle unwrap before (3)
             if (wrapOp == 3) {
-                _unwrapWETH();
+                _unwrapWETH(inputAmount);
             }
             // Handle wrap before (1)
             else if (wrapOp == 1) {
-                _wrapETH();
+                _wrapETH(inputAmount);
+            }
+
+            // Track balance before for wrap/unwrap after operations
+            uint256 balanceBefore;
+            if (wrapOp == 2 || wrapOp == 4) {
+                if (stepOutputToken == address(0)) {
+                    balanceBefore = self.balance;
+                } else if (stepOutputToken == WETH) {
+                    balanceBefore = _getTokenBalance(WETH, self);
+                }
             }
 
             (bool success,) = targets[i].call{value: values[i]}(data[i]);
             results[i] = success;
 
-            // Handle wrap after (2)
-            if (wrapOp == 2) {
-                _wrapETH();
-            }
-            // Handle unwrap after (4)
-            else if (wrapOp == 4) {
-                _unwrapWETH();
+            // Handle wrap/unwrap after based on output amount
+            if (wrapOp == 2 || wrapOp == 4) {
+                uint256 outputAmount;
+
+                if (wrapOp == 2) {
+                    // Wrap after - calculate ETH output from trade
+                    uint256 balanceAfter = self.balance;
+                    if (balanceAfter > balanceBefore) {
+                        outputAmount = balanceAfter - balanceBefore;
+                        _wrapETH(outputAmount);
+                    }
+                } else if (wrapOp == 4) {
+                    // Unwrap after - calculate WETH output from trade
+                    uint256 balanceAfter = _getTokenBalance(WETH, self);
+                    if (balanceAfter > balanceBefore) {
+                        outputAmount = balanceAfter - balanceBefore;
+                        _unwrapWETH(outputAmount);
+                    }
+                }
             }
 
             unchecked { ++i; }
         }
 
-        address toToken = outputTokens[0];
-        uint256 balance;
-        if (toToken == address(0)) {
-            balance = self.balance;
+        // Check minimum output and transfer final output token
+        if (finalOutputToken == address(0)) {
+            // ETH transfer
+            uint256 ethBalance = self.balance;
+            if (ethBalance < minOutputAmount) revert InsufficientOutput();
+            if (ethBalance > 0) {
+                _sendETH(owner, ethBalance);
+            }
         } else {
-            balance = _getTokenBalance(toToken, self);
+            // ERC20 transfer
+            uint256 tokenBalance = _getTokenBalance(finalOutputToken, self);
+            if (tokenBalance < minOutputAmount) revert InsufficientOutput();
+            if (tokenBalance > 0) {
+                _transferFromToken(finalOutputToken, self, owner, tokenBalance);
+            }
         }
-        if (balance < minOutputAmount) revert InsufficientOutput();
 
-        // Return tokens with optimized balance checks
-        uint256 outputLength = outputTokens.length;
-        for (uint256 i; i < outputLength;) {
+        // Return any remaining balances from intermediate output tokens
+        for (uint256 i; i < targetsLength - 1;) {
             address token = outputTokens[i];
-            if (token == address(0)) {
-                // ETH transfer
-                balance = self.balance;
-                if (balance != 0) {
-                    _sendETH(owner, balance);
-                }
-            } else {
-                // ERC20 transfer
-                balance = _getTokenBalance(token, self);
-                if (balance > 0) {
-                    _transferFromToken(token, self, owner, balance);
+            // Skip if same as final output (already handled)
+            if (token != finalOutputToken) {
+                if (token == address(0)) {
+                    // ETH - only if not already returned as final output
+                    if (finalOutputToken != address(0)) {
+                        uint256 ethBalance = self.balance;
+                        if (ethBalance > 0) {
+                            _sendETH(owner, ethBalance);
+                        }
+                    }
+                } else {
+                    // ERC20 token
+                    uint256 balance = _getTokenBalance(token, self);
+                    if (balance > 0) {
+                        _transferFromToken(token, self, owner, balance);
+                    }
                 }
             }
             unchecked { ++i; }
         }
-        
-        // Return remaining input token if different from outputs
+
+        // Return remaining input token
         if (fromToken == address(0)) {
-            // Return remaining ETH
-            balance = self.balance;
-            if (balance > 0) {
-                _sendETH(owner, balance);
+            uint256 remainingEth = self.balance;
+            if (remainingEth > 0) {
+                _sendETH(owner, remainingEth);
             }
         } else {
-            // Return remaining ERC20 tokens
-            balance = _getTokenBalance(fromToken, self);
-            if (balance > 0) {
-                _transferFromToken(fromToken, self, owner, balance);
+            uint256 remainingBalance = _getTokenBalance(fromToken, self);
+            if (remainingBalance > 0) {
+                _transferFromToken(fromToken, self, owner, remainingBalance);
             }
         }
     }
@@ -201,10 +238,7 @@ contract WalletBundlerOptimized {
         address[] calldata permit2Spenders
     ) external auth {
         uint256 length = tokens.length;
-        if (length != spenders.length || length != permit2Spenders.length) {
-            revert InvalidLength();
-        }
-        
+
         for (uint256 i; i < length;) {
             // Standard approval
             address token = tokens[i];
@@ -244,49 +278,40 @@ contract WalletBundlerOptimized {
     /**
      * @notice Emergency withdraw - minimal implementation
      */
-    function withdraw(address token, uint256 amount) external auth {
+    function withdraw(address token) external auth {
         if (token == address(0)) {
-            uint256 balance = amount == 0 ? self.balance : amount;
-            _sendETH(owner, balance);
-        } else {
-            uint256 balance = _getTokenBalance(token, self);
-            uint256 withdrawAmount = amount == 0 ? balance : amount;
-            if (withdrawAmount > balance) revert TransferFailed();
-            
-            _transferFromToken(token, self, owner, withdrawAmount);
+            _sendETH(owner, self.balance);
+        } else {            
+            _transferFromToken(token, self, owner, _getTokenBalance(token, self));
         }
     }
     
     /**
-     * @dev Wrap ETH to WETH
+     * @dev Wrap specific amount of ETH to WETH
+     * @param amount Amount of ETH to wrap (0 means wrap all)
      */
-    function _wrapETH() private {
-        uint256 ethBalance = self.balance;
-        if (ethBalance > 0) {
-            assembly {
-                let ptr := mload(0x40)
-                // Store deposit() selector
-                mstore(ptr, 0xd0e30db000000000000000000000000000000000000000000000000000000000)
-                let success := call(gas(), WETH, ethBalance, ptr, 0x04, 0, 0)
-                if iszero(success) { revert(0, 0) }
-            }
+    function _wrapETH(uint256 amount) private {
+        assembly {
+            let ptr := mload(0x40)
+            // Store deposit() selector
+            mstore(ptr, 0xd0e30db000000000000000000000000000000000000000000000000000000000)
+            let success := call(gas(), WETH, amount, ptr, 0x04, 0, 0)
+            if iszero(success) { revert(0, 0) }
         }
     }
 
     /**
-     * @dev Unwrap WETH to ETH
+     * @dev Unwrap specific amount of WETH to ETH
+     * @param amount Amount of WETH to unwrap (0 means unwrap all)
      */
-    function _unwrapWETH() private {
-        uint256 wethBalance = _getTokenBalance(WETH, self);
-        if (wethBalance > 0) {
-            assembly {
-                let ptr := mload(0x40)
-                // Store withdraw(uint256) selector
-                mstore(ptr, 0x2e1a7d4d00000000000000000000000000000000000000000000000000000000)
-                mstore(add(ptr, 0x04), wethBalance)
-                let success := call(gas(), WETH, 0, ptr, 0x24, 0, 0)
-                if iszero(success) { revert(0, 0) }
-            }
+    function _unwrapWETH(uint256 amount) private {
+        assembly {
+            let ptr := mload(0x40)
+            // Store withdraw(uint256) selector
+            mstore(ptr, 0x2e1a7d4d00000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), amount)
+            let success := call(gas(), WETH, 0, ptr, 0x24, 0, 0)
+            if iszero(success) { revert(0, 0) }
         }
     }
 

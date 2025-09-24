@@ -148,6 +148,46 @@ When working with this codebase, pay special attention to the order type determi
 - **Partial Execution**: Allows some trades to fail while others succeed
 - **Automatic Fund Transfer**: Built-in logic to return funds to owner after execution
 
+### WalletBundler Execute Method (Latest Implementation)
+The `execute` function has been enhanced to support precise wrap/unwrap operations:
+
+#### Function Signature
+```solidity
+function execute(
+    address fromToken,
+    uint256 fromAmount,
+    address[] calldata targets,
+    bytes[] calldata data,
+    uint256[] calldata values,
+    uint256[] calldata inputAmounts,    // NEW: Amounts for wrap/unwrap operations
+    address[] calldata outputTokens,     // NEW: Per-step output tokens
+    uint8[] calldata wrapOperations,     // Wrap/unwrap operation codes
+    uint256 minOutputAmount
+) external payable auth returns (bool[] memory results)
+```
+
+#### Wrap/Unwrap Operation Codes
+- **0**: No operation (default)
+- **1**: Wrap ETH to WETH before call (uses `inputAmounts[i]`)
+- **2**: Wrap ETH to WETH after call (calculates output dynamically)
+- **3**: Unwrap WETH to ETH before call (uses `inputAmounts[i]`)
+- **4**: Unwrap WETH to ETH after call (calculates output dynamically)
+
+#### Key Implementation Details
+- **Per-Step Output Tokens**: Each step specifies its output token for precise tracking
+- **Dynamic Amount Calculation**: For "after" operations (codes 2 & 4), the contract tracks balances before/after to determine exact amounts
+- **Specific Amount Operations**: Only wraps/unwraps the necessary amount, not entire balances
+- **ETH Handling**: When `fromToken` is `address(0)`, ETH arrives via `msg.value`
+- **Minimum Output Validation**: Ensures final output meets minimum requirement to prevent slippage attacks
+
+#### JavaScript Integration
+The `convertExecutionPlanToContractArgs` function in `useMixedUniswapBalancer.js`:
+- Maps execution plan steps to contract arguments
+- Sets appropriate wrap/unwrap operations based on step requirements
+- Handles ETH/WETH conversions between Uniswap and Balancer
+- Calculates input amounts for wrap/unwrap operations
+- Assigns output tokens per step for accurate tracking
+
 ### 1inch Integration Analysis
 - **API Limitations**: 1 RPS rate limit on basic tier, registration required since 2023
 - **No Platform Fees**: 1inch doesn't charge trading fees, only captures rare positive slippage (~1%)
