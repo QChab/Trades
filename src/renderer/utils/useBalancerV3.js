@@ -243,9 +243,17 @@ export async function useBalancerV3({ tokenInAddress, tokenOutAddress, amountIn,
       console.log('❌ No valid paths found');
       return null;
     }
-    
+
+    // Return ALL paths for the mixed optimizer to consider
+    // Don't pre-select the "best" - let golden section search handle optimization
+    console.log(`✅ Found ${paths.length} paths through Balancer`);
+
+    // For now, limit to top 5 paths to avoid too much complexity
+    const topPaths = paths.slice(0, 5);
+
+    // Log the best path for debugging
     const bestPath = paths[0];
-    console.log('✅ Best path found:', {
+    console.log('Best single Balancer path:', {
       hops: bestPath.hops.length,
       expectedOutput: ethers.utils.formatEther(bestPath.amountOut),
       pools: bestPath.hops.map(h => ({
@@ -254,20 +262,28 @@ export async function useBalancerV3({ tokenInAddress, tokenOutAddress, amountIn,
         weights: h.weights
       }))
     });
-    
-    const minAmountOut = calculateMinAmountOut(bestPath.amountOut, slippageTolerance);
-    
+
+    // Create result for each path
+    const allResults = topPaths.map(path => {
+      const minAmountOut = calculateMinAmountOut(path.amountOut, slippageTolerance);
+      return {
+        amountOut: path.amountOut.toString(),
+        minAmountOut: minAmountOut.toString(),
+        path: path,
+        priceImpact: path.priceImpact || '0',
+        fees: path.totalFees || '0',
+        poolAddresses: path.hops.map(h => h.poolAddress),
+        poolTypes: path.hops.map(h => h.poolType),
+        weights: path.hops.map(h => h.weights),
+        poolData: path.hops.length > 0 ? path.hops[0].poolData : null
+      };
+    });
+
+    // For backward compatibility, return the first (best) path as the main result
+    // But also include all paths for mixed optimization
     return {
-      amountOut: bestPath.amountOut.toString(),
-      minAmountOut: minAmountOut.toString(),
-      path: bestPath,
-      priceImpact: bestPath.priceImpact || '0',
-      fees: bestPath.totalFees || '0',
-      poolAddresses: bestPath.hops.map(h => h.poolAddress),
-      poolTypes: bestPath.hops.map(h => h.poolType),
-      weights: bestPath.hops.map(h => h.weights),
-      // Include poolData for exact AMM calculations in optimization
-      poolData: bestPath.hops.length > 0 ? bestPath.hops[0].poolData : null
+      ...allResults[0],
+      allPaths: allResults  // Include all paths for the optimizer to use
     };
     
   } catch (error) {
@@ -481,6 +497,15 @@ async function detectPoolType(poolAddress, provider) {
   }
 }
 
+/**
+ * Find paths through Balancer pools
+ * Note: This function returns paths sorted by output amount (best first)
+ * For mixed DEX optimization, we currently use only the best Balancer path
+ * and let the golden section search optimize the split at a higher level.
+ *
+ * Future enhancement: Return multiple paths to allow splitting across
+ * different Balancer routes in addition to Uniswap routes.
+ */
 async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, maxHops = 3) {
   const paths = [];
   const visited = new Set();

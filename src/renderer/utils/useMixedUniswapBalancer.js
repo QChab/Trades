@@ -272,6 +272,13 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
       return null;
     }
 
+    // Check if we have multiple paths
+    if (result.allPaths && result.allPaths.length > 1) {
+      console.log(`   Found ${result.allPaths.length} Balancer paths to consider`);
+      // TODO: Return all paths for multi-path optimization
+      // For now, still use the best one
+    }
+
     return {
       protocol: 'balancer',
       outputAmount: BigNumber.from(result.amountOut),
@@ -283,7 +290,9 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
       hops: result.path.hops.length,
       fees: result.fees,
       // Pass through poolData for exact AMM calculations
-      poolData: result.poolData
+      poolData: result.poolData,
+      // Include all paths for future multi-path optimization
+      allPaths: result.allPaths
     };
 
   } catch (error) {
