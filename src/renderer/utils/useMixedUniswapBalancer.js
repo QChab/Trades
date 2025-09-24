@@ -499,7 +499,6 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
   const routes = [];
   
   // Group paths by ETH/WETH variants for unified optimization
-  const unifiedPaths = unifyETHWETHPaths(uniswapPaths, balancerPaths);
   
   // Single protocol routes (100% on one DEX)
   if (uniswapPaths.length > 0) {
@@ -545,22 +544,6 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
     });
   }
 
-  // Mixed protocol routes with unified ETH/WETH optimization
-  if (unifiedPaths.uniswap.length > 0 && unifiedPaths.balancer.length > 0) {
-    console.log('🔀 Optimizing unified ETH/WETH liquidity across protocols...');
-    
-    // Find optimal split considering all ETH/WETH variants
-    const unifiedMixedRoute = await findOptimalUnifiedSplit(
-      unifiedPaths,
-      amountIn,
-      tokenIn,
-      tokenOut
-    );
-    
-    if (unifiedMixedRoute) {
-      routes.push(unifiedMixedRoute);
-    }
-  }
 
   // Add optimized cross-DEX multi-hop paths using EXACT computations
   if (crossDEXPaths && crossDEXPaths.length > 0) {
@@ -570,41 +553,71 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
     if (splittablePath) {
       console.log('\n🎯 Found splittable cross-DEX path, optimizing with EXACT AMM computations...');
       
-      // Extract the parallel first-hop options
-      const balancerLeg = splittablePath.legs.find(l => l.protocol === 'balancer' && l.token?.symbol === 'WETH');
-      const uniswapLeg = splittablePath.legs.find(l => l.protocol === 'uniswap' && l.token?.symbol === 'ETH');
-      const secondHopLeg = splittablePath.legs.find(l => l.protocol === 'uniswap' && l.token?.symbol === tokenOut.symbol);
-      
-      // Debug what's in the legs
-      if (uniswapLeg) {
-        console.log('   Uniswap first hop leg:', {
-          hasPool: !!uniswapLeg.pool,
-          hasTrade: !!uniswapLeg.trade,
-          tradeHasPools: !!uniswapLeg.trade?.route?.pools,
-          poolCount: uniswapLeg.trade?.route?.pools?.length || 0
-        });
-        if (uniswapLeg.trade?.route?.pools?.[0]) {
-          const pool = uniswapLeg.trade.route.pools[0];
-          console.log('   First hop pool tokens:', {
-            token0: pool.token0?.symbol || pool.currency0?.symbol,
-            token1: pool.token1?.symbol || pool.currency1?.symbol
-          });
-        }
-      }
-      
-      if (balancerLeg && uniswapLeg && secondHopLeg) {
-        // Optimize using gradient descent with EXACT AMM formulas
-        const optimizedSplit = await optimizeWithExactAMM(
-          balancerLeg,
-          uniswapLeg,
-          secondHopLeg,
-          amountIn,
-          tokenIn,
-          tokenOut
-        );
-        
-        if (optimizedSplit) {
-          routes.push(optimizedSplit);
+      // Analyze the path structure - can have various configurations:
+      // 1. Both legs direct to target: ONE→ETH (Uniswap) + ONE→WETH (Balancer)
+      // 2. One direct, one multi-hop: ONE→ETH (Uniswap) + ONE→USDC→ETH (Balancer)
+      // 3. Both multi-hop through different intermediates
+
+      const legs = splittablePath.legs || [];
+      console.log(`   Analyzing ${legs.length} legs in cross-DEX path`);
+
+      // Group legs by their position in the path
+      const firstHopLegs = legs.filter(l => {
+        // First hop legs are those that take the input token
+        return !l.inputToken || l.inputToken?.symbol === tokenIn.symbol;
+      });
+
+      const secondHopLegs = legs.filter(l => {
+        // Second hop legs output the target token but don't input the source token
+        return l.token?.symbol === tokenOut.symbol &&
+               (!l.inputToken || l.inputToken?.symbol !== tokenIn.symbol);
+      });
+
+      console.log(`   Found ${firstHopLegs.length} first-hop options, ${secondHopLegs.length} second-hop options`);
+
+      // Check if we have parallel first-hop options that can be split
+      const balancerFirstHop = firstHopLegs.find(l => l.protocol === 'balancer');
+      const uniswapFirstHop = firstHopLegs.find(l => l.protocol === 'uniswap');
+
+      if (balancerFirstHop && uniswapFirstHop) {
+        console.log('   ✓ Found parallel first-hop options for splitting');
+
+        // Check if first hops already reach the target (considering ETH/WETH equivalence)
+        const isETHTarget = tokenOut.symbol === 'ETH' || tokenOut.symbol === 'WETH';
+        const balancerReachesTarget =
+          balancerFirstHop.token?.symbol === tokenOut.symbol ||
+          (isETHTarget && (balancerFirstHop.token?.symbol === 'ETH' || balancerFirstHop.token?.symbol === 'WETH'));
+        const uniswapReachesTarget =
+          uniswapFirstHop.token?.symbol === tokenOut.symbol ||
+          (isETHTarget && (uniswapFirstHop.token?.symbol === 'ETH' || uniswapFirstHop.token?.symbol === 'WETH'));
+
+        if (balancerReachesTarget && uniswapReachesTarget) {
+          console.log('   Both first hops reach target directly - optimizing direct split');
+          // Both reach target directly - optimize split without second hop
+          const optimizedSplit = await optimizeDirectSplit(
+            balancerFirstHop,
+            uniswapFirstHop,
+            amountIn,
+            tokenIn,
+            tokenOut
+          );
+          if (optimizedSplit) {
+            routes.push(optimizedSplit);
+          }
+        } else if (secondHopLegs.length > 0) {
+          console.log('   Need second hop for complete path - optimizing with intermediate');
+          // Need second hop - use the existing optimization
+          const optimizedSplit = await optimizeWithExactAMM(
+            balancerFirstHop,
+            uniswapFirstHop,
+            secondHopLegs[0], // Use the first available second hop
+            amountIn,
+            tokenIn,
+            tokenOut
+          );
+          if (optimizedSplit) {
+            routes.push(optimizedSplit);
+          }
         }
       }
     }
@@ -624,17 +637,35 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
     
     // If we have both ONE->WETH on Balancer and ONE->ETH on Uniswap paths
     if (balancerWETHPath && uniswapETHPath) {
-      // Optimize the split between these two first-hop options
-      const optimizedCrossDEX = await optimizeCrossDEXFromPaths(
-        balancerWETHPath,
-        uniswapETHPath,
-        crossDEXPaths,
-        amountIn,
-        tokenIn,
-        tokenOut
-      );
-      if (optimizedCrossDEX) {
-        routes.push(optimizedCrossDEX);
+      // Check if these paths directly reach the target or need second hop
+      const isETHTarget = tokenOut.symbol === 'ETH' || tokenOut.symbol === 'WETH';
+      const needsSecondHop = !isETHTarget && balancerWETHPath.legs.length > 1;
+
+      if (needsSecondHop && balancerWETHPath.legs[1]) {
+        // Use exact AMM optimization for multi-hop
+        const optimizedCrossDEX = await optimizeWithExactAMM(
+          balancerWETHPath.legs[0],
+          uniswapETHPath.legs[0],
+          balancerWETHPath.legs[1], // Second hop
+          amountIn,
+          tokenIn,
+          tokenOut
+        );
+        if (optimizedCrossDEX) {
+          routes.push(optimizedCrossDEX);
+        }
+      } else {
+        // Use direct split optimization
+        const optimizedCrossDEX = await optimizeDirectSplit(
+          balancerWETHPath.legs[0],
+          uniswapETHPath.legs[0],
+          amountIn,
+          tokenIn,
+          tokenOut
+        );
+        if (optimizedCrossDEX) {
+          routes.push(optimizedCrossDEX);
+        }
       }
     }
     
@@ -669,17 +700,6 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
 /**
  * Helper functions for unified ETH/WETH optimization
  */
-function unifyETHWETHPaths(uniswapPaths, balancerPaths) {
-  return {
-    uniswap: uniswapPaths,
-    balancer: balancerPaths,
-    // Track which paths use ETH vs WETH
-    uniswapETH: uniswapPaths.filter(p => p.variantType === 'unwrapped-input' || p.path.includes(ETH_ADDRESS)),
-    uniswapWETH: uniswapPaths.filter(p => p.variantType === 'wrapped-input' || p.path.includes(WETH_ADDRESS)),
-    balancerETH: balancerPaths.filter(p => p.path?.includes(ETH_ADDRESS)),
-    balancerWETH: balancerPaths.filter(p => !p.path?.includes(ETH_ADDRESS))
-  };
-}
 
 function selectBestVariant(paths) {
   if (paths.length === 0) return null;
@@ -691,194 +711,21 @@ function selectBestVariant(paths) {
 }
 
 /**
- * Find optimal split with unified ETH/WETH liquidity
- * This is the KEY INNOVATION: treats ONE→ETH and ONE→WETH as a single unified pool
+ * DEPRECATED - Uses linear approximations instead of exact AMM calculations
+ * This function should be replaced with exact calculations using:
+ * - calculateUniswapExactOutput for Uniswap paths
+ * - calculateBalancerExactOutput for Balancer paths
+ *
+ * Use optimizeDirectSplit or optimizeWithExactAMM instead.
  */
-async function findOptimalUnifiedSplit(unifiedPaths, amountIn, tokenIn, tokenOut) {
-  console.log('🎯 Finding optimal split across unified ETH/WETH liquidity...');
-  
-  // Aggregate liquidity information
-  const liquidityProfile = {
-    uniswapETH: unifiedPaths.uniswapETH.length > 0,
-    uniswapWETH: unifiedPaths.uniswapWETH.length > 0,
-    balancerETH: unifiedPaths.balancerETH.length > 0,
-    balancerWETH: unifiedPaths.balancerWETH.length > 0
-  };
-  
-  console.log('   Liquidity available:');
-  if (liquidityProfile.uniswapETH) console.log('   • Uniswap: ETH pairs');
-  if (liquidityProfile.uniswapWETH) console.log('   • Uniswap: WETH pairs');
-  if (liquidityProfile.balancerETH) console.log('   • Balancer: ETH pairs');
-  if (liquidityProfile.balancerWETH) console.log('   • Balancer: WETH pairs');
-  
-  // Configuration for unified optimization
-  const CONFIG = {
-    PRECISION: 0.0001,          // 0.01% precision
-    MAX_ITERATIONS: 100
-  };
-  
-  // Binary search for optimal 4-way split:
-  // 1. Uniswap ETH
-  // 2. Uniswap WETH  
-  // 3. Balancer ETH
-  // 4. Balancer WETH
-  
-  let bestSplit = {
-    uniswapETH: 0,
-    uniswapWETH: 0,
-    balancerETH: 0,
-    balancerWETH: 0,
-    totalOutput: BigNumber.from(0)
-  };
-  
-  // Use gradient descent for 4-dimensional optimization
-  const dimensions = ['uniswapETH', 'uniswapWETH', 'balancerETH', 'balancerWETH'];
-  let splits = { uniswapETH: 0.25, uniswapWETH: 0.25, balancerETH: 0.25, balancerWETH: 0.25 };
-  
-  for (let iter = 0; iter < CONFIG.MAX_ITERATIONS; iter++) {
-    // Normalize splits to sum to 1
-    const sum = Object.values(splits).reduce((a, b) => a + b, 0);
-    Object.keys(splits).forEach(key => splits[key] = splits[key] / sum);
-    
-    // Calculate output for current split
-    const output = await calculateUnifiedOutput(splits, unifiedPaths, amountIn, CONFIG);
-    
-    if (output.totalOutput.gt(bestSplit.totalOutput)) {
-      bestSplit = { ...splits, totalOutput: output.totalOutput, details: output };
-    }
-    
-    // Gradient adjustment
-    const gradients = await calculateGradients(splits, unifiedPaths, amountIn, CONFIG);
-    
-    // Update splits based on gradients
-    dimensions.forEach(dim => {
-      if (liquidityProfile[dim]) {
-        splits[dim] += gradients[dim] * 0.01; // Learning rate
-        splits[dim] = Math.max(0, Math.min(1, splits[dim]));
-      } else {
-        splits[dim] = 0; // No liquidity in this dimension
-      }
-    });
-    
-    // Check convergence
-    if (iter > 10 && output.totalOutput.sub(bestSplit.totalOutput).abs().lt(amountIn.div(10000))) {
-      console.log(`   ✅ Converged after ${iter} iterations`);
-      break;
-    }
-  }
-  
-  // Display results
-  console.log('\n   📊 Optimal Unified Split Found:');
-  console.log(`   • Uniswap ETH: ${(bestSplit.uniswapETH * 100).toFixed(3)}%`);
-  console.log(`   • Uniswap WETH: ${(bestSplit.uniswapWETH * 100).toFixed(3)}%`);
-  console.log(`   • Balancer ETH: ${(bestSplit.balancerETH * 100).toFixed(3)}%`);
-  console.log(`   • Balancer WETH: ${(bestSplit.balancerWETH * 100).toFixed(3)}%`);
-  
-  // Consolidate into execution plan
-  const totalUniswap = bestSplit.uniswapETH + bestSplit.uniswapWETH;
-  const totalBalancer = bestSplit.balancerETH + bestSplit.balancerWETH;
-  
-  console.log(`\n   📈 Protocol Summary:`);
-  console.log(`   • Total Uniswap: ${(totalUniswap * 100).toFixed(2)}% (ETH: ${(bestSplit.uniswapETH * 100).toFixed(2)}%, WETH: ${(bestSplit.uniswapWETH * 100).toFixed(2)}%)`);
-  console.log(`   • Total Balancer: ${(totalBalancer * 100).toFixed(2)}% (ETH: ${(bestSplit.balancerETH * 100).toFixed(2)}%, WETH: ${(bestSplit.balancerWETH * 100).toFixed(2)}%)`);
-  
-  return {
-    type: 'unified-eth-weth-optimal',
-    protocol: 'mixed',
-    totalOutput: bestSplit.totalOutput,
-    splits: [
-      {
-        protocol: 'uniswap',
-        percentage: totalUniswap,
-        ethPercentage: bestSplit.uniswapETH,
-        wethPercentage: bestSplit.uniswapWETH,
-        output: bestSplit.details?.uniswapOutput
-      },
-      {
-        protocol: 'balancer',
-        percentage: totalBalancer,
-        ethPercentage: bestSplit.balancerETH,
-        wethPercentage: bestSplit.balancerWETH,
-        output: bestSplit.details?.balancerOutput
-      }
-    ],
-    requiresWrap: bestSplit.uniswapWETH > 0 || bestSplit.balancerWETH > 0
-  };
-}
 
-async function calculateUnifiedOutput(splits, paths, amountIn, config) {
-  let totalOutput = BigNumber.from(0);
-  let uniswapOutput = BigNumber.from(0);
-  let balancerOutput = BigNumber.from(0);
-  
-  // Calculate output for each split
-  if (splits.uniswapETH > 0 && paths.uniswapETH.length > 0) {
-    const amount = amountIn.mul(Math.floor(splits.uniswapETH * 1000000)).div(1000000);
-    const output = paths.uniswapETH[0].outputAmount.mul(amount).div(paths.uniswapETH[0].inputAmount);
-    uniswapOutput = uniswapOutput.add(output);
-    totalOutput = totalOutput.add(output);
-  }
-  
-  if (splits.uniswapWETH > 0 && paths.uniswapWETH.length > 0) {
-    const amount = amountIn.mul(Math.floor(splits.uniswapWETH * 1000000)).div(1000000);
-    const output = paths.uniswapWETH[0].outputAmount.mul(amount).div(paths.uniswapWETH[0].inputAmount);
-    uniswapOutput = uniswapOutput.add(output);
-    totalOutput = totalOutput.add(output);
-  }
-  
-  if (splits.balancerETH > 0 && paths.balancerETH.length > 0) {
-    const amount = amountIn.mul(Math.floor(splits.balancerETH * 1000000)).div(1000000);
-    const output = paths.balancerETH[0].outputAmount.mul(amount).div(amountIn);
-    balancerOutput = balancerOutput.add(output);
-    totalOutput = totalOutput.add(output);
-  }
-  
-  if (splits.balancerWETH > 0 && paths.balancerWETH.length > 0) {
-    const amount = amountIn.mul(Math.floor(splits.balancerWETH * 1000000)).div(1000000);
-    const output = paths.balancerWETH[0].outputAmount.mul(amount).div(amountIn);
-    balancerOutput = balancerOutput.add(output);
-    totalOutput = totalOutput.add(output);
-  }
-  
-  return { totalOutput, uniswapOutput, balancerOutput };
-}
+/**
+ * DEPRECATED - Uses linear approximations instead of exact AMM calculations
+ * This incorrectly assumes linear scaling: output = (inputAmount/referenceInput) * referenceOutput
+ * Real AMMs have diminishing returns due to constant product formula.
+ */
 
-async function calculateGradients(splits, paths, amountIn, config) {
-  const gradients = {};
-  const epsilon = 0.001; // Small change for gradient calculation
-  
-  const baseOutput = await calculateUnifiedOutput(splits, paths, amountIn, config);
-  
-  for (const key of Object.keys(splits)) {
-    const testSplits = { ...splits };
-    testSplits[key] += epsilon;
-    
-    // Renormalize
-    const sum = Object.values(testSplits).reduce((a, b) => a + b, 0);
-    Object.keys(testSplits).forEach(k => testSplits[k] = testSplits[k] / sum);
-    
-    const testOutput = await calculateUnifiedOutput(testSplits, paths, amountIn, config);
-    
-    // Calculate gradient
-    gradients[key] = parseFloat(
-      testOutput.totalOutput.sub(baseOutput.totalOutput).toString()
-    ) / epsilon;
-  }
-  
-  return gradients;
-}
 
-function estimateUnifiedGas(split) {
-  let gas = 150000; // Base gas
-  
-  // Add gas for each active split (no penalty for wrap/unwrap)
-  if (split.uniswapETH > 0) gas += 120000;
-  if (split.uniswapWETH > 0) gas += 120000;
-  if (split.balancerETH > 0) gas += 150000;
-  if (split.balancerWETH > 0) gas += 150000;
-  
-  return gas;
-}
 
 /**
  * Find optimal split between Uniswap and Balancer using advanced optimization
@@ -1200,31 +1047,17 @@ async function findOptimalMixedSplit(uniswapPath, balancerPath, amountIn, tokenI
 }
 
 /**
- * Calculate real AMM output with price impact for Uniswap V3/V4
+ * Calculate exact Uniswap output using the SDK's constant product formula
  */
-function calculateUniswapOutput(amountIn, pool) {
-  if (!pool || !pool.liquidity || !pool.sqrtPriceX96) {
+async function calculateExactUniswapOutput(amountIn, pool, tokenInSymbol, tokenOutSymbol) {
+  try {
+    const crossOptimizer = await import('./crossDEXOptimizer.js');
+    const output = await crossOptimizer.calculateUniswapExactOutput(amountIn, tokenInSymbol, tokenOutSymbol);
+    return output || BigNumber.from(0);
+  } catch (error) {
+    console.warn('Failed to calculate exact Uniswap output:', error);
     return BigNumber.from(0);
   }
-  
-  const liquidity = pool.liquidity;
-  const sqrtPriceX96 = pool.sqrtPriceX96;
-  const fee = pool.fee || 3000; // Default 0.3%
-  
-  // Apply fee
-  const amountInAfterFee = amountIn.mul(1000000 - fee).div(1000000);
-  
-  // Simplified constant product for now (real V3 needs tick math)
-  // ΔsqrtP = amountIn / L
-  const deltaPrice = amountInAfterFee.mul(BigNumber.from(2).pow(96)).div(liquidity);
-  const newSqrtPrice = pool.zeroForOne 
-    ? sqrtPriceX96.sub(deltaPrice)
-    : sqrtPriceX96.add(deltaPrice);
-  
-  // Output = L * |ΔsqrtP| / sqrtP
-  const amountOut = liquidity.mul(deltaPrice.abs()).div(sqrtPriceX96);
-  
-  return amountOut;
 }
 
 /**
@@ -1237,120 +1070,221 @@ function calculateBalancerWeightedOutput(amountIn, poolData, tokenInIndex, token
 }
 
 /**
- * Find optimal split across 3+ legs (advanced optimization)
+ * Find optimal split across 3+ legs using golden section search with exact AMM calculations
  */
 async function findAdvancedSplit(uniswapPaths, balancerPaths, amountIn, tokenIn, tokenOut) {
   // Combine all paths
   const legs = [...uniswapPaths, ...balancerPaths];
   const numLegs = legs.length;
-  
-  // Start with equal split
-  let fractions = new Array(numLegs).fill(1 / numLegs);
-  let bestOutput = BigNumber.from(0);
-  let bestFractions = [...fractions];
-  
-  // Gradient descent optimization
-  const iterations = 20;
-  const learningRate = 0.05;
-  
-  for (let iter = 0; iter < iterations; iter++) {
-    // Calculate current output with REAL AMM formulas
-    let totalOutput = BigNumber.from(0);
-    
-    for (let i = 0; i < numLegs; i++) {
-      const leg = legs[i];
-      const legAmount = amountIn.mul(Math.floor(fractions[i] * 10000)).div(10000);
-      
-      let legOutput;
-      
-      // Use real AMM calculations based on protocol
-      if (leg.protocol === 'uniswap' && leg.pools && leg.pools.length > 0) {
-        // Uniswap: Use concentrated liquidity formula
-        const pool = leg.pools[0]; // Use first pool for now
-        legOutput = calculateUniswapOutput(legAmount, pool);
-        
-      } else if (leg.protocol === 'balancer' && leg.poolData) {
-        // Balancer: Use weighted pool formula
-        const tokenInIndex = leg.poolData.tokens.findIndex(t => 
-          t.address.toLowerCase() === tokenIn.address.toLowerCase()
-        );
-        const tokenOutIndex = leg.poolData.tokens.findIndex(t =>
-          t.address.toLowerCase() === tokenOut.address.toLowerCase()
-        );
-        
-        if (tokenInIndex >= 0 && tokenOutIndex >= 0) {
-          legOutput = calculateBalancerWeightedOutput(
-            legAmount, 
-            leg.poolData, 
-            tokenInIndex, 
-            tokenOutIndex
-          );
-        } else {
-          // Fallback to linear if indices not found
-          legOutput = leg.outputAmount.mul(legAmount).div(leg.inputAmount || amountIn);
-        }
-        
-      } else {
-        // Fallback: Use linear approximation if pool data unavailable
-        console.warn(`Using linear approximation for leg ${i} - missing pool data`);
-        legOutput = leg.outputAmount.mul(legAmount).div(leg.inputAmount || amountIn);
-      }
-      
-      totalOutput = totalOutput.add(legOutput);
-    }
-    
-    if (totalOutput.gt(bestOutput)) {
-      bestOutput = totalOutput;
-      bestFractions = [...fractions];
-    }
-    
-    // Adjust fractions (simplified gradient)
-    for (let i = 0; i < numLegs; i++) {
-      // Randomly adjust fractions
-      fractions[i] += (Math.random() - 0.5) * learningRate;
-    }
-    
-    // Normalize fractions to sum to 1
-    const sum = fractions.reduce((a, b) => a + b, 0);
-    fractions = fractions.map(f => Math.max(0, f / sum));
+
+  if (numLegs < 2) return null;
+
+  // For 3+ legs, use multi-dimensional optimization
+  // For now, implement 3-leg optimization (2 Uniswap + 1 Balancer)
+  if (numLegs === 3) {
+    return await optimizeThreeWaySplit(legs, amountIn, tokenIn, tokenOut);
   }
-  
+
+  // For more complex cases, fall back to pairwise optimization
+  // TODO: Implement n-dimensional golden section search
+  return await optimizePairwiseSplit(legs, amountIn, tokenIn, tokenOut);
+}
+
+/**
+ * Optimize 3-way split using nested golden section search
+ */
+async function optimizeThreeWaySplit(legs, amountIn, tokenIn, tokenOut) {
+  const crossOptimizer = await import('./crossDEXOptimizer.js');
+
+  // Golden ratio
+  const phi = (Math.sqrt(5) - 1) / 2;
+  const tolerance = 0.00001;
+
+  let bestOutput = BigNumber.from(0);
+  let bestSplit = [1/3, 1/3, 1/3];
+
+  // Outer loop: optimize leg1 fraction
+  let a1 = 0.0;
+  let b1 = 1.0;
+  let c1 = b1 - phi * (b1 - a1);
+  let d1 = a1 + phi * (b1 - a1);
+
+  while (Math.abs(b1 - a1) > tolerance) {
+    // For each leg1 fraction, optimize leg2 fraction
+    const outputC = await optimizeLeg2Given(c1, legs, amountIn, tokenIn, tokenOut, crossOptimizer);
+    const outputD = await optimizeLeg2Given(d1, legs, amountIn, tokenIn, tokenOut, crossOptimizer);
+
+    if (outputC.output.gt(outputD.output)) {
+      b1 = d1;
+      if (outputC.output.gt(bestOutput)) {
+        bestOutput = outputC.output;
+        bestSplit = outputC.split;
+      }
+    } else {
+      a1 = c1;
+      if (outputD.output.gt(bestOutput)) {
+        bestOutput = outputD.output;
+        bestSplit = outputD.split;
+      }
+    }
+
+    c1 = b1 - phi * (b1 - a1);
+    d1 = a1 + phi * (b1 - a1);
+  }
+
   // Build result
   const splits = [];
-  const optimizedPaths = [];
-  
-  for (let i = 0; i < numLegs; i++) {
-    if (bestFractions[i] > 0.01) { // Only include if > 1%
-      const leg = legs[i];
-      const legAmount = amountIn.mul(Math.floor(bestFractions[i] * 10000)).div(10000);
-      const legOutput = leg.outputAmount.mul(legAmount).div(leg.inputAmount || amountIn);
-      
-      optimizedPaths.push({
-        ...leg,
-        inputAmount: legAmount,
-        outputAmount: legOutput
-      });
-      
-      splits.push({
-        protocol: leg.protocol,
-        percentage: bestFractions[i],
-        input: legAmount,
-        output: legOutput
-      });
+  for (let i = 0; i < legs.length; i++) {
+    const leg = legs[i];
+    const legAmount = amountIn.mul(Math.floor(bestSplit[i] * 1000000)).div(1000000);
+    const legOutput = await calculateLegOutput(leg, legAmount, tokenIn, tokenOut, crossOptimizer);
+
+    splits.push({
+      protocol: leg.protocol,
+      percentage: bestSplit[i],
+      amount: legAmount,
+      output: legOutput,
+      path: leg.path
+    });
+  }
+
+  return {
+    type: 'cross-dex-advanced-' + legs.length + '-way',
+    totalOutput: bestOutput,
+    splits,
+    gasCost: estimateGasForMixedRoute()
+  };
+}
+
+/**
+ * Helper to optimize leg2 fraction given leg1 fraction
+ */
+async function optimizeLeg2Given(leg1Frac, legs, amountIn, tokenIn, tokenOut, crossOptimizer) {
+  const phi = (Math.sqrt(5) - 1) / 2;
+  const tolerance = 0.00001;
+
+  let a2 = 0.0;
+  let b2 = 1.0 - leg1Frac;
+  let c2 = b2 - phi * (b2 - a2);
+  let d2 = a2 + phi * (b2 - a2);
+
+  let bestOutput = BigNumber.from(0);
+  let bestLeg2Frac = 0;
+
+  while (Math.abs(b2 - a2) > tolerance) {
+    const split = [leg1Frac, c2, 1 - leg1Frac - c2];
+    const outputC = await calculateThreeWayOutput(split, legs, amountIn, tokenIn, tokenOut, crossOptimizer);
+
+    split[1] = d2;
+    split[2] = 1 - leg1Frac - d2;
+    const outputD = await calculateThreeWayOutput(split, legs, amountIn, tokenIn, tokenOut, crossOptimizer);
+
+    if (outputC.gt(outputD)) {
+      b2 = d2;
+      if (outputC.gt(bestOutput)) {
+        bestOutput = outputC;
+        bestLeg2Frac = c2;
+      }
+    } else {
+      a2 = c2;
+      if (outputD.gt(bestOutput)) {
+        bestOutput = outputD;
+        bestLeg2Frac = d2;
+      }
+    }
+
+    c2 = b2 - phi * (b2 - a2);
+    d2 = a2 + phi * (b2 - a2);
+  }
+
+  return {
+    output: bestOutput,
+    split: [leg1Frac, bestLeg2Frac, 1 - leg1Frac - bestLeg2Frac]
+  };
+}
+
+/**
+ * Calculate total output for 3-way split
+ */
+async function calculateThreeWayOutput(split, legs, amountIn, tokenIn, tokenOut, crossOptimizer) {
+  let totalOutput = BigNumber.from(0);
+
+  for (let i = 0; i < legs.length; i++) {
+    if (split[i] <= 0) continue;
+
+    const legAmount = amountIn.mul(Math.floor(split[i] * 1000000)).div(1000000);
+    const legOutput = await calculateLegOutput(legs[i], legAmount, tokenIn, tokenOut, crossOptimizer);
+    totalOutput = totalOutput.add(legOutput);
+  }
+
+  return totalOutput;
+}
+
+/**
+ * Calculate exact output for a single leg
+ */
+async function calculateLegOutput(leg, amountIn, tokenIn, tokenOut, crossOptimizer) {
+  if (leg.protocol === 'uniswap') {
+    // Use exact Uniswap calculation
+    const tokenInSymbol = tokenIn.symbol || 'UNKNOWN';
+    const tokenOutSymbol = tokenOut.symbol || 'UNKNOWN';
+    return await crossOptimizer.calculateUniswapOutput(amountIn, tokenInSymbol, tokenOutSymbol);
+  } else if (leg.protocol === 'balancer' && leg.poolData) {
+    // Use exact Balancer calculation
+    const tokenInIndex = leg.poolData.tokens.findIndex(t =>
+      t.address.toLowerCase() === tokenIn.address.toLowerCase()
+    );
+    const tokenOutIndex = leg.poolData.tokens.findIndex(t =>
+      t.address.toLowerCase() === tokenOut.address.toLowerCase()
+    );
+
+    if (tokenInIndex >= 0 && tokenOutIndex >= 0) {
+      return calculateBalancerWeightedOutput(
+        amountIn,
+        leg.poolData,
+        tokenInIndex,
+        tokenOutIndex
+      );
     }
   }
-  
-  if (splits.length < 2) {
-    return null; // No meaningful split found
+
+  // Should not reach here with proper pool data
+  console.error('Missing pool data for leg calculation');
+  return BigNumber.from(0);
+}
+
+/**
+ * Fallback: optimize pairwise for 4+ legs
+ */
+async function optimizePairwiseSplit(legs, amountIn, tokenIn, tokenOut) {
+  // For now, just split equally among all legs
+  // TODO: Implement proper n-dimensional optimization
+  const equalSplit = 1 / legs.length;
+  const crossOptimizer = await import('./crossDEXOptimizer.js');
+
+  let totalOutput = BigNumber.from(0);
+  const splits = [];
+
+  for (let i = 0; i < legs.length; i++) {
+    const leg = legs[i];
+    const legAmount = amountIn.mul(Math.floor(equalSplit * 1000000)).div(1000000);
+    const legOutput = await calculateLegOutput(leg, legAmount, tokenIn, tokenOut, crossOptimizer);
+
+    totalOutput = totalOutput.add(legOutput);
+    splits.push({
+      protocol: leg.protocol,
+      percentage: equalSplit,
+      amount: legAmount,
+      output: legOutput,
+      path: leg.path
+    });
   }
-  
+
   return {
-    type: 'advanced-split',
-    protocol: 'mixed',
-    totalOutput: bestOutput,
-    paths: optimizedPaths,
+    type: 'cross-dex-multi-' + legs.length + '-way',
+    totalOutput,
     splits,
-    estimatedGas: estimateGasForMixedRoute(splits.length)
+    gasCost: estimateGasForMixedRoute()
   };
 }
 
@@ -1751,300 +1685,139 @@ async function optimizeWithExactAMM(balancerLeg, uniswapLeg, secondHopLeg, amoun
 }
 
 /**
- * Optimize cross-DEX paths using discovered paths
+ * TODO: Implement a recursive multi-hop pathfinder
+ *
+ * The ideal implementation would:
+ * 1. Recursively discover all possible paths up to maxHops
+ * 2. For each hop, evaluate if splitting across DEXs is beneficial
+ * 3. Support complex routing patterns:
+ *    - Split at first hop, converge later
+ *    - Single DEX first hop, split at second hop
+ *    - Split at every hop with different ratios
+ * 4. Use exact AMM calculations (no approximations)
+ * 5. Use golden section search for optimization (not gradient descent)
+ * 6. Handle any token pairs without hardcoding
+ *
+ * Example routing patterns to support:
+ * - TokenA → [50% DEX1→TokenB, 50% DEX2→TokenC] → TokenD
+ * - TokenA → TokenB → [30% DEX1→TokenD, 70% DEX2→TokenD]
+ * - TokenA → [DEX1→TokenB→TokenD, DEX2→TokenC→TokenD]
  */
-async function optimizeCrossDEXFromPaths(balancerPath, uniswapPath, allCrossDEXPaths, amountIn, tokenIn, tokenOut) {
-  console.log('\n⚡ Optimizing cross-DEX split between discovered paths...');
-  
-  // Extract first hop information from each path
-  const balancerFirstHop = balancerPath.legs[0];
-  const uniswapFirstHop = uniswapPath.legs[0];
-  const secondHop = balancerPath.legs[1] || uniswapPath.legs[1]; // Both should lead to same second hop
-  
-  if (!balancerFirstHop || !uniswapFirstHop || !secondHop) {
-    console.log('   Missing required hop information');
-    return null;
-  }
-  
-  console.log(`   First hop options:`);
-  console.log(`   • Balancer: ${tokenIn.symbol} -> WETH (${ethers.utils.formatUnits(balancerFirstHop.outputAmount || 0, 18)} WETH)`);
-  console.log(`   • Uniswap: ${tokenIn.symbol} -> ETH (${ethers.utils.formatUnits(uniswapFirstHop.outputAmount || 0, 18)} ETH)`);
-  
-  // Gradient descent optimization
-  let balancerFraction = 0.47; // Start at expected optimal
-  let bestFraction = balancerFraction;
-  let bestOutput = BigNumber.from(0);
-  const learningRate = 0.005;
-  const iterations = 200;
-  
-  for (let i = 0; i < iterations; i++) {
-    // Calculate split amounts
-    const balancerAmount = amountIn.mul(Math.floor(balancerFraction * 10000)).div(10000);
-    const uniswapAmount = amountIn.sub(balancerAmount);
-    
-    // Calculate first hop outputs (linear scaling with slight impact)
-    const balancerRatio = balancerAmount.mul(10000).div(amountIn);
-    const uniswapRatio = uniswapAmount.mul(10000).div(amountIn);
-    
-    // Apply diminishing returns for concentration
-    const balancerImpact = 10000 + balancerRatio.div(4); // 2.5% impact at 100%
-    const uniswapImpact = 10000 + uniswapRatio.div(4);
-    
-    const balancerOutput = balancerFirstHop.outputAmount
-      .mul(balancerAmount).div(amountIn)
-      .mul(10000).div(balancerImpact);
-      
-    const uniswapOutput = uniswapFirstHop.outputAmount
-      .mul(uniswapAmount).div(amountIn)
-      .mul(10000).div(uniswapImpact);
-    
-    // Total ETH/WETH for second hop
-    const totalETH = balancerOutput.add(uniswapOutput);
-    
-    // Second hop output (all on Uniswap)
-    // Apply impact based on total size
-    const secondHopRatio = totalETH.mul(10000).div(ethers.utils.parseEther('0.645')); // Reference from Balancer output
-    const secondHopImpact = 10000 + secondHopRatio.div(3); // Higher impact on second hop
-    
-    const finalOutput = secondHop.outputAmount
-      .mul(totalETH).div(secondHop.inputAmount || ethers.utils.parseEther('0.645'))
-      .mul(10000).div(secondHopImpact);
-    
-    if (finalOutput.gt(bestOutput)) {
-      bestOutput = finalOutput;
-      bestFraction = balancerFraction;
-    }
-    
-    // Calculate gradient
-    const epsilon = 0.002;
-    const plusFraction = Math.min(0.99, balancerFraction + epsilon);
-    const minusFraction = Math.max(0.01, balancerFraction - epsilon);
-    
-    // Calculate output at +/- epsilon
-    const plusAmount = amountIn.mul(Math.floor(plusFraction * 10000)).div(10000);
-    const plusETH = balancerFirstHop.outputAmount.mul(plusAmount).div(amountIn).mul(10000).div(10000 + plusAmount.mul(10000).div(amountIn).div(4))
-      .add(uniswapFirstHop.outputAmount.mul(amountIn.sub(plusAmount)).div(amountIn).mul(10000).div(10000 + amountIn.sub(plusAmount).mul(10000).div(amountIn).div(4)));
-    const plusOutput = secondHop.outputAmount.mul(plusETH).div(secondHop.inputAmount || ethers.utils.parseEther('0.645')).mul(10000).div(10000 + plusETH.mul(10000).div(ethers.utils.parseEther('0.645')).div(3));
-    
-    const minusAmount = amountIn.mul(Math.floor(minusFraction * 10000)).div(10000);
-    const minusETH = balancerFirstHop.outputAmount.mul(minusAmount).div(amountIn).mul(10000).div(10000 + minusAmount.mul(10000).div(amountIn).div(4))
-      .add(uniswapFirstHop.outputAmount.mul(amountIn.sub(minusAmount)).div(amountIn).mul(10000).div(10000 + amountIn.sub(minusAmount).mul(10000).div(amountIn).div(4)));
-    const minusOutput = secondHop.outputAmount.mul(minusETH).div(secondHop.inputAmount || ethers.utils.parseEther('0.645')).mul(10000).div(10000 + minusETH.mul(10000).div(ethers.utils.parseEther('0.645')).div(3));
-    
-    // Update based on gradient
-    if (plusOutput.gt(minusOutput)) {
-      balancerFraction = Math.min(0.99, balancerFraction + learningRate * (1 - i/iterations));
-    } else {
-      balancerFraction = Math.max(0.01, balancerFraction - learningRate * (1 - i/iterations));
-    }
-    
-    // Check convergence
-    if (i > 50 && Math.abs(balancerFraction - bestFraction) < 0.0005) {
-      console.log(`   Converged at iteration ${i}`);
-      break;
-    }
-  }
-  
-  // Calculate final split amounts
-  const finalBalancerAmount = amountIn.mul(Math.floor(bestFraction * 10000)).div(10000);
-  const finalUniswapAmount = amountIn.sub(finalBalancerAmount);
-  
-  console.log(`\n   ✅ Optimal split found:`);
-  console.log(`      • Balancer (ONE->WETH): ${(bestFraction * 100).toFixed(1)}%`);
-  console.log(`      • Uniswap (ONE->ETH): ${((1 - bestFraction) * 100).toFixed(1)}%`);
-  console.log(`      • Expected output: ${ethers.utils.formatUnits(bestOutput, 18)} SEV\n`);
-  
-  return {
-    type: 'cross-dex-optimized',
-    protocol: 'mixed',
-    totalOutput: bestOutput,
-    path: `${tokenIn.symbol} -> [${(bestFraction * 100).toFixed(0)}% Balancer WETH, ${((1-bestFraction) * 100).toFixed(0)}% Uniswap ETH] -> SEV`,
-    splits: [
-      {
-        protocol: 'balancer',
-        percentage: bestFraction,
-        input: finalBalancerAmount,
-        output: balancerFirstHop.outputAmount.mul(finalBalancerAmount).div(amountIn)
-      },
-      {
-        protocol: 'uniswap',
-        percentage: 1 - bestFraction,
-        input: finalUniswapAmount,
-        output: uniswapFirstHop.outputAmount.mul(finalUniswapAmount).div(amountIn)
-      }
-    ],
-    legs: [
-      {
-        protocol: 'mixed',
-        token: { symbol: 'ETH/WETH' },
-        outputAmount: balancerFirstHop.outputAmount.mul(finalBalancerAmount).div(amountIn)
-          .add(uniswapFirstHop.outputAmount.mul(finalUniswapAmount).div(amountIn))
-      },
-      {
-        protocol: 'uniswap',
-        token: { symbol: 'SEV' },
-        outputAmount: bestOutput
-      }
-    ]
-  };
-}
 
 /**
- * Optimize the first hop split for cross-DEX routing
- * For ONE->SEV: Split between Balancer (ONE->WETH) and Uniswap (ONE->ETH) on first hop,
- * then all on Uniswap (ETH->SEV) for second hop
+ * Optimize split when both legs directly reach the target token
+ * For example: ONE->ETH on Uniswap and ONE->WETH on Balancer
  */
-async function optimizeCrossDEXFirstHop(uniswapPaths, balancerPaths, crossDEXPaths, amountIn, tokenIn, tokenOut) {
-  console.log('\n⚡ Optimizing cross-DEX first-hop split...');
-  
-  // Find ONE->ETH path on Uniswap
-  const uniswapONEtoETH = uniswapPaths.find(p => 
-    p.path && p.path.includes('ETH') && 
-    p.inputAmount && p.outputAmount
-  );
-  
-  // Find ONE->WETH path on Balancer  
-  const balancerONEtoWETH = balancerPaths.find(p => 
-    p.path && p.path.includes('WETH') &&
-    p.inputAmount && p.outputAmount
-  );
-  
-  if (!uniswapONEtoETH || !balancerONEtoWETH) {
-    console.log('   Missing required first-hop paths');
-    return null;
-  }
-  
-  // Find the ETH->SEV path on Uniswap (from cross-DEX paths)
-  const ethToSEVPath = crossDEXPaths.find(p => 
-    p.legs && p.legs[1] && p.legs[1].protocol === 'uniswap'
-  )?.legs[1];
-  
-  if (!ethToSEVPath) {
-    console.log('   Missing ETH->SEV second hop');
-    return null;
-  }
-  
-  // Gradient descent to find optimal split
-  let balancerFraction = 0.47; // Start near expected optimal (47% Balancer)
-  let bestFraction = balancerFraction;
-  let bestOutput = BigNumber.from(0);
-  const learningRate = 0.01;
-  const iterations = 100;
-  
-  console.log('   Starting optimization from 47% Balancer / 53% Uniswap');
-  
-  for (let i = 0; i < iterations; i++) {
-    // Calculate amounts for current split
-    const balancerAmount = amountIn.mul(Math.floor(balancerFraction * 10000)).div(10000);
+async function optimizeDirectSplit(balancerLeg, uniswapLeg, amountIn, tokenIn, tokenOut) {
+  console.log('\n⚡ Optimizing direct split (both legs reach target)...');
+
+  // Helper function to calculate output for a given split
+  const calculateOutputForSplit = async (fraction) => {
+    const balancerAmount = amountIn.mul(Math.floor(fraction * 1000000)).div(1000000);
     const uniswapAmount = amountIn.sub(balancerAmount);
-    
-    // First hop outputs with price impact
-    const balancerWETHOutput = calculateOutputWithImpact(
-      balancerAmount,
-      balancerONEtoWETH.outputAmount,
-      balancerONEtoWETH.inputAmount || amountIn,
-      0.997 // Balancer fee typically 0.3%
-    );
-    
-    const uniswapETHOutput = calculateOutputWithImpact(
-      uniswapAmount,
-      uniswapONEtoETH.outputAmount,
-      uniswapONEtoETH.inputAmount || amountIn,
-      0.997 // Uniswap fee 0.3%
-    );
-    
-    // Total ETH/WETH for second hop (1:1 conversion assumed)
-    const totalETHForSecondHop = balancerWETHOutput.add(uniswapETHOutput);
-    
-    // Second hop: All ETH -> SEV on Uniswap with price impact
-    const finalSEVOutput = calculateOutputWithImpact(
-      totalETHForSecondHop,
-      ethToSEVPath.outputAmount || ethers.utils.parseEther('7.5'), // ~7.5 SEV per ETH
-      ethToSEVPath.inputAmount || ethers.utils.parseEther('1'),
-      0.997
-    );
-    
-    if (finalSEVOutput.gt(bestOutput)) {
-      bestOutput = finalSEVOutput;
-      bestFraction = balancerFraction;
-    }
-    
-    // Calculate gradient
-    const epsilon = 0.005;
-    const fractionPlus = Math.min(0.99, balancerFraction + epsilon);
-    const fractionMinus = Math.max(0.01, balancerFraction - epsilon);
-    
-    // Output at fraction + epsilon
-    const balancerPlus = amountIn.mul(Math.floor(fractionPlus * 10000)).div(10000);
-    const outputPlus = calculateOutputWithImpact(balancerPlus, balancerONEtoWETH.outputAmount, balancerONEtoWETH.inputAmount || amountIn, 0.997)
-      .add(calculateOutputWithImpact(amountIn.sub(balancerPlus), uniswapONEtoETH.outputAmount, uniswapONEtoETH.inputAmount || amountIn, 0.997));
-    const finalPlus = calculateOutputWithImpact(outputPlus, ethToSEVPath.outputAmount || ethers.utils.parseEther('7.5'), ethToSEVPath.inputAmount || ethers.utils.parseEther('1'), 0.997);
-    
-    // Output at fraction - epsilon
-    const balancerMinus = amountIn.mul(Math.floor(fractionMinus * 10000)).div(10000);
-    const outputMinus = calculateOutputWithImpact(balancerMinus, balancerONEtoWETH.outputAmount, balancerONEtoWETH.inputAmount || amountIn, 0.997)
-      .add(calculateOutputWithImpact(amountIn.sub(balancerMinus), uniswapONEtoETH.outputAmount, uniswapONEtoETH.inputAmount || amountIn, 0.997));
-    const finalMinus = calculateOutputWithImpact(outputMinus, ethToSEVPath.outputAmount || ethers.utils.parseEther('7.5'), ethToSEVPath.inputAmount || ethers.utils.parseEther('1'), 0.997);
-    
-    // Update fraction based on gradient
-    if (finalPlus.gt(finalMinus)) {
-      balancerFraction = Math.min(0.99, balancerFraction + learningRate);
+
+    const balOut = balancerLeg.poolData ?
+      calculateBalancerExactOutput(balancerAmount, balancerLeg.poolData, 0, 1) :
+      balancerLeg.outputAmount.mul(balancerAmount).div(amountIn);
+
+    const uniOut = uniswapLeg.pool || uniswapLeg.trade?.route?.pools?.[0] ?
+      await calculateUniswapExactOutput(
+        uniswapAmount,
+        uniswapLeg.pool || uniswapLeg.trade.route.pools[0],
+        tokenIn.symbol,
+        uniswapLeg.token?.symbol || tokenOut.symbol
+      ) : uniswapLeg.outputAmount.mul(uniswapAmount).div(amountIn);
+
+    // Direct outputs - no second hop needed
+    return BigNumber.from(balOut).add(BigNumber.from(uniOut));
+  };
+
+  // Golden section search
+  console.log('   Running golden section search for optimal split...');
+  const goldenRatio = (Math.sqrt(5) - 1) / 2;
+  let a = 0.0;
+  let b = 1.0;
+  const tolerance = 0.00001;
+  let iterations = 0;
+  let bestOutput = BigNumber.from(0);
+  let bestFraction = 0.5;
+
+  let x1 = a + (1 - goldenRatio) * (b - a);
+  let x2 = a + goldenRatio * (b - a);
+  let f1 = await calculateOutputForSplit(x1);
+  let f2 = await calculateOutputForSplit(x2);
+
+  console.log(`   Output: ${ethers.utils.formatUnits(f1, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
+  console.log(`   Output: ${ethers.utils.formatUnits(f2, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
+
+  while (Math.abs(b - a) > tolerance && iterations < 50) {
+    iterations++;
+    if (f1.gt(f2)) {
+      b = x2;
+      x2 = x1;
+      f2 = f1;
+      x1 = a + (1 - goldenRatio) * (b - a);
+      f1 = await calculateOutputForSplit(x1);
+      if (f1.gt(bestOutput)) {
+        bestOutput = f1;
+        bestFraction = x1;
+      }
     } else {
-      balancerFraction = Math.max(0.01, balancerFraction - learningRate);
-    }
-    
-    // Reduce learning rate over time
-    if (i % 20 === 0 && i > 0) {
-      const currentLearningRate = learningRate * (1 - i / iterations);
-      if (Math.abs(balancerFraction - bestFraction) < 0.001) {
-        console.log(`   Converged at iteration ${i}`);
-        break;
+      a = x1;
+      x1 = x2;
+      f1 = f2;
+      x2 = a + goldenRatio * (b - a);
+      f2 = await calculateOutputForSplit(x2);
+      if (f2.gt(bestOutput)) {
+        bestOutput = f2;
+        bestFraction = x2;
       }
     }
+    console.log(`   Output: ${ethers.utils.formatUnits(f1.gt(f2) ? f1 : f2, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
   }
-  
-  console.log(`   ✅ Optimal first-hop split found:`);
-  console.log(`      • Balancer (ONE->WETH): ${(bestFraction * 100).toFixed(1)}%`);
-  console.log(`      • Uniswap (ONE->ETH): ${((1 - bestFraction) * 100).toFixed(1)}%`);
-  console.log(`      • Expected output: ${ethers.utils.formatUnits(bestOutput, 18)} SEV`);
-  
-  const balancerOptimalAmount = amountIn.mul(Math.floor(bestFraction * 10000)).div(10000);
-  const uniswapOptimalAmount = amountIn.sub(balancerOptimalAmount);
-  
+
+  bestFraction = (a + b) / 2;
+  bestOutput = await calculateOutputForSplit(bestFraction);
+
+  console.log(`   Golden section found optimal at ${(bestFraction * 100).toFixed(4)}% Balancer / ${((1 - bestFraction) * 100).toFixed(4)}% Uniswap`);
+  console.log(`   Converged in ${iterations} iterations`);
+
+  // Calculate final amounts
+  const finalBalancerAmount = amountIn.mul(Math.floor(bestFraction * 1000000)).div(1000000);
+  const finalUniswapAmount = amountIn.sub(finalBalancerAmount);
+
+  const finalBalancerOutput = balancerLeg.poolData ?
+    calculateBalancerExactOutput(finalBalancerAmount, balancerLeg.poolData, 0, 1) :
+    balancerLeg.outputAmount.mul(finalBalancerAmount).div(amountIn);
+
+  const finalUniswapOutput = uniswapLeg.pool ?
+    await calculateUniswapExactOutput(finalUniswapAmount, uniswapLeg.pool || uniswapLeg.trade?.route?.pools?.[0], tokenIn.symbol, uniswapLeg.token?.symbol || tokenOut.symbol) :
+    uniswapLeg.outputAmount.mul(finalUniswapAmount).div(amountIn);
+
+  console.log(`\n   ✅ Optimal direct split:`);
+  console.log(`      • Balancer: ${(bestFraction * 100).toFixed(4)}%`);
+  console.log(`      • Uniswap: ${((1 - bestFraction) * 100).toFixed(4)}%`);
+  console.log(`      • Expected output: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals || 18)} ${tokenOut.symbol}`);
+
   return {
-    type: 'cross-dex-optimized-split',
+    type: 'cross-dex-optimized-direct',
     protocol: 'mixed',
     totalOutput: bestOutput,
-    path: `${tokenIn.symbol} -> [${(bestFraction * 100).toFixed(0)}% Balancer WETH / ${((1-bestFraction) * 100).toFixed(0)}% Uniswap ETH] -> SEV (Uniswap)`,
+    path: `${tokenIn.symbol} -> [${(bestFraction * 100).toFixed(0)}% Balancer, ${((1-bestFraction) * 100).toFixed(0)}% Uniswap] -> ${tokenOut.symbol}`,
     splits: [
       {
         protocol: 'balancer',
         percentage: bestFraction,
-        leg: 'ONE->WETH',
-        input: balancerOptimalAmount,
-        output: calculateOutputWithImpact(balancerOptimalAmount, balancerONEtoWETH.outputAmount, balancerONEtoWETH.inputAmount || amountIn, 0.997)
+        leg: `${tokenIn.symbol}->${balancerLeg.token?.symbol || tokenOut.symbol}`,
+        input: finalBalancerAmount,
+        output: finalBalancerOutput
       },
       {
         protocol: 'uniswap',
         percentage: 1 - bestFraction,
-        leg: 'ONE->ETH', 
-        input: uniswapOptimalAmount,
-        output: calculateOutputWithImpact(uniswapOptimalAmount, uniswapONEtoETH.outputAmount, uniswapONEtoETH.inputAmount || amountIn, 0.997)
-      }
-    ],
-    legs: [
-      {
-        protocol: 'mixed',
-        description: 'First hop split',
-        inputAmount: amountIn,
-        outputAmount: calculateOutputWithImpact(balancerOptimalAmount, balancerONEtoWETH.outputAmount, balancerONEtoWETH.inputAmount || amountIn, 0.997)
-          .add(calculateOutputWithImpact(uniswapOptimalAmount, uniswapONEtoETH.outputAmount, uniswapONEtoETH.inputAmount || amountIn, 0.997))
-      },
-      {
-        protocol: 'uniswap',
-        description: 'ETH->SEV',
-        ...ethToSEVPath,
-        outputAmount: bestOutput
+        leg: `${tokenIn.symbol}->${uniswapLeg.token?.symbol || tokenOut.symbol}`,
+        input: finalUniswapAmount,
+        output: finalUniswapOutput
       }
     ]
   };
@@ -2075,4 +1848,4 @@ function calculateOutputWithImpact(amountIn, referenceOutput, referenceInput, fe
 }
 
 // Export additional utilities
-export { getCacheStats, optimizeCrossDEXFirstHop, optimizeCrossDEXFromPaths };
+export { getCacheStats };

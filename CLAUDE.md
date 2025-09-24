@@ -186,6 +186,11 @@ When working with this codebase, pay special attention to the order type determi
   - `testBalancerV3.js`: Test suite for pool detection and routing verification
   - `balancerPoolsCache.json`: JSON cache file storing pool data to avoid repeated queries
 
+### Testing Configuration Requirements
+- **maxHops Parameter**: Never use `maxHops: 1` in tests to simulate production situations
+- **Do NOT reduce to 1 hop**: Even for simple tests, maintain realistic multi-hop scenarios
+- **Production Parity**: Tests must reflect real-world routing complexity
+
 ### Cross-DEX Optimizer (crossDEXOptimizer.js)
 - **Purpose**: Provides exact AMM calculations for cross-DEX optimization
 - **Core Principle**: ALL calculations must use exact AMM formulas - NO LINEAR APPROXIMATIONS

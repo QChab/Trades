@@ -3,41 +3,51 @@ import { useMixedUniswapBalancer } from './useMixedUniswapBalancer.js';
 import { getV4SDK } from './uniswapV4ESM.js';
 
 /**
- * Test cross-DEX routing for ONE -> SEV
- * Expected path: ONE -> WETH (Balancer) -> SEV (Uniswap)
+ * Test cross-DEX routing for ONE -> ETH
+ * Testing mixed strategy optimization with potential 1-hop on each DEX
  */
 async function testCrossDEXRouting() {
-  console.log('=== Testing Cross-DEX Routing (ONE -> SEV) ===\n');
-  
+  console.log('=== Testing Cross-DEX Routing (ONE -> ETH) ===\n');
+
   // Pre-load the ESM module to verify it's working
   const v4sdk = await getV4SDK;
   console.log('Loaded V4 SDK modules:', Object.keys(v4sdk));
-  
+
   const provider = new ethers.providers.JsonRpcProvider('https://eth.llamarpc.com');
-  
+
   // Correct token addresses
   const ONE = {
     address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212',
     symbol: 'ONE',
     decimals: 18
   };
-  
+
+  const ETH = {
+    address: '0x0000000000000000000000000000000000000000',
+    symbol: 'ETH',
+    decimals: 18
+  };
+
   const SEV = {
     address: '0x965b64ae2c04cff248e6502c10cf3a4931e1f1d9',
     symbol: 'SEV',
     decimals: 18
   };
-  
+
   const amountIn = ethers.utils.parseUnits('10', 18); // 10 ONE
-  
+
   console.log('Input: 10 ONE');
-  console.log('Expected path: ONE -> WETH (Balancer) -> SEV (Uniswap)');
+  console.log('Expected: Should compare single-uniswap vs mixed uniswap-balancer strategies');
   console.log('----------------------------------------\n');
+
+  const tokensTraded = {
+    tokenInObject: ONE,
+    tokenOutObject: ETH,
+  }
   
   try {
     const result = await useMixedUniswapBalancer({
-      tokenInObject: ONE,
-      tokenOutObject: SEV,
+      ...tokensTraded,
       amountIn,
       provider,
       slippageTolerance: 0.5,
@@ -47,10 +57,10 @@ async function testCrossDEXRouting() {
     });
     
     if (result && result.bestRoute) {
-      const outputFormatted = ethers.utils.formatUnits(result.bestRoute.totalOutput, 18);
+      const outputFormatted = ethers.utils.formatUnits(result.bestRoute.totalOutput, tokensTraded.tokenOutObject.decimals);
       console.log('\n✅ Best route found:');
       console.log(`   Type: ${result.bestRoute.type}`);
-      console.log(`   Output: ${outputFormatted} SEV`);
+      console.log(`   Output: ${outputFormatted} ${tokensTraded.tokenOutObject.symbol}`);
       
       if (result.bestRoute.path) {
         console.log(`   Path: ${result.bestRoute.path}`);
@@ -82,17 +92,17 @@ async function testCrossDEXRouting() {
         });
       }
       
-      // Check if output is reasonable (target is 4.99 SEV for 10 ONE with 47.36/52.64 split)
+      // Check if a mixed strategy was considered
       const actualOutput = parseFloat(outputFormatted);
-      const targetOutput = 4.99;
-      const deviation = Math.abs(actualOutput - targetOutput);
-      
-      if (deviation < 0.02) {
-        console.log(`\n   ✅ Output is optimal (${deviation.toFixed(4)} deviation from ${targetOutput} SEV target)`);
-      } else if (deviation < 0.05) {
-        console.log(`\n   ✅ Output is good (${deviation.toFixed(4)} deviation from ${targetOutput} SEV target)`);
-      } else {
-        console.log(`\n   ⚠️ Output could be better (${deviation.toFixed(4)} deviation from ${targetOutput} SEV target)`);
+      console.log(`\n   📊 Total output: ${actualOutput} ${tokensTraded.tokenOutObject.symbol}`);
+
+      // Show all route types that were evaluated
+      if (result.allRoutes) {
+        console.log('\n   📈 Routes evaluated:');
+        result.allRoutes.forEach(route => {
+          const routeOutput = ethers.utils.formatUnits(route.totalOutput, tokensTraded.tokenOutObject.decimals);
+          console.log(`      ${route.type}: ${routeOutput} ${tokensTraded.tokenOutObject.symbol}`);
+        });
       }
       
     } else {

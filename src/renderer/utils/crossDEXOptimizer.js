@@ -128,14 +128,6 @@ export async function calculateUniswapExactOutput(amountIn, pool, tokenInSymbol,
     const token0Symbol = pool.token0?.symbol || pool.currency0?.symbol || 'unknown';
     const token1Symbol = pool.token1?.symbol || pool.currency1?.symbol || 'unknown';
     
-    // Debug logging
-    console.log('calculateUniswapExactOutput:', {
-      amountIn: ethers.utils.formatEther(amountIn),
-      poolType: pool.constructor?.name,
-      poolTokens: `${token0Symbol} / ${token1Symbol}`,
-      swapDirection: `${tokenInSymbol} -> ${tokenOutSymbol}`
-    });
-    
     // Determine which token we're swapping from
     let inputCurrency, outputCurrency;
     

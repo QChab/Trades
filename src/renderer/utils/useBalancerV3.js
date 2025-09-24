@@ -91,11 +91,9 @@ async function getPoolData(poolAddress, provider, poolInfo = null) {
   // Check if pool data is already cached (static data like weights, type)
   if (cache.pools[poolAddress.toLowerCase()]) {
     const cachedData = cache.pools[poolAddress.toLowerCase()];
-    console.log(`✓ Found cached data for pool ${poolAddress.slice(0, 10)}...`);
     
     // If we have fresh poolInfo from GraphQL, use its balances
     if (poolInfo && poolInfo.tokens) {
-      console.log(`  📊 Using fresh balances from GraphQL`);
       // Merge cached static data with fresh GraphQL data
       const mergedData = {
         ...cachedData,
