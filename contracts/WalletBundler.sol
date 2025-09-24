@@ -17,7 +17,6 @@ contract WalletBundlerOptimized {
     // Pack constants to save deployment gas
     address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    uint160 private constant MAX_ALLOWANCE = type(uint160).max;
     uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
 
     error Unauthorized();
@@ -236,6 +235,7 @@ contract WalletBundlerOptimized {
         address[] calldata tokens,
         address[] calldata spenders,
         address[] calldata permit2Spenders
+        // TODO: !!! MIGHT NEED A WAY TO REVOKE THE ACCEPTATIONS
     ) external auth {
         uint256 length = tokens.length;
 
@@ -263,7 +263,7 @@ contract WalletBundlerOptimized {
                     mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000) // approve selector
                     mstore(add(ptr, 0x04), token) // token
                     mstore(add(ptr, 0x24), permit2Spender) // spender
-                    mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffffffffffff) // MAX_ALLOWANCE                    
+                    mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffffffffffff)                    
                     mstore(add(ptr, 0x64), add(timestamp(), 1577836800)) // EXPIRATION_OFFSET
                     
                     let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
