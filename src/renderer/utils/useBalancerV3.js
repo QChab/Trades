@@ -206,6 +206,7 @@ const POOL_ABI = [
 export async function useBalancerV3({ tokenInAddress, tokenOutAddress, amountIn, slippageTolerance = 0.5, provider }) {
   try {
     console.log('🔍 Discovering Balancer V3 pools for tokens:', tokenInAddress, tokenOutAddress);
+    console.log('   Input amount:', ethers.utils.formatEther(amountIn), 'tokens');
     
     const pools = await discoverV3Pools(tokenInAddress, tokenOutAddress, provider);
     console.log(`Found ${pools.length} V3 pools containing one or both tokens`);
@@ -253,9 +254,18 @@ export async function useBalancerV3({ tokenInAddress, tokenOutAddress, amountIn,
 
     // Log the best path for debugging
     const bestPath = paths[0];
+
+    // Check if this is WETH->USDC and format correctly
+    let outputFormatted;
+    if (tokenOutAddress.toLowerCase() === '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') { // USDC
+      outputFormatted = ethers.utils.formatUnits(bestPath.amountOut, 6) + ' USDC';
+    } else {
+      outputFormatted = ethers.utils.formatEther(bestPath.amountOut) + ' tokens';
+    }
+
     console.log('Best single Balancer path:', {
       hops: bestPath.hops.length,
-      expectedOutput: ethers.utils.formatEther(bestPath.amountOut),
+      expectedOutput: outputFormatted,
       pools: bestPath.hops.map(h => ({
         pool: h.poolAddress.slice(0, 10) + '...',
         type: h.poolType,
@@ -596,8 +606,12 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
     const tokens = pool.tokens.map(t => t.address.toLowerCase());
     const tokenInIndex = tokens.indexOf(tokenIn.toLowerCase());
     const tokenOutIndex = tokens.indexOf(tokenOut.toLowerCase());
-    
+
     if (tokenInIndex === -1 || tokenOutIndex === -1) return null;
+
+    // Try with both the original amount AND a small test amount
+    // This helps identify pools that work for small trades but not large ones
+    const testAmount = ethers.BigNumber.from(amountIn).div(1000); // 1/1000 of original
     
     // Get token balances
     const balanceInStr = pool.tokens[tokenInIndex].balance;
@@ -622,7 +636,26 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
       return null;
     }
     
-    // Calculate output
+    // Debug for WETH->USDC trades
+    const tokenInSymbol = pool.tokens[tokenInIndex].symbol;
+    const tokenOutSymbol = pool.tokens[tokenOutIndex].symbol;
+
+    if (tokenInSymbol === 'WETH' && tokenOutSymbol === 'USDC') {
+      console.log('\n   🔍 Debug WETH->USDC calculation:');
+      console.log('   Pool ID:', pool.poolAddress.slice(0, 10) + '...');
+      console.log('   Pool Type:', pool.poolType);
+      console.log('   Input amount:', ethers.utils.formatEther(amountIn), 'WETH');
+      console.log('   Balance WETH (raw):', balanceInStr);
+      console.log('   Balance WETH (parsed):', ethers.utils.formatEther(balanceIn), 'WETH');
+      console.log('   Balance USDC (raw):', balanceOutStr);
+      console.log('   Balance USDC (parsed):', ethers.utils.formatUnits(balanceOut, 6), 'USDC');
+      console.log('   Swap fee:', pool.swapFee);
+      if (pool.weights) {
+        console.log('   Weights:', pool.weights[tokenInIndex], '/', pool.weights[tokenOutIndex]);
+      }
+    }
+
+    // Calculate output for the requested amount
     const outputAmount = calculateSwapOutput(
       ethers.BigNumber.from(amountIn),
       balanceIn,
@@ -633,6 +666,38 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
       pool.weights ? pool.weights[tokenOutIndex] : null,
       pool.amplificationParameter
     );
+
+    // Also calculate output for test amount to check pool viability
+    const testOutputAmount = calculateSwapOutput(
+      testAmount,
+      balanceIn,
+      balanceOut,
+      pool.swapFee,
+      pool.poolType,
+      pool.weights ? pool.weights[tokenInIndex] : null,
+      pool.weights ? pool.weights[tokenOutIndex] : null,
+      pool.amplificationParameter
+    );
+
+    // Check if the pool can handle small trades reasonably
+    // Expected rate for WETH->USDC should be around 4100
+    const testRate = testOutputAmount.mul(1000).div(testAmount);
+    const expectedRate = pool.tokens[tokenOutIndex].symbol === 'USDC' ? 4100 : 1;
+
+    // If the test trade gives unreasonable output, pool has liquidity issues
+    if (pool.tokens[tokenInIndex].symbol === 'WETH' && pool.tokens[tokenOutIndex].symbol === 'USDC') {
+      const testRateNum = parseFloat(ethers.utils.formatUnits(testRate, 6));
+      if (testRateNum < expectedRate * 0.5) { // Less than 50% of expected rate
+        console.log(`   ⚠️ Pool ${pool.poolAddress.slice(0, 10)}... has poor liquidity (rate: ${testRateNum.toFixed(0)} vs expected: ${expectedRate})`);
+        // Don't return null, but mark it as low liquidity
+      }
+    }
+
+    // Debug output for WETH->USDC
+    if (tokenInSymbol === 'WETH' && tokenOutSymbol === 'USDC') {
+      console.log('   Calculated output:', ethers.utils.formatUnits(outputAmount, 6), 'USDC');
+      console.log('   Output (raw):', outputAmount.toString());
+    }
     
     return {
       poolAddress: pool.poolAddress,
@@ -643,6 +708,7 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
       amountOut: outputAmount,
       swapFee: pool.swapFee,
       weights: pool.weights ? `${pool.weights[tokenInIndex]}/${pool.weights[tokenOutIndex]}` : null,
+      testRate: testRate, // Rate for small trades to assess pool quality
       // Add full pool data for exact AMM calculations
       poolData: {
         tokens: pool.tokens,

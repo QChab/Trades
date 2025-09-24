@@ -13,16 +13,18 @@ interface IPermit2 {
 contract WalletBundlerOptimized {
     address public immutable owner;
     address private immutable self;
-    
+
     // Pack constants to save deployment gas
     address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+    address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     uint160 private constant MAX_ALLOWANCE = type(uint160).max;
     uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
-    
+
     error Unauthorized();
     error InvalidLength();
     error CallFailed();
     error TransferFailed();
+    error InsufficientOutput();
     
     modifier auth() {
         if (msg.sender != owner) revert Unauthorized();
@@ -92,8 +94,11 @@ contract WalletBundlerOptimized {
     }
     
     /**
-     * @notice Execute trades with minimal gas overhead
+     * @notice Execute trades with minimal gas overhead and wrap/unwrap support
      * @dev Optimized version with reduced operations and memory usage
+     * @param wrapOperations Array indicating wrap/unwrap operations for each call:
+     *        0 = no operation, 1 = wrap before, 2 = wrap after, 3 = unwrap before, 4 = unwrap after
+     * @param minOutputAmount Minimum acceptable output amount for the first output token
      */
     function execute(
         address fromToken,
@@ -101,37 +106,69 @@ contract WalletBundlerOptimized {
         address[] calldata targets,
         bytes[] calldata data,
         uint256[] calldata values,
-        address[] calldata outputTokens
+        address[] calldata outputTokens,
+        uint8[] calldata wrapOperations,
+        uint256 minOutputAmount
     ) external payable auth returns (bool[] memory results) {
         uint256 targetsLength = targets.length;
-        if (targetsLength != data.length || targetsLength != values.length) revert InvalidLength();
+        if (targetsLength != data.length || targetsLength != values.length || targetsLength != wrapOperations.length) revert InvalidLength();
         
         // Transfer input tokens if needed
         if (fromToken != address(0) && fromAmount != 0) {
             _transferFromToken(fromToken, owner, self, fromAmount);
         }
         
-        // Execute calls with minimal memory allocation
+        // Execute calls with minimal memory allocation and wrap/unwrap support
         results = new bool[](targetsLength);
         for (uint256 i; i < targetsLength;) {
+            uint8 wrapOp = wrapOperations[i];
+
+            // Handle unwrap before (3)
+            if (wrapOp == 3) {
+                _unwrapWETH();
+            }
+            // Handle wrap before (1)
+            else if (wrapOp == 1) {
+                _wrapETH();
+            }
+
             (bool success,) = targets[i].call{value: values[i]}(data[i]);
             results[i] = success;
+
+            // Handle wrap after (2)
+            if (wrapOp == 2) {
+                _wrapETH();
+            }
+            // Handle unwrap after (4)
+            else if (wrapOp == 4) {
+                _unwrapWETH();
+            }
+
             unchecked { ++i; }
         }
-        
+
+        address toToken = outputTokens[0];
+        uint256 balance;
+        if (toToken == address(0)) {
+            balance = self.balance;
+        } else {
+            balance = _getTokenBalance(toToken, self);
+        }
+        if (balance < minOutputAmount) revert InsufficientOutput();
+
         // Return tokens with optimized balance checks
         uint256 outputLength = outputTokens.length;
         for (uint256 i; i < outputLength;) {
             address token = outputTokens[i];
             if (token == address(0)) {
                 // ETH transfer
-                uint256 balance = self.balance;
+                balance = self.balance;
                 if (balance != 0) {
                     _sendETH(owner, balance);
                 }
             } else {
                 // ERC20 transfer
-                uint256 balance = _getTokenBalance(token, self);
+                balance = _getTokenBalance(token, self);
                 if (balance > 0) {
                     _transferFromToken(token, self, owner, balance);
                 }
@@ -140,8 +177,15 @@ contract WalletBundlerOptimized {
         }
         
         // Return remaining input token if different from outputs
-        if (fromToken != address(0)) {
-            uint256 balance = _getTokenBalance(fromToken, self);
+        if (fromToken == address(0)) {
+            // Return remaining ETH
+            balance = self.balance;
+            if (balance > 0) {
+                _sendETH(owner, balance);
+            }
+        } else {
+            // Return remaining ERC20 tokens
+            balance = _getTokenBalance(fromToken, self);
             if (balance > 0) {
                 _transferFromToken(fromToken, self, owner, balance);
             }
@@ -213,5 +257,38 @@ contract WalletBundlerOptimized {
         }
     }
     
+    /**
+     * @dev Wrap ETH to WETH
+     */
+    function _wrapETH() private {
+        uint256 ethBalance = self.balance;
+        if (ethBalance > 0) {
+            assembly {
+                let ptr := mload(0x40)
+                // Store deposit() selector
+                mstore(ptr, 0xd0e30db000000000000000000000000000000000000000000000000000000000)
+                let success := call(gas(), WETH, ethBalance, ptr, 0x04, 0, 0)
+                if iszero(success) { revert(0, 0) }
+            }
+        }
+    }
+
+    /**
+     * @dev Unwrap WETH to ETH
+     */
+    function _unwrapWETH() private {
+        uint256 wethBalance = _getTokenBalance(WETH, self);
+        if (wethBalance > 0) {
+            assembly {
+                let ptr := mload(0x40)
+                // Store withdraw(uint256) selector
+                mstore(ptr, 0x2e1a7d4d00000000000000000000000000000000000000000000000000000000)
+                mstore(add(ptr, 0x04), wethBalance)
+                let success := call(gas(), WETH, 0, ptr, 0x24, 0, 0)
+                if iszero(success) { revert(0, 0) }
+            }
+        }
+    }
+
     receive() external payable {}
 }

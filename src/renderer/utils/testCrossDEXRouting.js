@@ -7,8 +7,6 @@ import { getV4SDK } from './uniswapV4ESM.js';
  * Testing mixed strategy optimization with potential 1-hop on each DEX
  */
 async function testCrossDEXRouting() {
-  console.log('=== Testing Cross-DEX Routing (ONE -> ETH) ===\n');
-
   // Pre-load the ESM module to verify it's working
   const v4sdk = await getV4SDK;
   console.log('Loaded V4 SDK modules:', Object.keys(v4sdk));
@@ -34,17 +32,24 @@ async function testCrossDEXRouting() {
     decimals: 18
   };
 
-  const amountIn = ethers.utils.parseUnits('10', 18); // 10 ONE
+  const USDC = {
+    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    symbol: 'USDC',
+    decimals: 6  // USDC has 6 decimals
+  };
 
-  console.log('Input: 10 ONE');
-  console.log('Expected: Should compare single-uniswap vs mixed uniswap-balancer strategies');
-  console.log('----------------------------------------\n');
+  const rawAmountIn = '10'
+  const amountIn = ethers.utils.parseUnits(rawAmountIn, 18);
+
 
   const tokensTraded = {
     tokenInObject: ONE,
     tokenOutObject: SEV,
   }
-  
+  console.log(`=== Testing Cross-DEX Routing (${tokensTraded.tokenInObject.symbol} -> ${tokensTraded.tokenOutObject.symbol}- ===\n`);
+  console.log(`Input: ${rawAmountIn} ${tokensTraded.tokenInObject.symbol}`);
+  console.log('----------------------------------------\n');
+
   try {
     const result = await useMixedUniswapBalancer({
       ...tokensTraded,
@@ -76,9 +81,8 @@ async function testCrossDEXRouting() {
           const uniPercent = (uniswapSplit.percentage * 100).toFixed(2);
           
           console.log('\n   Split Analysis:');
-          console.log(`   • Balancer: ${balPercent}% (target: 47.36%)`);
-          console.log(`   • Uniswap: ${uniPercent}% (target: 52.64%)`);
-          console.log(`   • Deviation from optimal: ${Math.abs(balancerSplit.percentage - 0.4736).toFixed(4)}`);
+          console.log(`   • Balancer: ${balPercent}%`);
+          console.log(`   • Uniswap: ${uniPercent}%`);
         }
       }
       
@@ -103,6 +107,15 @@ async function testCrossDEXRouting() {
           const routeOutput = ethers.utils.formatUnits(route.totalOutput, tokensTraded.tokenOutObject.decimals);
           console.log(`      ${route.type}: ${routeOutput} ${tokensTraded.tokenOutObject.symbol}`);
         });
+      }
+
+      // Show the execution plan
+      if (result.executionPlan) {
+        console.log('\n   📋 Execution Plan:');
+        console.log('   ================');
+        console.log(JSON.stringify(result.executionPlan, null, 2));
+      } else {
+        console.log('\n   ⚠️ No execution plan generated');
       }
       
     } else {

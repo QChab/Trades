@@ -259,9 +259,20 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn) {
  */
 async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, provider) {
   try {
+    // Balancer uses WETH, not ETH - normalize addresses
+    const normalizedTokenIn = tokenInObject.address === ETH_ADDRESS ?
+      { ...tokenInObject, address: WETH_ADDRESS, symbol: 'WETH' } :
+      tokenInObject;
+    const normalizedTokenOut = tokenOutObject.address === ETH_ADDRESS ?
+      { ...tokenOutObject, address: WETH_ADDRESS, symbol: 'WETH' } :
+      tokenOutObject;
+
+    console.log(`   Querying Balancer for ${normalizedTokenIn.symbol} -> ${normalizedTokenOut.symbol}`);
+    console.log(`   Amount: ${ethers.utils.formatUnits(amountIn, normalizedTokenIn.decimals || 18)} ${normalizedTokenIn.symbol}`);
+
     const result = await useBalancerV3({
-      tokenInAddress: tokenInObject.address,
-      tokenOutAddress: tokenOutObject.address,
+      tokenInAddress: normalizedTokenIn.address,
+      tokenOutAddress: normalizedTokenOut.address,
       amountIn: amountIn.toString(),
       provider,
       slippageTolerance: 0.5
@@ -316,12 +327,34 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
     { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', decimals: 6 },
     { address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', symbol: 'DAI', decimals: 18 }
   ];
+
+  // Add tokenOut as an intermediate if it's not already in the list
+  // This helps find direct paths when tokenOut is a common token like ETH/WETH
+  const tokenOutLower = tokenOut.address.toLowerCase();
+  if (!intermediates.some(t => t.address.toLowerCase() === tokenOutLower)) {
+    // Handle ETH/WETH equivalence
+    if (tokenOut.address === ETH_ADDRESS) {
+      // If tokenOut is ETH, add WETH as intermediate (if not already there)
+      if (!intermediates.some(t => t.address.toLowerCase() === WETH_ADDRESS.toLowerCase())) {
+        intermediates.push({ address: WETH_ADDRESS, symbol: 'WETH', decimals: 18, isETH: true });
+      }
+    } else if (tokenOut.address.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
+      // tokenOut is WETH, already in intermediates
+    } else {
+      // Add tokenOut as an intermediate
+      intermediates.push({
+        address: tokenOut.address,
+        symbol: tokenOut.symbol,
+        decimals: tokenOut.decimals || 18
+      });
+    }
+  }
   
   // For each intermediate token, try to find a path
   for (const intermediate of intermediates) {
-    // Skip if intermediate is same as input or output
-    if (intermediate.address.toLowerCase() === tokenIn.address.toLowerCase() ||
-        intermediate.address.toLowerCase() === tokenOut.address.toLowerCase()) {
+    // Skip only if intermediate is same as input
+    // Allow intermediate to be same as output (for direct paths)
+    if (intermediate.address.toLowerCase() === tokenIn.address.toLowerCase()) {
       continue;
     }
     
@@ -1053,10 +1086,117 @@ async function createExecutionPlan(route, tokenIn, tokenOut, slippageTolerance) 
   };
   
   // Build execution steps based on route type
-  if (route.type === 'single-uniswap' || route.type === 'split-uniswap') {
+  if (route.type === 'cross-dex-optimized-exact' || route.type === 'cross-dex-optimized-direct') {
+    // Step 1: First hop - split across DEXs
+    const firstHopOutputs = [];
+    let needsConversion = false;
+
+    for (const split of route.splits) {
+      const stepData = {
+        hop: 1,
+        protocol: split.protocol,
+        percentage: split.percentage,
+        input: split.input,
+        expectedOutput: split.output
+      };
+
+      if (split.protocol === 'balancer') {
+        stepData.method = 'swap';
+        stepData.tokenPath = `${tokenIn.symbol} -> WETH`;
+        stepData.outputToken = 'WETH';
+
+        // Balancer outputs WETH, but we need ETH for the next hop
+        if (route.path && route.path.includes('ETH') && route.path.includes('SEV')) {
+          stepData.unwrapAfter = true;
+          needsConversion = true;
+        }
+
+        // Track WETH output
+        firstHopOutputs.push({
+          token: stepData.unwrapAfter ? 'ETH' : 'WETH',
+          amount: split.output,
+          protocol: 'balancer',
+          requiresUnwrap: stepData.unwrapAfter
+        });
+
+        // Add Balancer approval
+        if (!plan.approvals.find(a => a.spender === '0xBA12222222228d8Ba445958a75a0704d566BF2C8')) {
+          plan.approvals.push({
+            token: tokenIn.address,
+            spender: '0xBA12222222228d8Ba445958a75a0704d566BF2C8', // Balancer Vault
+            amount: split.input
+          });
+        }
+      } else if (split.protocol === 'uniswap') {
+        stepData.method = 'exactInputSingle';
+        stepData.tokenPath = `${tokenIn.symbol} -> ETH`;
+        stepData.outputToken = 'ETH';
+
+        // Check if Uniswap needs WETH instead of ETH (rare case)
+        if (split.requiresWrap) {
+          stepData.wrapAfter = true;
+        }
+
+        // Track ETH output
+        firstHopOutputs.push({
+          token: stepData.wrapAfter ? 'WETH' : 'ETH',
+          amount: split.output,
+          protocol: 'uniswap',
+          requiresWrap: stepData.wrapAfter
+        });
+
+        // Add Uniswap approval
+        if (!plan.approvals.find(a => a.spender === '0x66a9893cc07d91d95644aedd05d03f95e1dba8af')) {
+          plan.approvals.push({
+            token: tokenIn.address,
+            spender: '0x66a9893cc07d91d95644aedd05d03f95e1dba8af', // Universal Router
+            amount: split.input
+          });
+        }
+      }
+
+      plan.executionSteps.push(stepData);
+    }
+
+    // Step 2: Second hop - combined amount to final token
+    if (route.secondHop || (route.path && route.path.includes('->') && route.path.includes(tokenOut.symbol))) {
+      const totalFirstHopOutput = firstHopOutputs.reduce((sum, o) => sum.add(o.amount), BigNumber.from(0));
+
+      // Determine input token for second hop
+      const secondHopInputToken = firstHopOutputs[0].token; // They should all be the same after conversion
+
+      const secondHopStep = {
+        hop: 2,
+        protocol: route.secondHop?.protocol || 'uniswap',
+        method: 'exactInputSingle',
+        tokenPath: `${secondHopInputToken} -> ${tokenOut.symbol}`,
+        input: totalFirstHopOutput,
+        expectedOutput: route.totalOutput,
+        inputToken: secondHopInputToken,
+        outputToken: tokenOut.symbol,
+        pools: route.secondHop?.pools,
+        gasEstimate: 150000
+      };
+
+      // Check if we need to wrap ETH to WETH for the second hop (e.g., for Balancer)
+      if (secondHopInputToken === 'ETH' && route.secondHop?.protocol === 'balancer') {
+        secondHopStep.wrapBefore = true;
+      }
+
+      // Check if output needs unwrapping (e.g., WETH to ETH)
+      if (tokenOut.symbol === 'ETH' && route.secondHop?.outputToken === 'WETH') {
+        secondHopStep.unwrapAfter = true;
+      }
+
+      plan.executionSteps.push(secondHopStep);
+    }
+
+  } else if (route.type === 'single-uniswap' || route.type === 'split-uniswap') {
     plan.executionSteps.push({
+      hop: 1,
       protocol: 'uniswap',
       method: 'executeMixedSwaps',
+      tokenPath: `${tokenIn.symbol} -> ${tokenOut.symbol}`,
       trades: route.paths.map(p => p.trade),
       totalInput: route.paths.reduce((sum, p) => sum.add(p.inputAmount), BigNumber.from(0)),
       totalOutput: route.totalOutput
@@ -1141,7 +1281,18 @@ async function createExecutionPlan(route, tokenIn, tokenOut, slippageTolerance) 
     .div(10000);
     
   plan.minOutput = minOutput;
-  
+
+  // Add summary for better visibility
+  if (plan.executionSteps.length > 0) {
+    plan.summary = {
+      totalSteps: plan.executionSteps.length,
+      protocols: [...new Set(plan.executionSteps.map(s => s.protocol))],
+      estimatedOutput: ethers.utils.formatUnits(route.totalOutput, tokenOut.decimals || 18),
+      minOutput: ethers.utils.formatUnits(minOutput, tokenOut.decimals || 18),
+      tokenOut: tokenOut.symbol
+    };
+  }
+
   return plan;
 }
 
@@ -1545,3 +1696,225 @@ async function optimizeDirectSplit(balancerLeg, uniswapLeg, amountIn, tokenIn, t
 
 // Export additional utilities
 export { getCacheStats };
+
+/**
+ * Convert execution plan to WalletBundler contract call arguments
+ * @param {Object} executionPlan - The execution plan from createExecutionPlan
+ * @param {Object} tokenIn - Input token object
+ * @param {Object} tokenOut - Output token object
+ * @param {string} walletBundlerAddress - Address of the WalletBundler contract
+ * @returns {Object} Arguments for the WalletBundler execute function
+ */
+export function convertExecutionPlanToContractArgs(executionPlan, tokenIn, tokenOut, walletBundlerAddress) {
+  const targets = [];
+  const data = [];
+  const values = [];
+  const wrapOperations = [];
+  const outputTokens = [];
+
+  // Track which tokens need to be returned to the user
+  const outputTokenSet = new Set();
+  outputTokenSet.add(tokenOut.address || ETH_ADDRESS);
+
+  // Process each execution step
+  for (const step of executionPlan.executionSteps) {
+    let target;
+    let callData;
+    let value = BigNumber.from(0);
+    let wrapOp = 0; // Default: no operation
+
+    if (step.protocol === 'uniswap') {
+      target = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af'; // Universal Router
+
+      // Encode Uniswap call data based on method
+      if (step.method === 'executeMixedSwaps' && step.trades) {
+        // Encode the trades for Universal Router
+        callData = encodeUniswapTrades(step.trades, walletBundlerAddress);
+      } else if (step.method === 'exactInputSingle') {
+        callData = encodeUniswapExactInput(step, walletBundlerAddress);
+      }
+
+      // Check if ETH is being sent as value
+      if (step.inputToken === 'ETH' && step.input) {
+        value = step.input;
+      }
+
+    } else if (step.protocol === 'balancer') {
+      target = '0xBA12222222228d8Ba445958a75a0704d566BF2C8'; // Balancer Vault
+
+      // Encode Balancer batch swap
+      if (step.method === 'batchSwap') {
+        callData = encodeBalancerBatchSwap(step, walletBundlerAddress);
+      } else if (step.method === 'swap') {
+        callData = encodeBalancerSingleSwap(step, walletBundlerAddress);
+      }
+    }
+
+    // Determine wrap/unwrap operations
+    if (step.wrapBefore) {
+      wrapOp = 1; // Wrap ETH to WETH before call
+    } else if (step.wrapAfter) {
+      wrapOp = 2; // Wrap ETH to WETH after call
+    } else if (step.unwrapBefore) {
+      wrapOp = 3; // Unwrap WETH to ETH before call
+    } else if (step.unwrapAfter) {
+      wrapOp = 4; // Unwrap WETH to ETH after call
+    }
+
+    // Track intermediate tokens that might need to be returned
+    if (step.outputToken) {
+      const outputAddr = step.outputToken === 'ETH' ? ETH_ADDRESS :
+                         step.outputToken === 'WETH' ? WETH_ADDRESS :
+                         step.outputToken.address;
+      outputTokenSet.add(outputAddr);
+    }
+
+    targets.push(target);
+    data.push(callData);
+    values.push(value);
+    wrapOperations.push(wrapOp);
+  }
+
+  // Convert output tokens set to array
+  outputTokens.push(...Array.from(outputTokenSet));
+
+  // Calculate minimum output amount with slippage
+  const minOutputAmount = executionPlan.minOutput || BigNumber.from(0);
+
+  return {
+    fromToken: tokenIn.address || ETH_ADDRESS,
+    fromAmount: executionPlan.route.paths?.[0]?.inputAmount ||
+                executionPlan.route.splits?.reduce((sum, s) => sum.add(s.input || s.amount), BigNumber.from(0)) ||
+                BigNumber.from(0),
+    targets,
+    data,
+    values,
+    outputTokens,
+    wrapOperations,
+    minOutputAmount,
+    // Additional metadata for reference
+    metadata: {
+      routeType: executionPlan.route.type,
+      expectedOutput: executionPlan.route.totalOutput,
+      slippageTolerance: executionPlan.slippageTolerance,
+      steps: executionPlan.executionSteps.length
+    }
+  };
+}
+
+/**
+ * Helper function to encode Uniswap trades
+ */
+function encodeUniswapTrades(trades, recipient) {
+  // This would use the Uniswap SDK to properly encode the trades
+  // For now, returning a placeholder
+  // In production, this would call the appropriate encoding function from the SDK
+  const iface = new ethers.utils.Interface([
+    'function execute(bytes commands, bytes[] inputs, uint256 deadline)'
+  ]);
+
+  // Placeholder encoding - in production would use actual trade data
+  const commands = '0x00'; // Command bytes
+  const inputs = []; // Encoded inputs for each command
+  const deadline = Math.floor(Date.now() / 1000) + 1200; // 20 minutes
+
+  return iface.encodeFunctionData('execute', [commands, inputs, deadline]);
+}
+
+/**
+ * Helper function to encode Uniswap exact input
+ */
+function encodeUniswapExactInput(step, recipient) {
+  const iface = new ethers.utils.Interface([
+    'function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut)'
+  ]);
+
+  const params = {
+    tokenIn: step.inputToken === 'WETH' ? WETH_ADDRESS : step.inputToken.address,
+    tokenOut: step.outputToken === 'WETH' ? WETH_ADDRESS : step.outputToken.address,
+    fee: 3000, // Default 0.3% fee tier
+    recipient: recipient,
+    deadline: Math.floor(Date.now() / 1000) + 1200,
+    amountIn: step.input,
+    amountOutMinimum: step.expectedOutput.mul(95).div(100), // 5% slippage
+    sqrtPriceLimitX96: 0
+  };
+
+  return iface.encodeFunctionData('exactInputSingle', [params]);
+}
+
+/**
+ * Helper function to encode Balancer batch swap
+ */
+function encodeBalancerBatchSwap(step, recipient) {
+  const iface = new ethers.utils.Interface([
+    'function batchSwap(uint8 kind, tuple(bytes32 poolId, uint256 assetInIndex, uint256 assetOutIndex, uint256 amount, bytes userData)[] swaps, address[] assets, tuple(address sender, bool fromInternalBalance, address recipient, bool toInternalBalance) funds, int256[] limits, uint256 deadline) returns (int256[] assetDeltas)'
+  ]);
+
+  // Build swaps array from path
+  const swaps = [];
+  const assets = [];
+  const limits = [];
+
+  // This is simplified - actual implementation would parse the path properly
+  if (step.pools && step.pools.length > 0) {
+    // Add logic to build swaps from pools
+    for (const pool of step.pools) {
+      swaps.push({
+        poolId: pool.id,
+        assetInIndex: 0, // Would need to determine from assets array
+        assetOutIndex: 1, // Would need to determine from assets array
+        amount: step.input,
+        userData: '0x'
+      });
+    }
+  }
+
+  const funds = {
+    sender: recipient, // The WalletBundler contract
+    fromInternalBalance: false,
+    recipient: recipient,
+    toInternalBalance: false
+  };
+
+  const deadline = Math.floor(Date.now() / 1000) + 1200;
+
+  return iface.encodeFunctionData('batchSwap', [
+    0, // GIVEN_IN
+    swaps,
+    assets,
+    funds,
+    limits,
+    deadline
+  ]);
+}
+
+/**
+ * Helper function to encode Balancer single swap
+ */
+function encodeBalancerSingleSwap(step, recipient) {
+  const iface = new ethers.utils.Interface([
+    'function swap(tuple(bytes32 poolId, uint8 kind, address assetIn, address assetOut, uint256 amount, bytes userData) singleSwap, tuple(address sender, bool fromInternalBalance, address recipient, bool toInternalBalance) funds, uint256 limit, uint256 deadline) returns (uint256 amountCalculated)'
+  ]);
+
+  const singleSwap = {
+    poolId: step.pools?.[0]?.id || '0x', // Would need actual pool ID
+    kind: 0, // GIVEN_IN
+    assetIn: step.inputToken === 'WETH' ? WETH_ADDRESS : step.inputToken.address,
+    assetOut: step.outputToken === 'WETH' ? WETH_ADDRESS : step.outputToken.address,
+    amount: step.input,
+    userData: '0x'
+  };
+
+  const funds = {
+    sender: recipient,
+    fromInternalBalance: false,
+    recipient: recipient,
+    toInternalBalance: false
+  };
+
+  const limit = step.expectedOutput.mul(95).div(100); // 5% slippage
+  const deadline = Math.floor(Date.now() / 1000) + 1200;
+
+  return iface.encodeFunctionData('swap', [singleSwap, funds, limit, deadline]);
+}
