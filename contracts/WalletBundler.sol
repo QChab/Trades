@@ -183,7 +183,7 @@ contract WalletBundler {
                     // Uniswap uses Permit2: Need two approvals
                     // Step 1: Check if token is approved to Permit2
                     uint256 tokenToPermit2Allowance = _getAllowance(tokenIn, PERMIT2);
-                    if (tokenToPermit2Allowance < type(uint256).max / 2) {
+                    if (tokenToPermit2Allowance < 1000000000000000000000000000000000000000000000) {
                         _approve(tokenIn, PERMIT2);  // Token → Permit2
                     }
 
@@ -203,7 +203,7 @@ contract WalletBundler {
                         }
                     }
 
-                    if (permit2Allowance < type(uint160).max / 2) {
+                    if (permit2Allowance < 1000000000000000000000000000000000000000000000) {
                         // Approve via Permit2
                         assembly {
                             let ptr := mload(0x40)
@@ -221,7 +221,7 @@ contract WalletBundler {
                 } else if (target == BALANCER_VAULT) {
                     // Balancer: Check direct allowance
                     uint256 directAllowance = _getAllowance(tokenIn, BALANCER_VAULT);
-                    if (directAllowance < type(uint256).max / 2) {
+                    if (directAllowance < 1000000000000000000000000000000000000000000000) {
                         _approve(tokenIn, BALANCER_VAULT);
                     }
                 }

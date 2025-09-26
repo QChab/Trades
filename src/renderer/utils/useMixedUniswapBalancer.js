@@ -1705,17 +1705,16 @@ export { getCacheStats };
  * @param {string} walletBundlerAddress - Address of the WalletBundler contract
  * @param {string} balancerEncoderAddress - Address of BalancerEncoder contract
  * @param {string} uniswapEncoderAddress - Address of UniswapEncoder contract
- * @param {string} userAddress - Address of the user (recipient for final hop)
+ * @param {number} slippagePercent - Slippage tolerance in percent (default 0.5%)
  * @returns {Object} Arguments for the WalletBundler encodeAndExecute function
  */
 export function createEncoderExecutionPlan(
   executionPlan,
   tokenIn,
   tokenOut,
-  walletBundlerAddress,
   balancerEncoderAddress,
   uniswapEncoderAddress,
-  userAddress
+  slippagePercent = 0.5
 ) {
   const encoderTargets = [];
   const encoderData = [];
@@ -1724,11 +1723,7 @@ export function createEncoderExecutionPlan(
   const markedPlan = markSplitLegs(executionPlan);
 
   // Process each execution step
-  markedPlan.executionSteps.forEach((step, index) => {
-    const isFinalHop = index === markedPlan.executionSteps.length - 1;
-    // Determine recipient: for intermediate hops keep in contract, for final hop send to user
-    const recipient = isFinalHop ? userAddress : walletBundlerAddress;
-
+  markedPlan.executionSteps.forEach((step) => {
     // Determine input amount based on smart analysis
     let inputAmount;
     if (shouldUseAllBalance(step, markedPlan)) {
@@ -1749,6 +1744,14 @@ export function createEncoderExecutionPlan(
                                step.outputToken === 'WETH' ? WETH_ADDRESS :
                                tokenOut.address);
 
+    // Calculate minimum amount out with slippage for this step
+    let minAmountOut = BigNumber.from(0);
+    if (step.expectedOutput || step.output) {
+      const expectedOut = step.expectedOutput || step.output || BigNumber.from(0);
+      // Apply slippage: minAmount = expectedAmount * (100 - slippagePercent) / 100
+      minAmountOut = expectedOut.mul(Math.floor((100 - slippagePercent) * 100)).div(10000);
+    }
+
     // Create encoder calldata
     if (step.protocol === 'balancer') {
       encoderTargets.push(balancerEncoderAddress);
@@ -1756,37 +1759,33 @@ export function createEncoderExecutionPlan(
       if (inputAmount.eq(ethers.constants.MaxUint256)) {
         // Use all balance swap - encoder will query actual balance
         const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['bytes32', 'address', 'address', 'uint256', 'address', 'address'],
+          ['bytes32', 'address', 'address', 'uint256'],
           [
             step.poolId || step.pools?.[0]?.id || '0x0000000000000000000000000000000000000000000000000000000000000000',
             inputTokenAddress,
             outputTokenAddress,
-            step.minAmountOut || 0,
-            walletBundlerAddress, // sender
-            recipient
+            minAmountOut
           ]
         );
 
-        // Encode the function selector for encodeUseAllBalanceSwap
-        const selector = ethers.utils.id('encodeUseAllBalanceSwap(bytes32,address,address,uint256,address,address)').slice(0, 10);
+        // Encode the function selector for encodeUseAllBalanceSwap (no sender/recipient params)
+        const selector = ethers.utils.id('encodeUseAllBalanceSwap(bytes32,address,address,uint256)').slice(0, 10);
         encoderData.push(selector + encoderCalldata.slice(2));
       } else {
         // Regular swap with exact amount
         const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['bytes32', 'address', 'address', 'uint256', 'uint256', 'address', 'address'],
+          ['bytes32', 'address', 'address', 'uint256', 'uint256'],
           [
             step.poolId || step.pools?.[0]?.id || '0x0000000000000000000000000000000000000000000000000000000000000000',
             inputTokenAddress,
             outputTokenAddress,
             inputAmount,
-            step.minAmountOut || 0,
-            walletBundlerAddress, // sender
-            recipient
+            minAmountOut
           ]
         );
 
-        // Encode the function selector for encodeSingleSwap
-        const selector = ethers.utils.id('encodeSingleSwap(bytes32,address,address,uint256,uint256,address,address)').slice(0, 10);
+        // Encode the function selector for encodeSingleSwap (no sender/recipient params)
+        const selector = ethers.utils.id('encodeSingleSwap(bytes32,address,address,uint256,uint256)').slice(0, 10);
         encoderData.push(selector + encoderCalldata.slice(2));
       }
     } else if (step.protocol === 'uniswap') {
@@ -1795,44 +1794,41 @@ export function createEncoderExecutionPlan(
       if (inputAmount.eq(ethers.constants.MaxUint256)) {
         // Use all balance swap - encoder will query actual balance
         const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['address', 'address', 'uint24', 'uint256', 'address', 'address'],
+          ['address', 'address', 'uint24', 'uint256'],
           [
             inputTokenAddress,
             outputTokenAddress,
             step.fee || 3000, // Default 0.3% fee
-            step.minAmountOut || 0,
-            walletBundlerAddress, // sender (encoder will query balance from this address)
-            recipient
+            minAmountOut
           ]
         );
 
-        // Encode the function selector for encodeUseAllBalanceSwap (no sender param in signature)
-        const selector = ethers.utils.id('encodeUseAllBalanceSwap(address,address,uint24,uint256,address,address)').slice(0, 10);
+        // Encode the function selector for encodeUseAllBalanceSwap (no sender/recipient params)
+        const selector = ethers.utils.id('encodeUseAllBalanceSwap(address,address,uint24,uint256)').slice(0, 10);
         encoderData.push(selector + encoderCalldata.slice(2));
       } else {
         // Regular swap with exact amount
         const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['address', 'address', 'uint24', 'uint256', 'uint256', 'address'],
+          ['address', 'address', 'uint24', 'uint256', 'uint256'],
           [
             inputTokenAddress,
             outputTokenAddress,
             step.fee || 3000,
             inputAmount,
-            step.minAmountOut || 0,
-            recipient
+            minAmountOut
           ]
         );
 
-        // Encode the function selector for encodeSingleSwap (no sender param in signature)
-        const selector = ethers.utils.id('encodeSingleSwap(address,address,uint24,uint256,uint256,address)').slice(0, 10);
+        // Encode the function selector for encodeSingleSwap (no sender/recipient params)
+        const selector = ethers.utils.id('encodeSingleSwap(address,address,uint24,uint256,uint256)').slice(0, 10);
         encoderData.push(selector + encoderCalldata.slice(2));
       }
     }
   });
 
-  // Calculate minimum output with slippage
+  // Calculate minimum total output with slippage for final validation
   const minOutputAmount = executionPlan.minOutput ||
-                          executionPlan.route.totalOutput.mul(95).div(100); // 5% slippage
+                          executionPlan.route.totalOutput.mul(Math.floor((100 - slippagePercent) * 100)).div(10000);
 
   return {
     fromToken: tokenIn.address || ETH_ADDRESS,
@@ -1848,7 +1844,7 @@ export function createEncoderExecutionPlan(
     metadata: {
       routeType: executionPlan.route.type,
       expectedOutput: executionPlan.route.totalOutput,
-      slippageTolerance: executionPlan.slippageTolerance,
+      slippageTolerance: slippagePercent,
       steps: executionPlan.executionSteps.length
     }
   };
@@ -1955,7 +1951,7 @@ export function shouldUseAllBalance(step, executionPlan) {
  * @param {string} walletBundlerAddress - Address of the WalletBundler contract
  * @returns {Object} Arguments for the WalletBundler execute function
  */
-export function convertExecutionPlanToContractArgs(executionPlan, tokenIn, tokenOut, walletBundlerAddress) {
+export function convertExecutionPlanToContractArgs(executionPlan, tokenIn, tokenOut, walletBundlerAddress, slippagePercent = 0.5) {
   const targets = [];
   const data = [];
   const values = [];
@@ -1978,9 +1974,9 @@ export function convertExecutionPlanToContractArgs(executionPlan, tokenIn, token
       // Encode Uniswap call data based on method
       if (step.method === 'executeMixedSwaps' && step.trades) {
         // Encode the trades for Universal Router
-        callData = encodeUniswapTrades(step.trades, walletBundlerAddress);
+        callData = encodeUniswapTrades(step.trades, walletBundlerAddress, slippagePercent);
       } else if (step.method === 'exactInputSingle') {
-        callData = encodeUniswapExactInput(step, walletBundlerAddress);
+        callData = encodeUniswapExactInput(step, walletBundlerAddress, slippagePercent);
       }
 
       // Check if ETH is being sent as value
@@ -1993,9 +1989,9 @@ export function convertExecutionPlanToContractArgs(executionPlan, tokenIn, token
 
       // Encode Balancer batch swap
       if (step.method === 'batchSwap') {
-        callData = encodeBalancerBatchSwap(step, walletBundlerAddress);
+        callData = encodeBalancerBatchSwap(step, walletBundlerAddress, slippagePercent);
       } else if (step.method === 'swap') {
-        callData = encodeBalancerSingleSwap(step, walletBundlerAddress);
+        callData = encodeBalancerSingleSwap(step, walletBundlerAddress, slippagePercent);
       }
     }
 
@@ -2071,7 +2067,7 @@ export function convertExecutionPlanToContractArgs(executionPlan, tokenIn, token
 /**
  * Helper function to encode Uniswap trades
  */
-function encodeUniswapTrades(trades, recipient) {
+function encodeUniswapTrades(trades, recipient, slippagePercent = 0.5) {
   // This would use the Uniswap SDK to properly encode the trades
   // For now, returning a placeholder
   // In production, this would call the appropriate encoding function from the SDK
@@ -2090,7 +2086,7 @@ function encodeUniswapTrades(trades, recipient) {
 /**
  * Helper function to encode Uniswap exact input
  */
-function encodeUniswapExactInput(step, recipient) {
+function encodeUniswapExactInput(step, recipient, slippagePercent = 0.5) {
   const iface = new ethers.utils.Interface([
     'function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut)'
   ]);
@@ -2102,7 +2098,7 @@ function encodeUniswapExactInput(step, recipient) {
     recipient: recipient,
     deadline: Math.floor(Date.now() / 1000) + 1200,
     amountIn: step.input,
-    amountOutMinimum: step.expectedOutput.mul(95).div(100), // 5% slippage
+    amountOutMinimum: step.expectedOutput.mul(Math.floor((100 - slippagePercent) * 100)).div(10000), // Apply slippage
     sqrtPriceLimitX96: 0
   };
 
@@ -2112,7 +2108,7 @@ function encodeUniswapExactInput(step, recipient) {
 /**
  * Helper function to encode Balancer batch swap
  */
-function encodeBalancerBatchSwap(step, recipient) {
+function encodeBalancerBatchSwap(step, recipient, slippagePercent = 0.5) {
   const iface = new ethers.utils.Interface([
     'function batchSwap(uint8 kind, tuple(bytes32 poolId, uint256 assetInIndex, uint256 assetOutIndex, uint256 amount, bytes userData)[] swaps, address[] assets, tuple(address sender, bool fromInternalBalance, address recipient, bool toInternalBalance) funds, int256[] limits, uint256 deadline) returns (int256[] assetDeltas)'
   ]);
@@ -2158,7 +2154,7 @@ function encodeBalancerBatchSwap(step, recipient) {
 /**
  * Helper function to encode Balancer single swap
  */
-function encodeBalancerSingleSwap(step, recipient) {
+function encodeBalancerSingleSwap(step, recipient, slippagePercent = 0.5) {
   const iface = new ethers.utils.Interface([
     'function swap(tuple(bytes32 poolId, uint8 kind, address assetIn, address assetOut, uint256 amount, bytes userData) singleSwap, tuple(address sender, bool fromInternalBalance, address recipient, bool toInternalBalance) funds, uint256 limit, uint256 deadline) returns (uint256 amountCalculated)'
   ]);
@@ -2179,7 +2175,7 @@ function encodeBalancerSingleSwap(step, recipient) {
     toInternalBalance: false
   };
 
-  const limit = step.expectedOutput.mul(95).div(100); // 5% slippage
+  const limit = step.expectedOutput.mul(Math.floor((100 - slippagePercent) * 100)).div(10000); // Apply slippage
   const deadline = Math.floor(Date.now() / 1000) + 1200;
 
   return iface.encodeFunctionData('swap', [singleSwap, funds, limit, deadline]);
