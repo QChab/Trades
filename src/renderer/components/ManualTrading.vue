@@ -1759,7 +1759,7 @@ export default {
         toRaw(props.provider)
       );
 
-      // Uniswap (and Uniswap & Balancer mixed)
+      // Uniswap
       if (isUsingUniswap) {
         // 1. ERC20.approve(PERMIT2_ADDRESS)
         const permitAllowance = await erc20.allowance(
@@ -1788,24 +1788,6 @@ export default {
         return;
       }
 
-      // Balancer V2
-      if (!localTrades || (localTrades && localTrades.length > 0)) {
-        const balancerTradeV2 = localTrades.find(
-          t => t.callData && t.contractAddress.toLowerCase() === BALANCER_VAULT_ADDRESS.toLowerCase()
-        );
-        if (balancerTradeV2) {
-          // ERC20.approve(BALANCER_VAULT_ADDRESS)
-          const balancerAllowance = await erc20.allowance(
-            senderDetails.value.address,
-            BALANCER_VAULT_ADDRESS
-          );
-          if (BigNumber.from(balancerAllowance).lt(BigNumber.from('100000000000000000000000000')))
-            return needsToApprove.value = true;
-          needsToApprove.value = false;
-          return;
-        }
-      }
-
       // Balancer V3
       if (localTrades && localTrades.length > 0) {
         const balancerTradeV3 = localTrades.find(
@@ -1819,24 +1801,6 @@ export default {
           );
           if (BigNumber.from(permitAllowance).lt(BigNumber.from('100000000000000000000000000')))
             return needsToApprove.value = true;
-
-          // 2. PERMIT2_CONTRACT.allowance(owner, ERC20, otherContractAddress)
-          const permit2 = new ethers.Contract(
-            PERMIT2_ADDRESS,
-            ["function allowance(address owner,address token,address spender) view returns (uint160,uint48,uint48)"],
-            toRaw(props.provider)
-          );
-          const [remaining] = await permit2.allowance(
-            senderDetails.value.address,
-            tokenAddress,
-            balancerTradeV3.contractAddress
-          );
-          if (BigNumber.from(remaining).lt(BigNumber.from('100000000000000000000000000'))) {
-            needsToApprove.value = true;
-            return;
-          }
-          needsToApprove.value = false;
-          return;
         }
       }
 

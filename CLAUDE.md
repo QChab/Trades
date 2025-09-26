@@ -180,13 +180,79 @@ function execute(
 - **ETH Handling**: When `fromToken` is `address(0)`, ETH arrives via `msg.value`
 - **Minimum Output Validation**: Ensures final output meets minimum requirement to prevent slippage attacks
 
+### Dynamic Encoding System for Multi-Hop Trades
+
+#### New Method: `encodeAndExecute`
+A second execution method that uses encoder contracts to dynamically build calldata based on actual token balances:
+
+```solidity
+function encodeAndExecute(
+    address[] calldata encoderTargets,
+    bytes[] calldata encoderData,
+    uint8[] calldata wrapOperations,
+    uint256 minOutputAmount
+) external payable auth returns (bool[] memory results)
+```
+
+#### Encoder Contracts
+Two stateless encoder contracts generate calldata dynamically:
+
+**BalancerEncoder.sol**:
+- `encodeSingleSwap`: Encodes single Balancer swaps
+- `encodeBatchSwap`: Encodes multi-hop Balancer paths
+- `encodeUseAllBalanceSwap`: Special function using `type(uint256).max` marker
+
+**UniswapEncoder.sol**:
+- `encodeSingleSwap`: Encodes Uniswap V3/V4 swaps
+- `encodeMultiHopSwap`: Encodes multi-hop paths
+- `encodeUseAllBalanceSwap`: Uses all available balance
+
+#### Smart Split Detection
+The JavaScript function `markSplitLegs` analyzes execution plans to determine when to use exact amounts vs all available balance:
+
+**Token Flow Patterns**:
+1. **Parallel Split**: `tokenA` splits to multiple paths
+   - First legs: Use exact calculated amounts
+   - Last leg: Uses all remaining balance (prevents dust)
+
+2. **Divergent Paths**: Different intermediate tokens
+   ```
+   Path 1: tokenA → tokenB → tokenC
+   Path 2: tokenA → tokenD → tokenC
+   ```
+   - Hop 1: Split tokenA (exact + remaining)
+   - Hop 2: Each path uses ALL of its intermediate token
+
+3. **Sequential Usage**: Same token used in different hops
+   - Each hop uses all available balance
+
+#### Slippage Handling Strategy
+- **Intermediate Hops**: Use actual output from previous hop (no compound slippage)
+- **Final Hop Only**: Enforce minimum output requirement
+- **Use All Balance**: Marker `type(uint256).max` tells DEX to use entire balance
+
 #### JavaScript Integration
-The `convertExecutionPlanToContractArgs` function in `useMixedUniswapBalancer.js`:
-- Maps execution plan steps to contract arguments
-- Sets appropriate wrap/unwrap operations based on step requirements
-- Handles ETH/WETH conversions between Uniswap and Balancer
-- Calculates input amounts for wrap/unwrap operations
-- Assigns output tokens per step for accurate tracking
+The `createEncoderExecutionPlan` function in `useMixedUniswapBalancer.js`:
+- Analyzes token flow to mark split legs
+- Determines which steps should use all balance
+- Encodes calldata for encoder contracts
+- Handles sender/recipient logic (final hop goes directly to user)
+
+#### Benefits Over Static Execution
+1. **No Slippage Accumulation**: Each hop adapts to actual amounts
+2. **No Dust or Failures**: Last leg always uses remaining balance
+3. **Gas Efficient**: Final output bypasses contract
+4. **Flexible Routing**: Handles complex multi-path scenarios
+
+#### Example Execution Flow
+```javascript
+// 45% Balancer, 55% Uniswap split on first hop
+Hop 1, Leg 1: Balancer swaps exact 45% of tokenA
+Hop 1, Leg 2: Uniswap swaps ALL REMAINING tokenA
+Hop 2: Combined swap uses ALL intermediate tokens to final output
+```
+
+This dynamic encoding system ensures robust execution of complex cross-DEX trades while minimizing gas costs and eliminating common failure modes from slippage and rounding errors.
 
 ### 1inch Integration Analysis
 - **API Limitations**: 1 RPS rate limit on basic tier, registration required since 2023
@@ -323,3 +389,89 @@ The `convertExecutionPlanToContractArgs` function in `useMixedUniswapBalancer.js
 - **Conversion**: Dollar prices converted to token ratios for DEX execution (`dollarPrice / tokenBPrice`)
 - **Trigger Logic**: All price comparisons convert to same units - prevents mixing dollars with token ratios
 - **Critical**: Applied across all execution paths to ensure coherent unit comparisons
+
+### Dynamic Encoding Architecture (New Implementation)
+
+#### Overview
+The system now uses encoder contracts that generate swap calldata dynamically based on actual token balances, solving slippage accumulation in multi-hop trades.
+
+#### Encoder Contracts
+- **UniswapEncoder.sol**: Encodes Uniswap V4 Universal Router calls
+- **BalancerEncoder.sol**: Encodes Balancer V3 Vault calls
+- **Key Functions**:
+  - `encodeSingleSwap()`: Standard swap with exact amounts
+  - `encodeMultiHopSwap()`: Multi-pool routing (Uniswap only)
+  - `encodeBatchSwap()`: Multi-pool routing (Balancer only)
+  - `encodeUseAllBalanceSwap()`: Uses type(uint256).max marker for "use all" logic
+
+#### WalletBundler encodeAndExecute Method
+```solidity
+function encodeAndExecute(
+    address fromToken,
+    uint256 fromAmount,
+    address[] calldata encoderTargets,    // Encoder contracts
+    bytes[] calldata encoderData,         // Encoder function calls
+    uint8[] calldata wrapOperations,      // Wrap/unwrap codes
+    uint256 minOutputAmount
+) external payable auth returns (bool[] memory results)
+```
+
+#### Wrap/Unwrap Operation Codes
+- **0**: No operation
+- **1**: Wrap all ETH to WETH before call
+- **2**: Wrap all ETH to WETH after call
+- **3**: Unwrap all WETH to ETH before call
+- **4**: Unwrap all WETH to ETH after call
+
+#### Smart Split Detection (JavaScript)
+The `markSplitLegs()` function analyzes execution plans to determine when steps should use exact amounts vs all balance:
+
+**Parallel Split Pattern** (same intermediate token):
+```
+Step 1: TokenA → TokenB (50% via Uniswap) - exact amount
+Step 2: TokenA → TokenB (50% via Balancer) - use all remaining
+Step 3: TokenB → TokenC (100% combined) - use all balance
+```
+
+**Divergent Path Pattern** (different intermediate tokens):
+```
+Step 1: TokenA → TokenB (50% via path 1) - exact amount
+Step 2: TokenA → TokenD (50% via path 2) - use all remaining
+Step 3: TokenB → TokenC (from path 1) - use all TokenB
+Step 4: TokenD → TokenC (from path 2) - use all TokenD
+```
+
+#### Slippage Handling Strategy
+- **First Hop**: Uses exact split amounts (except last leg uses "all remaining")
+- **Intermediate Hops**: Always use entire balance (absorbs slippage)
+- **Final Hop**: Enforces minimum output requirement
+- **Result**: Slippage doesn't accumulate, only affects final output
+
+#### Benefits Over Static Execution
+1. **Slippage Resilience**: Each hop adapts to actual received amounts
+2. **No Rounding Errors**: Last split leg uses all remaining balance
+3. **Atomic Execution**: All swaps still execute in single transaction
+4. **Gas Efficiency**: Final output sent directly to user
+
+#### Example Execution Flow
+```javascript
+// Input: 1000 USDC split 60/40 between Uniswap/Balancer
+const plan = [
+  {
+    encoder: uniswapEncoder,
+    data: encodeSingleSwap(USDC, WETH, 600, ...),  // Exact 600
+    wrapOp: 0
+  },
+  {
+    encoder: balancerEncoder,
+    data: encodeUseAllBalanceSwap(USDC, WETH, ...),  // Use remaining ~400
+    wrapOp: 0
+  },
+  {
+    encoder: uniswapEncoder,
+    data: encodeUseAllBalanceSwap(WETH, DAI, ...),  // Use all WETH
+    wrapOp: 0
+  }
+];
+// Result: Optimal routing with automatic slippage absorption
+```

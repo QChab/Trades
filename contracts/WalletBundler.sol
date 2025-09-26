@@ -6,22 +6,24 @@ interface IPermit2 {
 }
 
 /**
- * @title WalletBundlerOptimized
+ * @title WalletBundler
  * @notice Gas-optimized standalone bundler contract for MEV-protected multi-DEX trading
  * @dev Deploy one instance per wallet for complete fund isolation
  */
-contract WalletBundlerOptimized {
+contract WalletBundler {
     address public immutable owner;
     address private immutable self;
 
     // Pack constants to save deployment gas
     address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address private constant UNIVERSAL_ROUTER = 0x66a9893cc07d91d95644aedd05d03f95e1dba8af; // Uniswap V4
+    address private constant BALANCER_VAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8; // Balancer V3
     uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
 
     error Unauthorized();
-    error InsufficientOutput();
-    
+    error CallFailed();
+
     modifier auth() {
         if (msg.sender != owner) revert Unauthorized();
         _;
@@ -90,198 +92,12 @@ contract WalletBundlerOptimized {
     }
     
     /**
-     * @notice Execute trades with minimal gas overhead and wrap/unwrap support
-     * @dev Optimized version with reduced operations and memory usage
-     * @param inputAmounts Array of input amounts for wrap/unwrap operations
-     * @param outputTokens Array of output tokens for each step (same length as targets)
-     * @param wrapOperations Array indicating wrap/unwrap operations for each call:
-     *        0 = no operation, 1 = wrap before, 2 = wrap after, 3 = unwrap before, 4 = unwrap after
-     * @param minOutputAmount Minimum acceptable output amount for the final output
-     */
-    function execute(
-        address fromToken,
-        uint256 fromAmount,
-        address[] calldata targets,
-        bytes[] calldata data,
-        uint256[] calldata values,
-        uint256[] calldata inputAmounts,
-        address[] calldata outputTokens,
-        uint8[] calldata wrapOperations,
-        uint256 minOutputAmount
-    ) external payable auth returns (bool[] memory results) {
-        uint256 targetsLength = targets.length;
-        // Same length as data, values, inputAmounts, outputTokens, wrapOperations
-
-        // Transfer input tokens if needed
-        if (fromToken != address(0) && fromAmount != 0) {
-            _transferFromToken(fromToken, owner, self, fromAmount);
-        }
-        // Note: If fromToken is address(0), ETH is already received via msg.value
-        
-        // Execute calls with minimal memory allocation and wrap/unwrap support
-        results = new bool[](targetsLength);
-        address finalOutputToken = outputTokens[targetsLength - 1];
-
-        for (uint256 i; i < targetsLength;) {
-            uint8 wrapOp = wrapOperations[i];
-            uint256 inputAmount = inputAmounts[i];
-            address stepOutputToken = outputTokens[i];
-
-            // Handle unwrap before (3)
-            if (wrapOp == 3) {
-                _unwrapWETH(inputAmount);
-            }
-            // Handle wrap before (1)
-            else if (wrapOp == 1) {
-                _wrapETH(inputAmount);
-            }
-
-            // Track balance before for wrap/unwrap after operations
-            uint256 balanceBefore;
-            if (wrapOp == 2 || wrapOp == 4) {
-                if (stepOutputToken == address(0)) {
-                    balanceBefore = self.balance;
-                } else if (stepOutputToken == WETH) {
-                    balanceBefore = _getTokenBalance(WETH, self);
-                }
-            }
-
-            (bool success,) = targets[i].call{value: values[i]}(data[i]);
-            results[i] = success;
-
-            // Handle wrap/unwrap after based on output amount
-            if (wrapOp == 2 || wrapOp == 4) {
-                uint256 outputAmount;
-
-                if (wrapOp == 2) {
-                    // Wrap after - calculate ETH output from trade
-                    uint256 balanceAfter = self.balance;
-                    if (balanceAfter > balanceBefore) {
-                        outputAmount = balanceAfter - balanceBefore;
-                        _wrapETH(outputAmount);
-                    }
-                } else if (wrapOp == 4) {
-                    // Unwrap after - calculate WETH output from trade
-                    uint256 balanceAfter = _getTokenBalance(WETH, self);
-                    if (balanceAfter > balanceBefore) {
-                        outputAmount = balanceAfter - balanceBefore;
-                        _unwrapWETH(outputAmount);
-                    }
-                }
-            }
-
-            unchecked { ++i; }
-        }
-
-        // Check minimum output and transfer final output token
-        if (finalOutputToken == address(0)) {
-            // ETH transfer
-            uint256 ethBalance = self.balance;
-            if (ethBalance < minOutputAmount) revert InsufficientOutput();
-            if (ethBalance > 0) {
-                _sendETH(owner, ethBalance);
-            }
-        } else {
-            // ERC20 transfer
-            uint256 tokenBalance = _getTokenBalance(finalOutputToken, self);
-            if (tokenBalance < minOutputAmount) revert InsufficientOutput();
-            if (tokenBalance > 0) {
-                _transferFromToken(finalOutputToken, self, owner, tokenBalance);
-            }
-        }
-
-        // Return any remaining balances from intermediate output tokens
-        for (uint256 i; i < targetsLength - 1;) {
-            address token = outputTokens[i];
-            // Skip if same as final output (already handled)
-            if (token != finalOutputToken) {
-                if (token == address(0)) {
-                    // ETH - only if not already returned as final output
-                    if (finalOutputToken != address(0)) {
-                        uint256 ethBalance = self.balance;
-                        if (ethBalance > 0) {
-                            _sendETH(owner, ethBalance);
-                        }
-                    }
-                } else {
-                    // ERC20 token
-                    uint256 balance = _getTokenBalance(token, self);
-                    if (balance > 0) {
-                        _transferFromToken(token, self, owner, balance);
-                    }
-                }
-            }
-            unchecked { ++i; }
-        }
-
-        // Return remaining input token
-        if (fromToken == address(0)) {
-            uint256 remainingEth = self.balance;
-            if (remainingEth > 0) {
-                _sendETH(owner, remainingEth);
-            }
-        } else {
-            uint256 remainingBalance = _getTokenBalance(fromToken, self);
-            if (remainingBalance > 0) {
-                _transferFromToken(fromToken, self, owner, remainingBalance);
-            }
-        }
-    }
-    
-    /**
-     * @notice Batch approve with PERMIT2 support - gas optimized
-     */
-    function approve(
-        address[] calldata tokens,
-        address[] calldata spenders,
-        address[] calldata permit2Spenders
-        // TODO: !!! MIGHT NEED A WAY TO REVOKE THE ACCEPTATIONS
-    ) external auth {
-        uint256 length = tokens.length;
-
-        for (uint256 i; i < length;) {
-            // Standard approval
-            address token = tokens[i];
-            address spender = spenders[i];
-            assembly {
-                let ptr := mload(0x40)
-                // Store approve(address,uint256) selector
-                mstore(ptr, 0x095ea7b300000000000000000000000000000000000000000000000000000000)
-                mstore(add(ptr, 0x04), spender) // spender
-                mstore(add(ptr, 0x24), 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff)  // amount
-                
-                let success := call(gas(), token, 0, ptr, 0x44, 0, 0)
-                if iszero(success) { revert(0, 0) }
-            }
-            
-            // PERMIT2 approval if needed
-            address permit2Spender = permit2Spenders[i];
-            if (spenders[i] == PERMIT2 && permit2Spender != address(0)) {
-                // Use assembly for PERMIT2 approval with packed parameters
-                assembly {
-                    let ptr := mload(0x40)
-                    mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000) // approve selector
-                    mstore(add(ptr, 0x04), token) // token
-                    mstore(add(ptr, 0x24), permit2Spender) // spender
-                    mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffffffffffff)                    
-                    mstore(add(ptr, 0x64), add(timestamp(), 1577836800)) // EXPIRATION_OFFSET
-                    
-                    let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
-                    if iszero(success) { revert(0, 0) }
-                }
-            }
-            
-            unchecked { ++i; }
-        }
-    }
-    
-    /**
      * @notice Emergency withdraw - minimal implementation
      */
     function withdraw(address token) external auth {
         if (token == address(0)) {
             _sendETH(owner, self.balance);
-        } else {            
+        } else {
             _transferFromToken(token, self, owner, _getTokenBalance(token, self));
         }
     }
@@ -311,6 +127,191 @@ contract WalletBundlerOptimized {
             mstore(ptr, 0x2e1a7d4d00000000000000000000000000000000000000000000000000000000)
             mstore(add(ptr, 0x04), amount)
             let success := call(gas(), WETH, 0, ptr, 0x24, 0, 0)
+            if iszero(success) { revert(0, 0) }
+        }
+    }
+
+    /**
+     * @notice Execute trades with dynamic encoding for slippage handling
+     * @dev Uses encoder contracts to build calldata based on actual amounts
+     * @param fromToken Input token address (0x0 for ETH)
+     * @param fromAmount Input amount
+     * @param toToken Expected output token address (0x0 for ETH)
+     * @param encoderTargets Array of encoder contract addresses
+     * @param encoderData Array of calldata for encoder contracts
+     * @param wrapOperations Array of wrap/unwrap operations
+     */
+    function encodeAndExecute(
+        address fromToken,
+        uint256 fromAmount,
+        address toToken,
+        address[] calldata encoderTargets,
+        bytes[] calldata encoderData,
+        uint8[] calldata wrapOperations
+    ) external payable auth returns (bool[] memory results) {
+        uint256 stepsLength = encoderTargets.length;
+
+        // Transfer input tokens if needed
+        if (fromToken != address(0) && fromAmount != 0) {
+            _transferFromToken(fromToken, owner, self, fromAmount);
+        }
+        // Note: If fromToken is address(0), ETH is already received via msg.value
+
+        results = new bool[](stepsLength);
+        uint256 ethBalanceBefore;
+        uint256 wethBalanceBefore;
+        uint256 i;
+
+        for (; i < stepsLength;) {
+            uint8 wrapOp = wrapOperations[i];
+
+            // Call encoder to get target, calldata, input amount, and input token
+            (address target, bytes memory callData, uint256 inputAmount, address tokenIn) = _callEncoder(encoderTargets[i], encoderData[i]);
+
+            if (wrapOp > 0) {
+                if (wrapOp == 2) {
+                    ethBalanceBefore = self.balance;
+                } else if (wrapOp == 4) {
+                    wethBalanceBefore = _getTokenBalance(WETH, self);
+                }
+
+                // Handle wrap/unwrap before
+                if (wrapOp == 1) {
+                    // Wrap ETH to WETH before - use exact amount from encoder
+                    _wrapETH(inputAmount);
+                } else if (wrapOp == 3) {
+                    // Unwrap WETH to ETH before - use exact amount from encoder
+                    _unwrapWETH(inputAmount);
+                }
+            }
+
+            // ----------------------------------------------------------
+            // Ensure approval for the input token to the target protocol
+            // ----------------------------------------------------------
+            if (tokenIn != address(0)) {
+                if (target == UNIVERSAL_ROUTER) {
+                // Uniswap uses Permit2: Need two approvals
+
+                // Step 1: Check if token is approved to Permit2
+                uint256 tokenToPermit2Allowance = _getAllowance(tokenIn, PERMIT2);
+                if (tokenToPermit2Allowance < type(uint256).max / 2) {
+                    _approve(tokenIn, PERMIT2);  // Token → Permit2
+                }
+
+                // Step 2: Check if Permit2 has approved Universal Router (inline for gas savings)
+                uint256 permit2Allowance;
+                assembly {
+                    let ptr := mload(0x40)
+                    // Store allowance(address,address,address) selector
+                    mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
+                    mstore(add(ptr, 0x04), address()) // owner (this contract)
+                    mstore(add(ptr, 0x24), tokenIn)     // tokenIn
+                    mstore(add(ptr, 0x44), UNIVERSAL_ROUTER) // spender
+
+                    let success := staticcall(gas(), PERMIT2, ptr, 0x64, ptr, 0x60)
+                    if success {
+                        permit2Allowance := mload(ptr) // First return value is uint160 amount
+                    }
+                }
+
+                if (permit2Allowance < type(uint160).max / 2) {
+                    // Approve via Permit2
+                    assembly {
+                        let ptr := mload(0x40)
+                        // Store approve(address,address,uint160,uint48) selector
+                        mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
+                        mstore(add(ptr, 0x04), tokenIn)                // tokenIn
+                        mstore(add(ptr, 0x24), UNIVERSAL_ROUTER)     // spender
+                        mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
+                        mstore(add(ptr, 0x64), add(timestamp(), EXPIRATION_OFFSET)) // expiration
+
+                        let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
+                        if iszero(success) { revert(0, 0) }
+                    }
+                }
+            } else if (target == BALANCER_VAULT) {
+                // Balancer: Check direct allowance
+                uint256 directAllowance = _getAllowance(tokenIn, BALANCER_VAULT);
+                if (directAllowance < type(uint256).max / 2) {
+                    _approve(tokenIn, BALANCER_VAULT);
+                }
+            }
+            }
+
+            // ----------------
+            // Execute the swap
+            // ----------------
+            (bool success,) = target.call{value: 0}(callData);
+            results[i] = success;
+            if (!success) revert CallFailed();
+
+            // Handle wrap/unwrap after based on output amount deltas
+            if (wrapOp == 2) {
+                // Wrap after - only wrap the ETH output from trade
+                uint256 ethBalanceAfter = self.balance;
+                if (ethBalanceAfter > ethBalanceBefore) {
+                    uint256 outputAmount = ethBalanceAfter - ethBalanceBefore;
+                    _wrapETH(outputAmount);
+                }
+            } else if (wrapOp == 4) {
+                // Unwrap after - only unwrap the WETH output from trade
+                uint256 wethBalanceAfter = _getTokenBalance(WETH, self);
+                if (wethBalanceAfter > wethBalanceBefore) {
+                    uint256 outputAmount = wethBalanceAfter - wethBalanceBefore;
+                    _unwrapWETH(outputAmount);
+                }
+            }
+
+            unchecked { ++i; }
+        }
+
+        // Send the toToken back to owner
+        if (toToken == address(0)) {
+            _sendETH(owner, self.balance);
+        } else {
+            _transferFromToken(toToken, self, owner, _getTokenBalance(toToken, self));
+        }
+    }
+
+    /**
+     * @dev Call encoder contract to get target, calldata, and input amount
+     */
+    function _callEncoder(address encoder, bytes calldata data) private view returns (address target, bytes memory callData, uint256 inputAmount, address tokenIn) {
+        (bool success, bytes memory result) = encoder.staticcall(data);
+        if (!success) revert CallFailed();
+        (target, callData, inputAmount, tokenIn) = abi.decode(result, (address, bytes, uint256, address));
+    }
+
+    /**
+     * @dev Check ERC20 allowance
+     */
+    function _getAllowance(address token, address spender) private view returns (uint256 allowance) {
+        assembly {
+            let ptr := mload(0x40)
+            // Store allowance(address,address) selector
+            mstore(ptr, 0xdd62ed3e00000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), address()) // owner (this contract)
+            mstore(add(ptr, 0x24), spender)   // spender
+
+            let success := staticcall(gas(), token, ptr, 0x44, ptr, 0x20)
+            if success {
+                allowance := mload(ptr)
+            }
+        }
+    }
+
+    /**
+     * @dev Approve ERC20 spending
+     */
+    function _approve(address token, address spender) private {
+        assembly {
+            let ptr := mload(0x40)
+            // Store approve(address,uint256) selector
+            mstore(ptr, 0x095ea7b300000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), spender)
+            mstore(add(ptr, 0x24), 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff) // max uint256
+
+            let success := call(gas(), token, 0, ptr, 0x44, 0, 0)
             if iszero(success) { revert(0, 0) }
         }
     }

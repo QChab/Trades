@@ -1698,6 +1698,256 @@ async function optimizeDirectSplit(balancerLeg, uniswapLeg, amountIn, tokenIn, t
 export { getCacheStats };
 
 /**
+ * Convert execution plan to encoder-based contract arguments
+ * @param {Object} executionPlan - The execution plan from createExecutionPlan
+ * @param {Object} tokenIn - Input token object
+ * @param {Object} tokenOut - Output token object
+ * @param {string} walletBundlerAddress - Address of the WalletBundler contract
+ * @param {string} balancerEncoderAddress - Address of BalancerEncoder contract
+ * @param {string} uniswapEncoderAddress - Address of UniswapEncoder contract
+ * @param {string} userAddress - Address of the user (recipient for final hop)
+ * @returns {Object} Arguments for the WalletBundler encodeAndExecute function
+ */
+export function createEncoderExecutionPlan(
+  executionPlan,
+  tokenIn,
+  tokenOut,
+  walletBundlerAddress,
+  balancerEncoderAddress,
+  uniswapEncoderAddress,
+  userAddress
+) {
+  const encoderTargets = [];
+  const encoderData = [];
+
+  // First, mark split legs in the execution plan
+  const markedPlan = markSplitLegs(executionPlan);
+
+  // Process each execution step
+  markedPlan.executionSteps.forEach((step, index) => {
+    const isFinalHop = index === markedPlan.executionSteps.length - 1;
+    // Determine recipient: for intermediate hops keep in contract, for final hop send to user
+    const recipient = isFinalHop ? userAddress : walletBundlerAddress;
+
+    // Determine input amount based on smart analysis
+    let inputAmount;
+    if (shouldUseAllBalance(step, markedPlan)) {
+      // Use all available balance for this token
+      inputAmount = ethers.constants.MaxUint256; // Special marker for "use all"
+    } else {
+      // Use exact calculated amount
+      inputAmount = step.input || step.amount || BigNumber.from(0);
+    }
+
+    // Determine actual token addresses
+    const inputTokenAddress = step.inputToken?.address ||
+                             (step.inputToken === 'ETH' ? ETH_ADDRESS :
+                              step.inputToken === 'WETH' ? WETH_ADDRESS :
+                              tokenIn.address);
+    const outputTokenAddress = step.outputToken?.address ||
+                              (step.outputToken === 'ETH' ? ETH_ADDRESS :
+                               step.outputToken === 'WETH' ? WETH_ADDRESS :
+                               tokenOut.address);
+
+    // Create encoder calldata
+    if (step.protocol === 'balancer') {
+      encoderTargets.push(balancerEncoderAddress);
+
+      if (inputAmount.eq(ethers.constants.MaxUint256)) {
+        // Use all balance swap - encoder will query actual balance
+        const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
+          ['bytes32', 'address', 'address', 'uint256', 'address', 'address'],
+          [
+            step.poolId || step.pools?.[0]?.id || '0x0000000000000000000000000000000000000000000000000000000000000000',
+            inputTokenAddress,
+            outputTokenAddress,
+            step.minAmountOut || 0,
+            walletBundlerAddress, // sender
+            recipient
+          ]
+        );
+
+        // Encode the function selector for encodeUseAllBalanceSwap
+        const selector = ethers.utils.id('encodeUseAllBalanceSwap(bytes32,address,address,uint256,address,address)').slice(0, 10);
+        encoderData.push(selector + encoderCalldata.slice(2));
+      } else {
+        // Regular swap with exact amount
+        const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
+          ['bytes32', 'address', 'address', 'uint256', 'uint256', 'address', 'address'],
+          [
+            step.poolId || step.pools?.[0]?.id || '0x0000000000000000000000000000000000000000000000000000000000000000',
+            inputTokenAddress,
+            outputTokenAddress,
+            inputAmount,
+            step.minAmountOut || 0,
+            walletBundlerAddress, // sender
+            recipient
+          ]
+        );
+
+        // Encode the function selector for encodeSingleSwap
+        const selector = ethers.utils.id('encodeSingleSwap(bytes32,address,address,uint256,uint256,address,address)').slice(0, 10);
+        encoderData.push(selector + encoderCalldata.slice(2));
+      }
+    } else if (step.protocol === 'uniswap') {
+      encoderTargets.push(uniswapEncoderAddress);
+
+      if (inputAmount.eq(ethers.constants.MaxUint256)) {
+        // Use all balance swap - encoder will query actual balance
+        const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
+          ['address', 'address', 'uint24', 'uint256', 'address', 'address'],
+          [
+            inputTokenAddress,
+            outputTokenAddress,
+            step.fee || 3000, // Default 0.3% fee
+            step.minAmountOut || 0,
+            walletBundlerAddress, // sender (encoder will query balance from this address)
+            recipient
+          ]
+        );
+
+        // Encode the function selector for encodeUseAllBalanceSwap (no sender param in signature)
+        const selector = ethers.utils.id('encodeUseAllBalanceSwap(address,address,uint24,uint256,address,address)').slice(0, 10);
+        encoderData.push(selector + encoderCalldata.slice(2));
+      } else {
+        // Regular swap with exact amount
+        const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
+          ['address', 'address', 'uint24', 'uint256', 'uint256', 'address'],
+          [
+            inputTokenAddress,
+            outputTokenAddress,
+            step.fee || 3000,
+            inputAmount,
+            step.minAmountOut || 0,
+            recipient
+          ]
+        );
+
+        // Encode the function selector for encodeSingleSwap (no sender param in signature)
+        const selector = ethers.utils.id('encodeSingleSwap(address,address,uint24,uint256,uint256,address)').slice(0, 10);
+        encoderData.push(selector + encoderCalldata.slice(2));
+      }
+    }
+  });
+
+  // Calculate minimum output with slippage
+  const minOutputAmount = executionPlan.minOutput ||
+                          executionPlan.route.totalOutput.mul(95).div(100); // 5% slippage
+
+  return {
+    fromToken: tokenIn.address || ETH_ADDRESS,
+    fromAmount: executionPlan.route.inputAmount ||
+                executionPlan.route.paths?.[0]?.inputAmount ||
+                executionPlan.route.splits?.reduce((sum, s) => sum.add(s.input || s.amount), BigNumber.from(0)) ||
+                BigNumber.from(0),
+    toToken: tokenOut.address || ETH_ADDRESS,
+    encoderTargets,
+    encoderData,
+    minOutputAmount,
+    // Additional metadata
+    metadata: {
+      routeType: executionPlan.route.type,
+      expectedOutput: executionPlan.route.totalOutput,
+      slippageTolerance: executionPlan.slippageTolerance,
+      steps: executionPlan.executionSteps.length
+    }
+  };
+}
+
+/**
+ * Helper function to mark split legs in execution plan
+ * @param {Object} executionPlan - The original execution plan
+ * @returns {Object} Modified plan with split indices
+ */
+export function markSplitLegs(executionPlan) {
+  const modifiedPlan = { ...executionPlan };
+
+  // Group steps by their input token, hop number, and path
+  const tokenUsage = new Map(); // Track how each token is used
+
+  modifiedPlan.executionSteps.forEach((step, index) => {
+    const inputTokenKey = `${step.inputToken?.address || step.inputToken?.symbol || step.inputToken || 'UNKNOWN'}`;
+    const hop = step.hop || Math.floor(index / 2); // Estimate hop if not provided
+
+    if (!tokenUsage.has(inputTokenKey)) {
+      tokenUsage.set(inputTokenKey, []);
+    }
+    tokenUsage.get(inputTokenKey).push({ step, index, hop });
+  });
+
+  // Analyze each token's usage
+  tokenUsage.forEach((usages, tokenKey) => {
+    if (usages.length === 1) {
+      // Single usage - use all available balance
+      usages[0].step.useAllBalance = true;
+      usages[0].step.splitIndex = 0;
+      usages[0].step.splitTotal = 1;
+    } else {
+      // Multiple usages of the same token
+      // Check if they're in the same hop (parallel split) or different hops (sequential)
+      const hopGroups = new Map();
+      usages.forEach(usage => {
+        const hop = usage.hop;
+        if (!hopGroups.has(hop)) {
+          hopGroups.set(hop, []);
+        }
+        hopGroups.get(hop).push(usage);
+      });
+
+      hopGroups.forEach((hopUsages) => {
+        if (hopUsages.length === 1) {
+          // Single usage in this hop - use all available
+          hopUsages[0].step.useAllBalance = true;
+          hopUsages[0].step.splitIndex = 0;
+          hopUsages[0].step.splitTotal = 1;
+        } else {
+          // Multiple parallel usages in same hop - this is a split
+          hopUsages.forEach((usage, splitIndex) => {
+            usage.step.splitIndex = splitIndex;
+            usage.step.splitTotal = hopUsages.length;
+            // Last leg of the split uses all remaining
+            usage.step.useAllBalance = (splitIndex === hopUsages.length - 1);
+          });
+        }
+      });
+    }
+  });
+
+  return modifiedPlan;
+}
+
+/**
+ * Determine if a step should use all available balance
+ * Based on the token flow analysis
+ */
+export function shouldUseAllBalance(step, executionPlan) {
+  // Special cases where we always use all balance:
+
+  // 1. If this is the only consumer of an intermediate token
+  // (e.g., tokenB in path: tokenA -> tokenB -> tokenC)
+  if (step.isOnlyConsumer) {
+    return true;
+  }
+
+  // 2. If marked as last leg of a split
+  if (step.useAllBalance) {
+    return true;
+  }
+
+  // 3. If input token is unique to this path
+  // (e.g., tokenD in: tokenA -> tokenD -> tokenC, when another path goes tokenA -> tokenB -> tokenC)
+  const inputToken = step.inputToken?.address || step.inputToken;
+  const allStepsUsingToken = executionPlan.executionSteps.filter(s =>
+    (s.inputToken?.address || s.inputToken) === inputToken
+  );
+  if (allStepsUsingToken.length === 1) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Convert execution plan to WalletBundler contract call arguments
  * @param {Object} executionPlan - The execution plan from createExecutionPlan
  * @param {Object} tokenIn - Input token object
@@ -1804,13 +2054,13 @@ export function convertExecutionPlanToContractArgs(executionPlan, tokenIn, token
     fromAmount: executionPlan.route.paths?.[0]?.inputAmount ||
                 executionPlan.route.splits?.reduce((sum, s) => sum.add(s.input || s.amount), BigNumber.from(0)) ||
                 BigNumber.from(0),
+    toToken: tokenOut.address || ETH_ADDRESS,
     targets,
     data,
     values,
     inputAmounts,
     outputTokens,
     wrapOperations,
-    minOutputAmount,
     // Additional metadata for reference
     metadata: {
       routeType: executionPlan.route.type,
