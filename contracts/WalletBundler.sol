@@ -158,8 +158,6 @@ contract WalletBundler {
         // Note: If fromToken is address(0), ETH is already received via msg.value
 
         results = new bool[](stepsLength);
-        uint256 ethBalanceBefore;
-        uint256 wethBalanceBefore;
         uint256 i;
 
         for (; i < stepsLength;) {
@@ -168,21 +166,13 @@ contract WalletBundler {
             // Call encoder to get target, calldata, input amount, and input token
             (address target, bytes memory callData, uint256 inputAmount, address tokenIn) = _callEncoder(encoderTargets[i], encoderData[i]);
 
-            if (wrapOp > 0) {
-                if (wrapOp == 2) {
-                    ethBalanceBefore = self.balance;
-                } else if (wrapOp == 4) {
-                    wethBalanceBefore = _getTokenBalance(WETH, self);
-                }
-
-                // Handle wrap/unwrap before
-                if (wrapOp == 1) {
-                    // Wrap ETH to WETH before - use exact amount from encoder
-                    _wrapETH(inputAmount);
-                } else if (wrapOp == 3) {
-                    // Unwrap WETH to ETH before - use exact amount from encoder
-                    _unwrapWETH(inputAmount);
-                }
+            // Handle wrap/unwrap before
+            if (wrapOp == 1) {
+                // Wrap ETH to WETH before - use exact amount from encoder
+                _wrapETH(inputAmount);
+            } else if (wrapOp == 3) {
+                // Unwrap WETH to ETH before - use exact amount from encoder
+                _unwrapWETH(inputAmount);
             }
 
             // ----------------------------------------------------------
@@ -190,76 +180,75 @@ contract WalletBundler {
             // ----------------------------------------------------------
             if (tokenIn != address(0)) {
                 if (target == UNIVERSAL_ROUTER) {
-                // Uniswap uses Permit2: Need two approvals
-
-                // Step 1: Check if token is approved to Permit2
-                uint256 tokenToPermit2Allowance = _getAllowance(tokenIn, PERMIT2);
-                if (tokenToPermit2Allowance < type(uint256).max / 2) {
-                    _approve(tokenIn, PERMIT2);  // Token → Permit2
-                }
-
-                // Step 2: Check if Permit2 has approved Universal Router (inline for gas savings)
-                uint256 permit2Allowance;
-                assembly {
-                    let ptr := mload(0x40)
-                    // Store allowance(address,address,address) selector
-                    mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
-                    mstore(add(ptr, 0x04), address()) // owner (this contract)
-                    mstore(add(ptr, 0x24), tokenIn)     // tokenIn
-                    mstore(add(ptr, 0x44), UNIVERSAL_ROUTER) // spender
-
-                    let success := staticcall(gas(), PERMIT2, ptr, 0x64, ptr, 0x60)
-                    if success {
-                        permit2Allowance := mload(ptr) // First return value is uint160 amount
+                    // Uniswap uses Permit2: Need two approvals
+                    // Step 1: Check if token is approved to Permit2
+                    uint256 tokenToPermit2Allowance = _getAllowance(tokenIn, PERMIT2);
+                    if (tokenToPermit2Allowance < type(uint256).max / 2) {
+                        _approve(tokenIn, PERMIT2);  // Token → Permit2
                     }
-                }
 
-                if (permit2Allowance < type(uint160).max / 2) {
-                    // Approve via Permit2
+                    // Step 2: Check if Permit2 has approved Universal Router (inline for gas savings)
+                    uint256 permit2Allowance;
                     assembly {
                         let ptr := mload(0x40)
-                        // Store approve(address,address,uint160,uint48) selector
-                        mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
-                        mstore(add(ptr, 0x04), tokenIn)                // tokenIn
-                        mstore(add(ptr, 0x24), UNIVERSAL_ROUTER)     // spender
-                        mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
-                        mstore(add(ptr, 0x64), add(timestamp(), EXPIRATION_OFFSET)) // expiration
+                        // Store allowance(address,address,address) selector
+                        mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
+                        mstore(add(ptr, 0x04), address()) // owner (this contract)
+                        mstore(add(ptr, 0x24), tokenIn)     // tokenIn
+                        mstore(add(ptr, 0x44), UNIVERSAL_ROUTER) // spender
 
-                        let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
-                        if iszero(success) { revert(0, 0) }
+                        let success := staticcall(gas(), PERMIT2, ptr, 0x64, ptr, 0x60)
+                        if success {
+                            permit2Allowance := mload(ptr) // First return value is uint160 amount
+                        }
+                    }
+
+                    if (permit2Allowance < type(uint160).max / 2) {
+                        // Approve via Permit2
+                        assembly {
+                            let ptr := mload(0x40)
+                            // Store approve(address,address,uint160,uint48) selector
+                            mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
+                            mstore(add(ptr, 0x04), tokenIn)                // tokenIn
+                            mstore(add(ptr, 0x24), UNIVERSAL_ROUTER)     // spender
+                            mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
+                            mstore(add(ptr, 0x64), add(timestamp(), EXPIRATION_OFFSET)) // expiration
+
+                            let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
+                            if iszero(success) { revert(0, 0) }
+                        }
+                    }
+                } else if (target == BALANCER_VAULT) {
+                    // Balancer: Check direct allowance
+                    uint256 directAllowance = _getAllowance(tokenIn, BALANCER_VAULT);
+                    if (directAllowance < type(uint256).max / 2) {
+                        _approve(tokenIn, BALANCER_VAULT);
                     }
                 }
-            } else if (target == BALANCER_VAULT) {
-                // Balancer: Check direct allowance
-                uint256 directAllowance = _getAllowance(tokenIn, BALANCER_VAULT);
-                if (directAllowance < type(uint256).max / 2) {
-                    _approve(tokenIn, BALANCER_VAULT);
-                }
-            }
             }
 
             // ----------------
-            // Execute the swap
+            // Execute the swap and capture return value
             // ----------------
-            (bool success,) = target.call{value: 0}(callData);
+            (bool success, bytes memory returnData) = target.call{value: 0}(callData);
             results[i] = success;
             if (!success) revert CallFailed();
 
-            // Handle wrap/unwrap after based on output amount deltas
-            if (wrapOp == 2) {
-                // Wrap after - only wrap the ETH output from trade
-                uint256 ethBalanceAfter = self.balance;
-                if (ethBalanceAfter > ethBalanceBefore) {
-                    uint256 outputAmount = ethBalanceAfter - ethBalanceBefore;
-                    _wrapETH(outputAmount);
+            // Decode the output amount from return data
+            uint256 outputAmount;
+            if (returnData.length >= 32) {
+                assembly {
+                    outputAmount := mload(add(returnData, 0x20))
                 }
-            } else if (wrapOp == 4) {
-                // Unwrap after - only unwrap the WETH output from trade
-                uint256 wethBalanceAfter = _getTokenBalance(WETH, self);
-                if (wethBalanceAfter > wethBalanceBefore) {
-                    uint256 outputAmount = wethBalanceAfter - wethBalanceBefore;
-                    _unwrapWETH(outputAmount);
-                }
+            }
+
+            // Handle wrap/unwrap after based on actual output amount
+            if (wrapOp == 2 && outputAmount > 0) {
+                // Wrap after - wrap the exact ETH output amount
+                _wrapETH(outputAmount);
+            } else if (wrapOp == 4 && outputAmount > 0) {
+                // Unwrap after - unwrap the exact WETH output amount
+                _unwrapWETH(outputAmount);
             }
 
             unchecked { ++i; }

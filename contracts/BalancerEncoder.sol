@@ -43,9 +43,6 @@ contract BalancerEncoder {
      * @param tokenOut Address of output token
      * @param amountIn Amount of input tokens (or type(uint256).max for "use all")
      * @param minAmountOut Minimum acceptable output
-     * @param sender Address that holds the input tokens
-     * @param recipient Address to receive output tokens
-
      * @return target The Vault contract address
      * @return callData The encoded swap call
      * @return inputAmount The actual amount to be used (for wrap/unwrap operations)
@@ -56,9 +53,7 @@ contract BalancerEncoder {
         address tokenIn,
         address tokenOut,
         uint256 amountIn,
-        uint256 minAmountOut,
-        address sender,
-        address recipient
+        uint256 minAmountOut
     ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
         SingleSwap memory singleSwap = SingleSwap({
             poolId: poolId,
@@ -70,9 +65,9 @@ contract BalancerEncoder {
         });
 
         FundManagement memory funds = FundManagement({
-            sender: sender,
+            sender: msg.sender,  // Always the calling WalletBundler
             fromInternalBalance: false,
-            recipient: payable(recipient),
+            recipient: payable(msg.sender),  // Always the calling WalletBundler
             toInternalBalance: false
         });
 
@@ -95,9 +90,6 @@ contract BalancerEncoder {
      * @param assets Array of token addresses involved in the swap
      * @param amountIn Amount of first asset to swap
      * @param minAmountOut Minimum acceptable output of last asset
-     * @param sender Address that holds the input tokens
-     * @param recipient Address to receive output tokens
-
      * @return target The Vault contract address
      * @return callData The encoded batchSwap call
      */
@@ -105,9 +97,7 @@ contract BalancerEncoder {
         bytes32[] calldata poolIds,
         address[] calldata assets,
         uint256 amountIn,
-        uint256 minAmountOut,
-        address sender,
-        address recipient
+        uint256 minAmountOut
     ) external view returns (address target, bytes memory callData) {
         require(poolIds.length > 0 && poolIds.length == assets.length - 1, "Invalid path");
 
@@ -143,9 +133,9 @@ contract BalancerEncoder {
         limits[assets.length - 1] = -int256(minAmountOut); // Minimum we'll receive (negative)
 
         FundManagement memory funds = FundManagement({
-            sender: sender,
+            sender: msg.sender,  // Always the calling WalletBundler
             fromInternalBalance: false,
-            recipient: payable(recipient),
+            recipient: payable(msg.sender),  // Always the calling WalletBundler
             toInternalBalance: false
         });
 
@@ -171,9 +161,6 @@ contract BalancerEncoder {
      * @param tokenIn Address of input token
      * @param tokenOut Address of output token
      * @param minAmountOut Minimum acceptable output (can be 0 for intermediate)
-     * @param sender Address that holds the input tokens
-     * @param recipient Address to receive output tokens
-
      * @return target The Vault contract address
      * @return callData The encoded swap call with actual balance
      * @return inputAmount Returns the actual balance amount
@@ -183,12 +170,10 @@ contract BalancerEncoder {
         bytes32 poolId,
         address tokenIn,
         address tokenOut,
-        uint256 minAmountOut,
-        address sender,
-        address recipient
+        uint256 minAmountOut
     ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
         // Get the actual token balance using optimized assembly
-        uint256 actualBalance = _getTokenBalance(tokenIn, sender);
+        uint256 actualBalance = _getTokenBalance(tokenIn, msg.sender);
 
         SingleSwap memory singleSwap = SingleSwap({
             poolId: poolId,
@@ -200,9 +185,9 @@ contract BalancerEncoder {
         });
 
         FundManagement memory funds = FundManagement({
-            sender: sender,
+            sender: msg.sender,  // Always the calling WalletBundler
             fromInternalBalance: false,
-            recipient: payable(recipient),
+            recipient: payable(msg.sender),  // Always the calling WalletBundler
             toInternalBalance: false
         });
 

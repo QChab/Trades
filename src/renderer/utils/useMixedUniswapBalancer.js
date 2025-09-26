@@ -2046,9 +2046,6 @@ export function convertExecutionPlanToContractArgs(executionPlan, tokenIn, token
     wrapOperations.push(wrapOp);
   }
 
-  // Calculate minimum output amount with slippage
-  const minOutputAmount = executionPlan.minOutput || BigNumber.from(0);
-
   return {
     fromToken: tokenIn.address || ETH_ADDRESS,
     fromAmount: executionPlan.route.paths?.[0]?.inputAmount ||

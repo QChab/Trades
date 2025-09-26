@@ -37,7 +37,6 @@ contract UniswapEncoder {
      * @param fee Pool fee tier (500, 3000, 10000 for 0.05%, 0.3%, 1%)
      * @param amountIn Amount of input tokens
      * @param minAmountOut Minimum acceptable output
-     * @param recipient Address to receive output tokens
      * @return target The Universal Router address
      * @return callData The encoded swap call
      * @return inputAmount The actual amount to be used (for wrap/unwrap operations)
@@ -48,8 +47,7 @@ contract UniswapEncoder {
         address tokenOut,
         uint24 fee,
         uint256 amountIn,
-        uint256 minAmountOut,
-        address recipient
+        uint256 minAmountOut
     ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
         bytes memory commands = abi.encodePacked(V4_SWAP);
 
@@ -57,7 +55,7 @@ contract UniswapEncoder {
             tokenIn: tokenIn,
             tokenOut: tokenOut,
             fee: fee,
-            recipient: recipient,
+            recipient: msg.sender,  // Always the calling WalletBundler
             amountIn: amountIn,
             amountOutMinimum: minAmountOut,
             sqrtPriceLimitX96: 0
@@ -83,21 +81,19 @@ contract UniswapEncoder {
      * @param path Encoded path (token0, fee0, token1, fee1, token2...)
      * @param amountIn Amount of first token to swap
      * @param minAmountOut Minimum acceptable output of last token
-     * @param recipient Address to receive output tokens
      * @return target The Universal Router address
      * @return callData The encoded swap call
      */
     function encodeMultiHopSwap(
         bytes calldata path,
         uint256 amountIn,
-        uint256 minAmountOut,
-        address recipient
+        uint256 minAmountOut
     ) external view returns (address target, bytes memory callData) {
         bytes memory commands = abi.encodePacked(V4_SWAP);
 
         ExactInputParams memory params = ExactInputParams({
             path: path,
-            recipient: recipient,
+            recipient: msg.sender,  // Always the calling WalletBundler
             amountIn: amountIn,
             amountOutMinimum: minAmountOut
         });
@@ -125,8 +121,6 @@ contract UniswapEncoder {
      * @param tokenOut Address of output token
      * @param fee Pool fee tier
      * @param minAmountOut Minimum acceptable output (can be 0)
-     * @param sender Address that holds the input tokens (WalletBundler)
-     * @param recipient Address to receive output tokens
      * @return target The Universal Router address
      * @return callData The encoded swap with actual balance
      * @return inputAmount Returns the actual balance amount
@@ -136,18 +130,16 @@ contract UniswapEncoder {
         address tokenIn,
         address tokenOut,
         uint24 fee,
-        uint256 minAmountOut,
-        address sender,
-        address recipient
+        uint256 minAmountOut
     ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
         // Get the actual balance (ETH or token)
         uint256 actualBalance;
         if (tokenIn == address(0)) {
             // ETH balance
-            actualBalance = sender.balance;
+            actualBalance = msg.sender.balance;
         } else {
             // Token balance using optimized assembly
-            actualBalance = _getTokenBalance(tokenIn, sender);
+            actualBalance = _getTokenBalance(tokenIn, msg.sender);
         }
 
         bytes memory commands = abi.encodePacked(V4_SWAP);
@@ -156,7 +148,7 @@ contract UniswapEncoder {
             tokenIn: tokenIn,
             tokenOut: tokenOut,
             fee: fee,
-            recipient: recipient,
+            recipient: msg.sender,  // Always the calling WalletBundler
             amountIn: actualBalance, // Use actual balance instead of max marker
             amountOutMinimum: minAmountOut,
             sqrtPriceLimitX96: 0
