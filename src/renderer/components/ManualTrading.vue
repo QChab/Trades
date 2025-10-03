@@ -627,6 +627,7 @@ import deleteImage from '@/../assets/delete.svg';
 import { useUniswapV4 } from '../composables/useUniswap';
 import { useBalancerV3 } from '../composables/useBalancer';
 import { useChainlinkPrice } from '../composables/useChainlinkPrice';
+import { useMixedUniswapBalancer } from '../utils/useMixedUniswapBalancer';
 import spaceThousands from '../composables/spaceThousands';
 import OrderBookLevels from './OrderBookLevels.vue';
 import ConfirmationModal from './ConfirmationModal.vue';
@@ -1375,230 +1376,122 @@ export default {
         isUsingUniswap = false
 
       // Handle mixed trades if enabled
-      let bestMixed, fractionMixed;
-      if (shouldUseUniswapAndBalancerValue && results[0]?.value && results[0].value[100] && results[2].status === 'fulfilled') {
-        const balancerResults = await Promise.allSettled([
-          (shouldUseUniswapAndBalancerValue)
-            ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .10, senderAddr, false) : null,
-          (shouldUseUniswapAndBalancerValue)
-            ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .25, senderAddr, false) : null,
-          (shouldUseUniswapAndBalancerValue)
-            ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .50, senderAddr, false) : null,
-          (shouldUseUniswapAndBalancerValue) 
-            ? getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .75, senderAddr, false) : null,
-        ])
-        // Only proceed with mixed if we have valid Balancer results
-        let best25U, best50U, best75U, best90U;
-        // Use gasLimit from the small Balancer test trade, or fallback to Uniswap gasLimit or default
-        const gasLimitForMixed = results[2]?.value?.gasLimit || uniswapGasLimit || 300000;
-        if (balancerResults[3].status === 'fulfilled') 
-          best25U = findBestMixedTrades(results[0].value[25], balancerResults[3], toTokenAddr, gasLimitForMixed);
-        if (balancerResults[2].status === 'fulfilled')
-          best50U = findBestMixedTrades(results[0].value[50], balancerResults[2], toTokenAddr, gasLimitForMixed);
-        if (balancerResults[1].status === 'fulfilled')
-          best75U = findBestMixedTrades(results[0].value[75], balancerResults[1], toTokenAddr, gasLimitForMixed);
-        if (balancerResults[0].status === 'fulfilled')
-          best90U = findBestMixedTrades(results[0].value[90], balancerResults[0], toTokenAddr, gasLimitForMixed);
+      let bestMixed, fractionMixed, mixedRoute;
+      if (shouldUseUniswapAndBalancerValue) {
+        try {
+          console.log('🔄 Fetching mixed route using useMixedUniswapBalancer...');
 
-        console.log({
-          best90U: best90U?.outputAmount?.toString(),
-          best75U: best75U?.outputAmount?.toString(),
-          best50U: best50U?.outputAmount?.toString(),
-          best25U: best25U?.outputAmount?.toString(),
-        })
+          // Call the utils function to get optimized mixed route
+          const mixedResult = await useMixedUniswapBalancer({
+            tokenInObject: fromToken,
+            tokenOutObject: toToken,
+            amountIn: amount,
+            provider: toRaw(props.provider),
+            slippageTolerance: 0.5,
+            maxHops: 3,
+            useUniswap: true,
+            useBalancer: true
+          });
 
-        const onlyMixedEnabled = shouldUseUniswapAndBalancerValue && !shouldUseUniswapValue && !shouldUseBalancerValue;
-        
-        // Find the best mixed trade
-        const mixedOptions = [];
-        if (best25U)
-          mixedOptions.push({ trade: best25U, fraction: 25 })
-        if (best50U)
-          mixedOptions.push({ trade: best50U, fraction: 50 })
-        if (best75U)
-          mixedOptions.push({ trade: best75U, fraction: 75 })
-        if (best90U)
-          mixedOptions.push({ trade: best90U, fraction: 90 })
+          if (mixedResult && mixedResult.bestRoute && mixedResult.bestRoute.totalOutput) {
+            mixedRoute = mixedResult.bestRoute;
+            console.log('✅ Mixed route found:', {
+              type: mixedRoute.type,
+              totalOutput: ethers.utils.formatUnits(mixedRoute.totalOutput, toToken.decimals),
+              splits: mixedRoute.splits?.map(s => ({
+                protocol: s.protocol,
+                percentage: `${(s.percentage * 100).toFixed(1)}%`,
+                output: ethers.utils.formatUnits(s.output, toToken.decimals)
+              }))
+            });
 
-        mixedOptions.sort((a, b) => {
-          // Handle sorting when trades have negative outputs
-          const aIsNegative = a.trade.outputAmount.eq(0) && a.trade.negativeOutput;
-          const bIsNegative = b.trade.outputAmount.eq(0) && b.trade.negativeOutput;
-          
-          if (aIsNegative && bIsNegative) {
-            // Both negative - sort by less negative (smaller absolute loss)
-            if (a.trade.negativeOutput.lt(b.trade.negativeOutput)) return -1;
-            if (b.trade.negativeOutput.lt(a.trade.negativeOutput)) return 1;
-            return 0;
-          } else if (aIsNegative) {
-            // a is negative, b is positive - b is better
-            return 1;
-          } else if (bIsNegative) {
-            // b is negative, a is positive - a is better
-            return -1;
-          } else {
-            // Both positive - normal comparison (higher output is better)
-            if (b.trade.outputAmount.gt(a.trade.outputAmount)) return 1;
-            if (a.trade.outputAmount.gt(b.trade.outputAmount)) return -1;
-            return 0;
-          }
-        });
+            // Calculate gas offset for mixed route
+            let offsetMixed, outputMixed, negativeOutputMixed;
+            if (props.gasPrice && props.ethPrice && toToken.price) {
+              const mixedGasLimit = mixedRoute.estimatedGas || 500000;
+              offsetMixed = BigNumber.from(Math.ceil((mixedGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, toToken.decimals) / toToken.price).toPrecision(50).split('.')[0]);
 
-        let bestMixedOption = mixedOptions[0];
-
-        if (!bestMixedOption || (bestMixedOption?.fraction === 90)) {
-          console.log('No mixed trades found');
-          // Check if the 0.01 Balancer test from the initial batch succeeded
-          // results[5] is the 0.01 test from the initial Promise.allSettled
-
-          const resultsSmaller = await Promise.allSettled([
-            Promise.resolve(results[2].value || null),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .02, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .03, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .05, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .07, senderAddr, false)
-          ]);
-          for (let i = 0 ; i < resultsSmaller.length ; i++) {
-            const res = resultsSmaller[i];
-            const fraction = [99, 98, 97, 95, 93][i]
-            if (res && res.status === 'fulfilled' && res.value) {
-              const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              // Include all trades, even negative (to find least bad option)
-              mixedOptions.push({ trade, fraction: fraction });
-            }
-          }
-          
-        }
-
-        if (bestMixedOption?.fraction === 50) {
-          console.log('Best fraction is 50%, trying other fractions');
-          const resultsOther = await Promise.allSettled([
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .4, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .6, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .45, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .55, senderAddr, false),
-          ]);
-          for (let i = 0 ; i < resultsOther.length ; i++) {
-            const res = resultsOther[i];
-            const fraction = [60, 40, 55, 45][i]
-            if (res && res.status === 'fulfilled' && res.value) {
-              const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              // Include all trades, even negative (to find least bad option)
-              mixedOptions.push({ trade, fraction: fraction });
-            }
-          }
-        }
-       
-        if (bestMixedOption?.fraction === 75) {
-          console.log('Best fraction is 75%, trying other fractions');
-          const resultsOther = await Promise.allSettled([
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .3, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .2, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .35, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .15, senderAddr, false),
-          ]);
-          for (let i = 0 ; i < resultsOther.length ; i++) {
-            const res = resultsOther[i];
-            const fraction = [70, 80, 65, 85][i]
-            if (res && res.status === 'fulfilled' && res.value) {
-              const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              // Include all trades, even negative (to find least bad option)
-              mixedOptions.push({ trade, fraction: fraction });
-            }
-          }
-        }
-       
-        if (bestMixedOption?.fraction === 25) {
-          console.log('Best fraction is 25%, trying other fractions');
-          const resultsOther = await Promise.allSettled([
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .8, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .7, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .85, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .9, senderAddr, false),
-            getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .65, senderAddr, false),
-          ]);
-          for (let i = 0 ; i < resultsOther.length ; i++) {
-            const res = resultsOther[i];
-            const fraction = [20, 30, 15, 10, 35][i]
-            if (res && res.status === 'fulfilled' && res.value) {
-              const trade = findBestMixedTrades(results[0].value[fraction], res, toTokenAddr, res.value.gasLimit)
-              // Include all trades, even negative (to find least bad option)
-              mixedOptions.push({ trade, fraction: fraction });
-            }
-          }
-        }
-        console.log('Mixed options:', mixedOptions);
-        // Sort by output amount (highest first)
-        mixedOptions.sort((a, b) => {
-          // Handle sorting when trades have negative outputs
-          const aIsNegative = a.trade.outputAmount.eq(0) && a.trade.negativeOutput;
-          const bIsNegative = b.trade.outputAmount.eq(0) && b.trade.negativeOutput;
-          
-          if (aIsNegative && bIsNegative) {
-            // Both negative - sort by less negative (smaller absolute loss)
-            if (a.trade.negativeOutput.lt(b.trade.negativeOutput)) return -1;
-            if (b.trade.negativeOutput.lt(a.trade.negativeOutput)) return 1;
-            return 0;
-          } else if (aIsNegative) {
-            // a is negative, b is positive - b is better
-            return 1;
-          } else if (bIsNegative) {
-            // b is negative, a is positive - a is better
-            return -1;
-          } else {
-            // Both positive - normal comparison (higher output is better)
-            if (b.trade.outputAmount.gt(a.trade.outputAmount)) return 1;
-            if (a.trade.outputAmount.gt(b.trade.outputAmount)) return -1;
-            return 0;
-          }
-        });
-
-        bestMixedOption = mixedOptions[0];
-
-        if (onlyMixedEnabled) {
-          // When only mixed trades are enabled, always select the best one
-          bestMixed = bestMixedOption.trade;
-          fractionMixed = bestMixedOption.fraction;
-        } else {
-          if (bestMixedOption && bestMixedOption.trade) {
-            let hasBetterOutput = false;
-            
-            // If both single protocols and mixed trade are unprofitable, compare negative values
-            if (bestOutputLessGas && bestOutputLessGas.eq && bestOutputLessGas.eq(0) && 
-                bestMixedOption.trade.outputAmount.eq(0) && 
-                bestNegativeOutput && bestMixedOption.trade.negativeOutput) {
-              // Both are negative - choose the less negative (smaller absolute loss)
-              hasBetterOutput = bestMixedOption.trade.negativeOutput.lt(bestNegativeOutput);
-              console.log('Comparing negative outputs - mixed vs single protocol');
+              if (mixedRoute.totalOutput.gte(offsetMixed)) {
+                outputMixed = mixedRoute.totalOutput.sub(offsetMixed);
+              } else {
+                negativeOutputMixed = offsetMixed.sub(mixedRoute.totalOutput);
+                outputMixed = BigNumber.from('0');
+              }
             } else {
-              // Normal comparison when at least one is profitable
-              hasBetterOutput = !bestOutputLessGas || 
-                (bestMixedOption.trade.outputAmount && 
-                  typeof bestMixedOption.trade.outputAmount.gte === 'function' && 
-                  bestMixedOption.trade.outputAmount.gte(bestOutputLessGas));
+              outputMixed = mixedRoute.totalOutput;
             }
-            
-            if (hasBetterOutput) {
-              bestMixed = bestMixedOption.trade;
-              fractionMixed = bestMixedOption.fraction;
+
+            // Compare mixed route with single-protocol routes
+            const onlyMixedEnabled = shouldUseUniswapAndBalancerValue && !shouldUseUniswapValue && !shouldUseBalancerValue;
+
+            if (onlyMixedEnabled) {
+              // When only mixed trades enabled, always use it
+              bestMixed = {
+                outputAmount: outputMixed,
+                rawTotalOutput: mixedRoute.totalOutput,
+                negativeOutput: negativeOutputMixed,
+                route: mixedRoute,
+                executionPlan: mixedResult.executionPlan
+              };
+            } else {
+              // Compare with single-protocol routes
+              let hasBetterOutput = false;
+
+              if (bestOutputLessGas && typeof bestOutputLessGas.eq === 'function' &&
+                  bestOutputLessGas.eq(0) && outputMixed.eq(0) &&
+                  bestNegativeOutput && negativeOutputMixed) {
+                // Both negative - choose less negative
+                hasBetterOutput = negativeOutputMixed.lt(bestNegativeOutput);
+                console.log('Comparing negative outputs - mixed vs single protocol');
+              } else if (outputMixed.gt(0)) {
+                // Mixed route is profitable
+                hasBetterOutput = !bestOutputLessGas || outputMixed.gte(bestOutputLessGas);
+              }
+
+              if (hasBetterOutput) {
+                bestMixed = {
+                  outputAmount: outputMixed,
+                  rawTotalOutput: mixedRoute.totalOutput,
+                  negativeOutput: negativeOutputMixed,
+                  route: mixedRoute,
+                  executionPlan: mixedResult.executionPlan
+                };
+
+                // Calculate effective split percentage for display
+                if (mixedRoute.splits && mixedRoute.splits.length > 0) {
+                  const balancerSplit = mixedRoute.splits.find(s => s.protocol === 'balancer');
+                  if (balancerSplit) {
+                    fractionMixed = Math.round((1 - balancerSplit.percentage) * 100);
+                  }
+                }
+              }
             }
+          } else {
+            console.log('⚠️ No mixed route found');
           }
+        } catch (error) {
+          console.error('❌ Error fetching mixed route:', error);
         }
       }
 
       // Build final trade result
       let finalTrades, finalTotalHuman, protocol, finalGasLimit;
-      
+
       if (bestMixed) {
-        console.log(bestMixed)
+        console.log('Using mixed route:', bestMixed);
         // Always use raw total output for display (before gas costs)
         totalHuman = ethers.utils.formatUnits(bestMixed.rawTotalOutput, toToken.decimals);
-        finalTrades = [
-          ...bestMixed.tradesU.validTrades,
-          bestMixed.tradesB,
-        ];
-        protocol = 'Uniswap & Balancer';
-        finalGasLimit = Number(120000 + 60000 * bestMixed.tradesU.validTrades.length) + Number(bestMixed.tradesB.gasLimit);
+
+        // Store the execution plan and route for later use
+        finalTrades = [{
+          route: bestMixed.route,
+          executionPlan: bestMixed.executionPlan,
+          outputAmount: bestMixed.rawTotalOutput,
+          isMixed: true
+        }];
+
+        protocol = 'Contract';
+        finalGasLimit = bestMixed.route.estimatedGas || 500000;
       } else if (isUsingUniswap) {
         finalTrades = validTrades;
         protocol = 'Uniswap';
@@ -5057,7 +4950,7 @@ export default {
 
       // Check for existing bundler
       if (senderDetails.value?.address) {
-        const result = await window.electronAPI.getBundler(senderDetails.value.address);
+        const result = await window.electronAPI.getBundler(senderDetails.value.address, undefined);
         if (result.success && result.address) {
           contractAddress[senderDetails.value.address] = result.address;
         }
@@ -5072,7 +4965,7 @@ export default {
         isDeploying.value = true;
         swapMessage.value = 'Deploying bundler contract...';
 
-        const result = await window.electronAPI.deployBundler(senderDetails.value.address);
+        const result = await window.electronAPI.deployBundler(senderDetails.value.address, undefined);
 
         if (result.success && result.address) {
           contractAddress[senderDetails.value.address] = result.address;

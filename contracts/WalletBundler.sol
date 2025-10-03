@@ -20,6 +20,7 @@ contract WalletBundler {
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
     address private constant BALANCER_VAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8; // Balancer V3
     uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
+    uint256 private constant APPROVAL_THRESHOLD = 1e45; // Gas-optimized approval check threshold
 
     error Unauthorized();
     error CallFailed();
@@ -152,7 +153,7 @@ contract WalletBundler {
         uint256 stepsLength = encoderTargets.length;
 
         // Transfer input tokens if needed
-        if (fromToken != address(0) && fromAmount != 0) {
+        if (fromToken != address(0)) {
             _transferFromToken(fromToken, owner, self, fromAmount);
         }
         // Note: If fromToken is address(0), ETH is already received via msg.value
@@ -180,20 +181,15 @@ contract WalletBundler {
             // ----------------------------------------------------------
             if (tokenIn != address(0)) {
                 if (target == UNIVERSAL_ROUTER) {
-                    // Uniswap uses Permit2: Need two approvals
-                    // Step 1: Check if token is approved to Permit2
-                    uint256 tokenToPermit2Allowance = _getAllowance(tokenIn, PERMIT2);
-                    if (tokenToPermit2Allowance < 1000000000000000000000000000000000000000000000) {
-                        _approve(tokenIn, PERMIT2);  // Token → Permit2
-                    }
-
-                    // Step 2: Check if Permit2 has approved Universal Router (inline for gas savings)
+                    // Uniswap uses Permit2: Only check Permit2→UniversalRouter (decrements)
+                    // Token→Permit2 with max uint256 never decrements, so no need to check
                     uint256 permit2Allowance;
+                    address contractAddr = self;
                     assembly {
                         let ptr := mload(0x40)
                         // Store allowance(address,address,address) selector
                         mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
-                        mstore(add(ptr, 0x04), address()) // owner (this contract)
+                        mstore(add(ptr, 0x04), contractAddr) // owner (this contract)
                         mstore(add(ptr, 0x24), tokenIn)     // tokenIn
                         mstore(add(ptr, 0x44), UNIVERSAL_ROUTER) // spender
 
@@ -203,8 +199,11 @@ contract WalletBundler {
                         }
                     }
 
-                    if (permit2Allowance < 1000000000000000000000000000000000000000000000) {
-                        // Approve via Permit2
+                    if (permit2Allowance < APPROVAL_THRESHOLD) {
+                        // Approve both Token→Permit2 and Permit2→UniversalRouter
+                        _approve(tokenIn, PERMIT2);  // Token → Permit2 (max uint256, never decrements)
+
+                        // Approve Permit2 → UniversalRouter (uint160 max, does decrement)
                         assembly {
                             let ptr := mload(0x40)
                             // Store approve(address,address,uint160,uint48) selector
@@ -221,7 +220,7 @@ contract WalletBundler {
                 } else if (target == BALANCER_VAULT) {
                     // Balancer: Check direct allowance
                     uint256 directAllowance = _getAllowance(tokenIn, BALANCER_VAULT);
-                    if (directAllowance < 1000000000000000000000000000000000000000000000) {
+                    if (directAllowance < APPROVAL_THRESHOLD) {
                         _approve(tokenIn, BALANCER_VAULT);
                     }
                 }
@@ -230,7 +229,8 @@ contract WalletBundler {
             // ----------------
             // Execute the swap and capture return value
             // ----------------
-            (bool success, bytes memory returnData) = target.call{value: 0}(callData);
+            uint256 callValue = tokenIn == address(0) ? inputAmount : 0;
+            (bool success, bytes memory returnData) = target.call{value: callValue}(callData);
             results[i] = success;
             if (!success) revert CallFailed();
 
@@ -275,11 +275,12 @@ contract WalletBundler {
      * @dev Check ERC20 allowance
      */
     function _getAllowance(address token, address spender) private view returns (uint256 allowance) {
+        address contractAddr = self;
         assembly {
             let ptr := mload(0x40)
             // Store allowance(address,address) selector
             mstore(ptr, 0xdd62ed3e00000000000000000000000000000000000000000000000000000000)
-            mstore(add(ptr, 0x04), address()) // owner (this contract)
+            mstore(add(ptr, 0x04), contractAddr) // owner (this contract)
             mstore(add(ptr, 0x24), spender)   // spender
 
             let success := staticcall(gas(), token, ptr, 0x44, ptr, 0x20)

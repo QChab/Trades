@@ -1094,11 +1094,11 @@ function createWindow() {
     return approveSpender({from, contractAddress, spender, permit2Spender});
   });
 
-  ipcMain.handle('deploy-bundler', async (event, walletAddress, salt = 0) => {
+  ipcMain.handle('deploy-bundler', async (event, walletAddress, registryAddress) => {
     try {
       const wallet = getWallet(walletAddress.toLowerCase(), true);
-      const bundlerManager = new BundlerManager(provider, wallet);
-      const bundlerContract = await bundlerManager.deployBundler(salt);
+      const bundlerManager = new BundlerManager(provider, wallet, registryAddress);
+      const bundlerContract = await bundlerManager.deployBundler();
       return { success: true, address: bundlerContract.address };
     } catch (error) {
       console.error('Bundler deployment error:', error);
@@ -1106,14 +1106,46 @@ function createWindow() {
     }
   });
 
-  ipcMain.handle('get-bundler', async (event, walletAddress) => {
+  ipcMain.handle('get-bundler', async (event, walletAddress, registryAddress) => {
     try {
       const wallet = getWallet(walletAddress.toLowerCase(), true);
-      const bundlerManager = new BundlerManager(provider, wallet);
+      const bundlerManager = new BundlerManager(provider, wallet, registryAddress);
       const bundlerContract = await bundlerManager.getBundler(walletAddress);
       return { success: true, address: bundlerContract ? bundlerContract.address : null };
     } catch (error) {
       console.error('Get bundler error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('approve-bundler', async (event, walletAddress, tokenAddress, registryAddress) => {
+    try {
+      const wallet = getWallet(walletAddress.toLowerCase(), true);
+      const bundlerManager = new BundlerManager(provider, wallet, registryAddress);
+
+      // Get bundler address from registry
+      const bundlerContract = await bundlerManager.getBundler(walletAddress);
+      if (!bundlerContract) {
+        return { success: false, error: 'No bundler found for this wallet' };
+      }
+
+      // Create token contract
+      const tokenContract = new ethers.Contract(
+        tokenAddress,
+        ['function approve(address,uint256) returns (bool)', 'function allowance(address,address) view returns (uint256)'],
+        wallet
+      );
+
+      // Approve bundler to spend tokens
+      const approved = await bundlerManager.approveBundler(
+        tokenContract,
+        bundlerContract.address,
+        walletAddress
+      );
+
+      return { success: true, approved, bundlerAddress: bundlerContract.address };
+    } catch (error) {
+      console.error('Approve bundler error:', error);
       return { success: false, error: error.message };
     }
   });

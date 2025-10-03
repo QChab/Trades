@@ -45,6 +45,13 @@ The application integrates with multiple DEXs through a unified interface:
 - **Balancer**: Via Vault contract (0xBA12222222228d8Ba445958a75a0704d566BF2C8)
 - **Permit2**: For secure token approvals (0x000000000022D473030F116dDEE9F6B43aC78BA3)
 
+#### Protocol Return Values
+The `bestTrade` routing system can return one of four protocol identifiers:
+- **"Uniswap"**: Direct Uniswap V4 execution via Universal Router
+- **"Balancer"**: Direct Balancer V3 execution via Vault contract
+- **"Contract"**: WalletBundler contract execution for MEV-protected multi-DEX atomic trades
+- **"1inch"**: 1inch aggregator integration (limited use due to API restrictions)
+
 #### Order Management System
 - **Manual Trading**: Market and limit orders with price inversion support
 - **Automatic Trading**: Grid trading with buy/sell levels based on token price matrices

@@ -1,79 +1,68 @@
 import { ethers } from 'ethers';
-import WalletBundlerABI from '../../contracts/WalletBundler.json';
-import WalletBundlerFactoryABI from '../../contracts/WalletBundlerFactory.json';
+import WalletBundlerABI from '../../artifacts/contracts/WalletBundler.sol/WalletBundler.json';
+import BundlerRegistryABI from '../../artifacts/contracts/BundlerRegistry.sol/BundlerRegistry.json';
 
-const FACTORY_ADDRESS = '0x...'; // To be deployed
+const REGISTRY_ADDRESS = '0x...'; // To be deployed
 const UNIVERSAL_ROUTER_ADDRESS = '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD';
 const BALANCER_VAULT_ADDRESS = '0xBA12222222228d8Ba445958a75a0704d566BF2C8';
 
 export class BundlerManager {
-  constructor(provider, signer) {
+  constructor(provider, signer, registryAddress = REGISTRY_ADDRESS) {
     this.provider = provider;
     this.signer = signer;
-    this.factory = new ethers.Contract(FACTORY_ADDRESS, WalletBundlerFactoryABI, signer);
+    this.registry = new ethers.Contract(registryAddress, BundlerRegistryABI, signer);
   }
 
   /**
-   * Deploy a bundler contract for the current wallet
+   * Deploy a bundler contract for the current wallet and register it
    */
-  async deployBundler(salt = 0) {
-    const tx = await this.factory.deployBundler(salt);
-    const receipt = await tx.wait();
-    
-    // Get deployed address from events
-    const event = receipt.events.find(e => e.event === 'BundlerDeployed');
-    const bundlerAddress = event.args.bundler;
-    
-    return new ethers.Contract(bundlerAddress, WalletBundlerABI, this.signer);
+  async deployBundler() {
+    // Deploy WalletBundler directly
+    const WalletBundlerFactory = new ethers.ContractFactory(
+      WalletBundlerABI,
+      WalletBundlerABI.bytecode,
+      this.signer
+    );
+
+    const bundler = await WalletBundlerFactory.deploy();
+    await bundler.deployed();
+
+    // Register the bundler address in the registry
+    const registerTx = await this.registry.storeAddress(bundler.address);
+    await registerTx.wait();
+
+    return bundler;
   }
 
   /**
    * Get existing bundler for wallet
    */
   async getBundler(walletAddress) {
-    const bundlers = await this.factory.getBundlersByOwner(walletAddress);
-    if (bundlers.length === 0) return null;
-    
-    // Return the first bundler (most recent)
-    return new ethers.Contract(bundlers[0], WalletBundlerABI, this.signer);
+    const bundlerAddress = await this.registry.readAddress(walletAddress);
+    if (bundlerAddress === ethers.constants.AddressZero) return null;
+
+    return new ethers.Contract(bundlerAddress, WalletBundlerABI, this.signer);
   }
 
   /**
-   * Check and approve tokens for DEX routers
+   * Approve bundler contract to spend owner's tokens
+   * @param tokenContract The token contract instance (already connected to signer)
+   * @param bundlerAddress The bundler contract address
+   * @param ownerAddress The owner's wallet address
+   * @param amount The amount to approve (defaults to max uint256)
    */
-  async setupApprovals(bundler, tokens) {
-    const approvals = [];
-    
-    for (const token of tokens) {
-      // Check Uniswap allowance
-      const uniswapAllowance = await bundler.getAllowance(token.address, UNIVERSAL_ROUTER_ADDRESS);
-      if (uniswapAllowance.lt(ethers.constants.MaxUint256.div(2))) {
-        approvals.push({
-          token: token.address,
-          spender: UNIVERSAL_ROUTER_ADDRESS,
-          amount: ethers.constants.MaxUint256
-        });
-      }
-      
-      // Check Balancer allowance
-      const balancerAllowance = await bundler.getAllowance(token.address, BALANCER_VAULT_ADDRESS);
-      if (balancerAllowance.lt(ethers.constants.MaxUint256.div(2))) {
-        approvals.push({
-          token: token.address,
-          spender: BALANCER_VAULT_ADDRESS,
-          amount: ethers.constants.MaxUint256
-        });
-      }
-    }
-    
-    if (approvals.length > 0) {
-      const tx = await bundler.batchApprove(
-        approvals.map(a => a.token),
-        approvals.map(a => a.spender),
-        approvals.map(a => a.amount)
-      );
+  async approveBundler(tokenContract, bundlerAddress, ownerAddress, amount = ethers.constants.MaxUint256) {
+    // Check current allowance
+    const currentAllowance = await tokenContract.allowance(ownerAddress, bundlerAddress);
+
+    // Only approve if current allowance is less than half of max (needs refresh)
+    if (currentAllowance.lt(ethers.constants.MaxUint256.div(2))) {
+      const tx = await tokenContract.approve(bundlerAddress, amount);
       await tx.wait();
+      return true;
     }
+
+    return false; // Already approved
   }
 
   /**
