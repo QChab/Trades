@@ -148,6 +148,146 @@ When working with this codebase, pay special attention to the order type determi
 - **Partial Execution**: Allows some trades to fail while others succeed
 - **Automatic Fund Transfer**: Built-in logic to return funds to owner after execution
 
+### WalletBundler Contract Deployment and Address Management
+
+#### Architecture Overview
+The application follows a secure Electron architecture where all private key operations occur in the main process:
+- **Main Process** (`main.mjs`): Handles wallet access via `getWallet()`, signs transactions, deploys contracts
+- **Renderer Process** (Vue components): UI only, communicates via IPC, never has direct access to private keys
+- **IPC Bridge** (`preload.js`): Exposes safe APIs to renderer using `contextBridge`
+
+#### Deployment Flow
+
+**1. Main Process - IPC Handlers** (`main.mjs:1097-1119`):
+```javascript
+ipcMain.handle('deploy-bundler', async (event, walletAddress, salt = 0) => {
+  const wallet = getWallet(walletAddress.toLowerCase(), true);
+  const bundlerManager = new BundlerManager(provider, wallet);
+  const bundlerContract = await bundlerManager.deployBundler(salt);
+  return { success: true, address: bundlerContract.address };
+});
+
+ipcMain.handle('get-bundler', async (event, walletAddress) => {
+  const wallet = getWallet(walletAddress.toLowerCase(), true);
+  const bundlerManager = new BundlerManager(provider, wallet);
+  const bundlerContract = await bundlerManager.getBundler(walletAddress);
+  return { success: true, address: bundlerContract ? bundlerContract.address : null };
+});
+```
+
+**Key Implementation Details**:
+- Uses `getWallet(address, isPrivate)` to retrieve wallet from encrypted storage
+- Creates `BundlerManager` instance with provider and wallet signer
+- Deployment via `BundlerFactory.deployBundler(salt)` using CREATE2
+- Returns contract address or null if no bundler exists for wallet
+- All blockchain operations stay in main process for security
+
+**2. Preload Script - API Exposure** (`preload.js:41-42`):
+```javascript
+deployBundler: (walletAddress, salt) => ipcRenderer.invoke('deploy-bundler', walletAddress, salt),
+getBundler: (walletAddress) => ipcRenderer.invoke('get-bundler', walletAddress),
+```
+
+**3. Renderer Process - UI Integration** (`ManualTrading.vue:261-273, 5070-5089`):
+```javascript
+// Deploy button in template
+<button
+  v-if="!contractAddress?.[senderDetails?.address]"
+  @click="deployBundler"
+  :disabled="isDeploying"
+>
+  {{ isDeploying ? 'Deploying...' : 'Deploy' }}
+</button>
+
+// Deployment function
+const deployBundler = async () => {
+  isDeploying.value = true;
+  swapMessage.value = 'Deploying bundler contract...';
+
+  const result = await window.electronAPI.deployBundler(senderDetails.value.address);
+
+  if (result.success && result.address) {
+    contractAddress[senderDetails.value.address] = result.address;
+    swapMessage.value = 'Bundler deployed successfully!';
+  }
+};
+```
+
+#### Contract Address Storage
+
+**In-Memory Storage** (`ManualTrading.vue:697`):
+```javascript
+const contractAddress = reactive({});  // Keyed by wallet address
+```
+
+**Initialization on Mount** (`ManualTrading.vue:5058-5064`):
+```javascript
+// Check for existing bundler
+if (senderDetails.value?.address) {
+  const result = await window.electronAPI.getBundler(senderDetails.value.address);
+  if (result.success && result.address) {
+    contractAddress[senderDetails.value.address] = result.address;
+  }
+}
+```
+
+**Display in UI**:
+- Shows "Deploy" button when no bundler exists for current wallet
+- Shows bundler address with copy functionality when deployed
+- Address format: `0x1234...5678` (shortened for display)
+
+#### BundlerManager Integration (`src/bundler/BundlerManager.js`)
+
+**Factory Contract Interaction**:
+- Connects to `WalletBundlerFactory` at deployment address
+- Uses wallet signer from main process
+- Calls `deployBundler(salt)` for new deployments
+- Calls `getBundlersByOwner(address)` to retrieve existing contracts
+
+**Contract Retrieval**:
+- Returns first bundler for given owner address
+- Factory tracks all bundlers per owner
+- Supports multiple bundlers per wallet (via different salt values)
+
+#### Security Considerations
+
+**Private Key Isolation**:
+- Private keys never leave main process
+- `getWallet()` retrieves from AES-256 encrypted storage
+- All signing operations occur in main.mjs
+- Renderer only receives transaction results
+
+**IPC Security**:
+- `contextBridge` prevents direct access to Node.js APIs
+- Only whitelisted functions exposed to renderer
+- All parameters validated in main process handlers
+- Error messages sanitized before returning to renderer
+
+**Wallet Selection**:
+- Deployment tied to `senderDetails.value.address` (current selected wallet)
+- Each wallet can have its own bundler contract
+- Contract ownership verified on-chain (only owner can execute)
+
+#### Error Handling
+
+**Main Process**:
+- Try/catch blocks around all blockchain operations
+- Returns `{ success: false, error: message }` on failure
+- Logs errors to console for debugging
+- Never exposes private key material in errors
+
+**Renderer Process**:
+- Displays user-friendly error messages via `swapMessage`
+- Disables deploy button during deployment (`isDeploying`)
+- Resets state in finally block
+- No direct access to underlying error details
+
+#### Future Enhancements
+- Persistent storage of contract addresses in database
+- Support for multiple bundlers per wallet
+- Bundler upgrade mechanism via proxy pattern
+- Integration with settings/configuration management
+
 ### WalletBundler Execute Method (Latest Implementation)
 The `execute` function has been enhanced to support precise wrap/unwrap operations:
 

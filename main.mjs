@@ -21,6 +21,8 @@ const infuraKeyFile = path.join(userDataPath, 'ik.json');
 let infuraKeys = [];
 
 import { ethers, BigNumber } from 'ethers';
+import { BundlerManager } from './src/bundler/BundlerManager.js';
+
 const UNIVERSAL_ROUTER_ADDRESS = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
 const BALANCER_VAULT_ADDRESS   = '0xBA12222222228d8Ba445958a75a0704d566BF2C8';
 const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
@@ -1090,6 +1092,30 @@ function createWindow() {
 
   ipcMain.handle('approve-spender', (event, from, contractAddress, spender, permit2Spender) => {
     return approveSpender({from, contractAddress, spender, permit2Spender});
+  });
+
+  ipcMain.handle('deploy-bundler', async (event, walletAddress, salt = 0) => {
+    try {
+      const wallet = getWallet(walletAddress.toLowerCase(), true);
+      const bundlerManager = new BundlerManager(provider, wallet);
+      const bundlerContract = await bundlerManager.deployBundler(salt);
+      return { success: true, address: bundlerContract.address };
+    } catch (error) {
+      console.error('Bundler deployment error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('get-bundler', async (event, walletAddress) => {
+    try {
+      const wallet = getWallet(walletAddress.toLowerCase(), true);
+      const bundlerManager = new BundlerManager(provider, wallet);
+      const bundlerContract = await bundlerManager.getBundler(walletAddress);
+      return { success: true, address: bundlerContract ? bundlerContract.address : null };
+    } catch (error) {
+      console.error('Get bundler error:', error);
+      return { success: false, error: error.message };
+    }
   });
 
   ipcMain.handle('confirm-trade', (event, txId, gasCost, toAmount) => {

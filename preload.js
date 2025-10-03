@@ -38,4 +38,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveContractAddress: (walletAddress, contractAddr) => ipcRenderer.invoke('save-contract-address', walletAddress, contractAddr),
   getWalletMode: (address) => ipcRenderer.invoke('get-wallet-mode', address),
   getContractAddress: (walletAddress) => ipcRenderer.invoke('get-contract-address', walletAddress),
+  deployBundler: (walletAddress, salt) => ipcRenderer.invoke('deploy-bundler', walletAddress, salt),
+  getBundler: (walletAddress) => ipcRenderer.invoke('get-bundler', walletAddress),
 });

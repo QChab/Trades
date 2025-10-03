@@ -259,8 +259,12 @@
               </select>
             </div>
             <div class="deployInfo">
-              <button v-if="!contractAddress?.[senderDetails?.address]">
-                Deploy
+              <button
+                v-if="!contractAddress?.[senderDetails?.address]"
+                @click="deployBundler"
+                :disabled="isDeploying"
+              >
+                {{ isDeploying ? 'Deploying...' : 'Deploy' }}
               </button>
               <p v-else>
                 {{ contractAddress?.[senderDetails?.address] }}
@@ -692,6 +696,9 @@ export default {
     const priceLimit = ref(null);
     const contractAddress = reactive({});
     const walletModes = reactive({});
+
+    // Bundler-related state
+    const isDeploying = ref(false);
 
     const tokens = ref([
       { price: 0, address: ethers.constants.AddressZero, symbol: 'ETH', decimals: 18 },
@@ -5047,8 +5054,39 @@ export default {
         const outdateOrders = dbOrders.filter(o => !tokensByAddresses.value[o.fromTokenAddress] || !tokensByAddresses.value[o.toTokenAddress])
         outdateOrders.map(o => window.electronAPI.deletePendingOrder(o.id))
       }
+
+      // Check for existing bundler
+      if (senderDetails.value?.address) {
+        const result = await window.electronAPI.getBundler(senderDetails.value.address);
+        if (result.success && result.address) {
+          contractAddress[senderDetails.value.address] = result.address;
+        }
+      }
+
       stopEthBalanceMonitoring();
     });
+
+    // Bundler deployment function
+    const deployBundler = async () => {
+      try {
+        isDeploying.value = true;
+        swapMessage.value = 'Deploying bundler contract...';
+
+        const result = await window.electronAPI.deployBundler(senderDetails.value.address);
+
+        if (result.success && result.address) {
+          contractAddress[senderDetails.value.address] = result.address;
+          swapMessage.value = 'Bundler deployed successfully!';
+        } else {
+          throw new Error(result.error || 'Deployment failed');
+        }
+      } catch (error) {
+        console.error('Deploy error:', error);
+        swapMessage.value = `Deploy failed: ${error.message}`;
+      } finally {
+        isDeploying.value = false;
+      }
+    };
 
     const copy = (string) => {
       navigator.clipboard.writeText(string);
@@ -5139,6 +5177,8 @@ export default {
 
       contractAddress,
       copy,
+      deployBundler,
+      isDeploying,
     };
   }
 };
