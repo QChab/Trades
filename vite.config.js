@@ -20,7 +20,11 @@ export default defineConfig({
         'module',
         'url',
         'path'
-      ]
+      ],
+      // Exclude test files and Node.js-only utilities from build
+      input: {
+        main: './src/renderer/index.html'
+      }
     }
   },
   resolve: {

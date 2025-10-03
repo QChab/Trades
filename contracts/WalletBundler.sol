@@ -243,10 +243,10 @@ contract WalletBundler {
             }
 
             // Handle wrap/unwrap after based on actual output amount
-            if (wrapOp == 2 && outputAmount > 0) {
+            if (wrapOp == 2) {
                 // Wrap after - wrap the exact ETH output amount
                 _wrapETH(outputAmount);
-            } else if (wrapOp == 4 && outputAmount > 0) {
+            } else if (wrapOp == 4) {
                 // Unwrap after - unwrap the exact WETH output amount
                 _unwrapWETH(outputAmount);
             }

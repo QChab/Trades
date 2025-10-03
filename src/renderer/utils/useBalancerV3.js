@@ -1,18 +1,12 @@
 import { ethers } from 'ethers';
 import axios from 'axios';
 import Decimal from 'decimal.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Balancer V3 uses a different architecture than V2
 const BALANCER_V3_SUBGRAPH = 'https://gateway.thegraph.com/api/d692082c59f956790647e889e75fa84d/subgraphs/id/4rixbLvpuBCwXTJSwyAzQgsLR8KprnyMfyCuXT8Fj5cd';
 
-// Cache file path
-const CACHE_FILE_PATH = path.join(__dirname, 'balancerPoolsCache.json');
+// In-memory cache for browser environment
+let memoryCache = { pools: {}, lastUpdated: '', version: '1.0.0' };
 
 // Calculate spot prices from pool data
 function calculateSpotPrices(poolData) {
@@ -61,27 +55,18 @@ function calculateSpotPrices(poolData) {
   return spotPrices;
 }
 
-// Load pool cache from file
+// Load pool cache (uses in-memory cache for browser, file cache for Node.js via IPC if available)
 function loadPoolCache() {
-  try {
-    if (fs.existsSync(CACHE_FILE_PATH)) {
-      const data = fs.readFileSync(CACHE_FILE_PATH, 'utf8');
-      return JSON.parse(data);
-    }
-  } catch (error) {
-    console.error('Error loading pool cache:', error.message);
-  }
-  return { pools: {}, lastUpdated: '', version: '1.0.0' };
+  // In browser environment, use memory cache
+  // TODO: Consider using localStorage or IPC to main process for persistence
+  return memoryCache;
 }
 
-// Save pool cache to file
+// Save pool cache (uses in-memory cache for browser)
 function savePoolCache(cache) {
-  try {
-    cache.lastUpdated = new Date().toISOString();
-    fs.writeFileSync(CACHE_FILE_PATH, JSON.stringify(cache, null, 2));
-  } catch (error) {
-    console.error('Error saving pool cache:', error.message);
-  }
+  cache.lastUpdated = new Date().toISOString();
+  memoryCache = cache;
+  // TODO: Consider using localStorage or IPC to main process for persistence
 }
 
 // Get pool data from cache or detect

@@ -16,7 +16,7 @@ async function ensureV4SDKLoaded() {
   if (!v4sdkLoaded) {
     try {
       // Try to load the fixed ESM module first
-      const { getV4SDK } = await import('../utils/uniswapV4ESM.js');
+      const { getV4SDK } = await import('./uniswapV4ESM.js');
       const v4sdk = await getV4SDK;
       Pool = v4sdk.Pool;
       Trade = v4sdk.Trade;

@@ -1,5 +1,5 @@
 import { ethers, BigNumber } from 'ethers';
-import { useUniswapV4 } from '../composables/useUniswap.js';
+import { useUniswapV4 } from '../composables/useUniswap.jsx';
 import { useBalancerV3, getCacheStats } from './useBalancerV3.js';
 import {
   calculateUniswapExactOutput,

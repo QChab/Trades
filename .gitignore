@@ -10,3 +10,5 @@ certificates/
 releases/
 
 p.crypt
+
+artifacts/build-info
