@@ -310,7 +310,7 @@
             <div v-if="!needsToApprove">
               <button
                 v-if="!needsToApprove"
-                :disabled="!priceLimit || !fromAmount || senderDetails?.address === ''"
+                :disabled="!senderDetails?.mode || !priceLimit || !fromAmount || senderDetails?.address === ''"
                 class="swap-button"
                 @click="placeLimitOrder()"
               >
@@ -691,6 +691,7 @@ export default {
     const shouldUseUniswapAndBalancer = ref(true);
     const priceLimit = ref(null);
     const contractAddress = reactive({});
+    const walletModes = reactive({});
 
     const tokens = ref([
       { price: 0, address: ethers.constants.AddressZero, symbol: 'ETH', decimals: 18 },
@@ -898,6 +899,12 @@ export default {
       for (const detail of props.addresses) {
         if (!detail || !detail.address) continue; // Skip if detail or address is undefined
         const addr = detail.address.toLowerCase();
+
+        // In automatic mode, skip wallets without a mode defined
+        if (currentMode.value === 'automatic' && !walletModes[addr]) {
+          continue;
+        }
+
         if (!result[addr]) result[addr] = {};
 
         if (!detail.balances) continue;
@@ -4606,10 +4613,13 @@ export default {
 
     const summedBalances = computed(() => {
       const result = {};
-      
+
       // Loop through all addresses
       for (const detail of props.addresses) {
         if (!detail || !detail.address || !detail.balances) continue;
+
+        // Skip addresses with undefined mode for automatic trading
+        if (!detail.mode) continue;
         
         // For each token in the address's balance
         for (const tokenAddr in detail.balances) {
@@ -4949,6 +4959,7 @@ export default {
             // Update senderDetails with loaded values
             if (mode !== undefined) {
               val.mode = mode;
+              walletModes[val.address] = mode;
             }
 
             // Update contractAddress object
