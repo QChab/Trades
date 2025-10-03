@@ -34,4 +34,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deletePendingOrder: (id) => ipcRenderer.invoke('delete-pending-order', id),
   getPendingOrders: () => ipcRenderer.invoke('get-pending-orders'),
   updatePendingOrder: (order) => ipcRenderer.invoke('update-pending-order', order),
+  saveWalletMode: (address, mode) => ipcRenderer.invoke('save-wallet-mode', address, mode),
+  saveContractAddress: (walletAddress, contractAddr) => ipcRenderer.invoke('save-contract-address', walletAddress, contractAddr),
+  getWalletMode: (address) => ipcRenderer.invoke('get-wallet-mode', address),
+  getContractAddress: (walletAddress) => ipcRenderer.invoke('get-contract-address', walletAddress),
 });

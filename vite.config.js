@@ -14,6 +14,14 @@ export default defineConfig({
     target: 'es2022',       // or ['chrome91','edge91','safari15.4']
     // ensure it outputs ESM, not CJS:
     format: 'esm',
+    rollupOptions: {
+      external: [
+        // Exclude Node.js-only modules used in test files
+        'module',
+        'url',
+        'path'
+      ]
+    }
   },
   resolve: {
     alias: {

@@ -1,0 +1,150 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "/Users/qch/MyTech/SecDev/Trades/contracts/BalancerEncoder.sol": {
+      "lastModificationDate": 1758891191588,
+      "contentHash": "011cf8ad99c2023d67bebb2ffbe20fe6",
+      "sourceName": "contracts/BalancerEncoder.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "BalancerEncoder"
+      ]
+    },
+    "/Users/qch/MyTech/SecDev/Trades/contracts/BundlerRegistry.sol": {
+      "lastModificationDate": 1758207443489,
+      "contentHash": "8e41bf49b6af10ee9c630a047f97c519",
+      "sourceName": "contracts/BundlerRegistry.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.0"
+      ],
+      "artifacts": [
+        "BundlerRegistry"
+      ]
+    },
+    "/Users/qch/MyTech/SecDev/Trades/contracts/UniswapEncoder.sol": {
+      "lastModificationDate": 1759509686736,
+      "contentHash": "6e58f5825994c86882ab0d8c23f62cfa",
+      "sourceName": "contracts/UniswapEncoder.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "UniswapEncoder"
+      ]
+    },
+    "/Users/qch/MyTech/SecDev/Trades/contracts/WalletBundler.sol": {
+      "lastModificationDate": 1759502520809,
+      "contentHash": "ee290f5de2d0a8736919fa4a47242826",
+      "sourceName": "contracts/WalletBundler.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "IPermit2",
+        "WalletBundler"
+      ]
+    }
+  }
+}

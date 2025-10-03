@@ -212,19 +212,62 @@
                 On {{ tradeSummary.protocol === 'Uniswap & Balancer' ? (`Uniswap ${tradeSummary.fraction}% & Balancer ${100 - tradeSummary.fraction}%`) : tradeSummary.protocol }}
               </span> with
             </p>
-            <select
-              id="sender-address"
-              v-model="senderDetails"
-            >
-              <option 
-                v-for="(address) in addresses" 
-                :key="'sender-' + address.address" 
-                :value="address"
+            <div class="sender-buttons">
+              <select
+                class="addressSelect"
+                id="sender-address"
+                v-model="senderDetails"
               >
-                {{ address.name }} - 0x{{ address.address.substring(2, 6) }}:
-                {{ balanceString(address.address, fromTokenAddress) }} {{ tokensByAddresses[fromTokenAddress]?.symbol }}
-              </option>
-            </select>
+                <option 
+                  v-for="(address) in addresses" 
+                  :key="'sender-' + address.address" 
+                  :value="address"
+                >
+                  {{ address.name }} - 0x{{ address.address.substring(2, 6) }}:
+                  {{ balanceString(address.address, fromTokenAddress) }} {{ tokensByAddresses[fromTokenAddress]?.symbol }}
+                </option>
+              </select>
+              <select
+                class="addressMode"
+                id="sender-modes"
+                v-model="senderDetails.mode"
+              >
+                <option
+                  :key="'none'" 
+                  :value="undefined"
+                >
+                  None
+                </option>
+                <option
+                  :key="'1inch & contract'" 
+                  :value="'1inch & contract'"
+                >
+                  1inch & contract
+                </option>
+                <option
+                  :key="'1inch'" 
+                  :value="'1inch'"
+                >
+                  1inch
+                </option>
+                <option
+                  :key="'contract'" 
+                  :value="'contract'"
+                >
+                  Contract
+                </option>
+              </select>
+            </div>
+            <div class="deployInfo">
+              <button v-if="!contractAddress?.[senderDetails?.address]">
+                Deploy
+              </button>
+              <p v-else>
+                {{ contractAddress?.[senderDetails?.address] }}
+                <span @click="copy(contractAddress?.[senderDetails?.address])">Copy</span>
+              </p>
+            </div>
+
           </div>
 
           <p class="details-message">
@@ -243,7 +286,7 @@
               </p>
               <button
                 v-if="!needsToApprove"
-                :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
+                :disabled="!senderDetails?.mode || isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
                 class="swap-button"
                 @click="isSwapButtonDisabled=true; triggerTrade()"
               >
@@ -255,7 +298,7 @@
                 Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 100000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}
               </p>
               <button
-                :disabled="isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
+                :disabled="!senderDetails?.mode || isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
                 class="swap-button"
                 @click="approveSpending()"
               >
@@ -634,7 +677,11 @@ export default {
     const fromAmount       = ref(null);
     const fromTokenAddress = ref(null);
     const toTokenAddress   = ref(null);
-    const senderDetails    = ref(null);
+    const senderDetails    = ref({
+      address: undefined,
+      name: undefined,
+      mode: undefined,
+    });
     const tabOrder         = ref('market');
     const isSwapButtonDisabled = ref(false);
     const needsToApprove   = ref(false);
@@ -643,6 +690,7 @@ export default {
     const shouldUseBalancer = ref(true);
     const shouldUseUniswapAndBalancer = ref(true);
     const priceLimit = ref(null);
+    const contractAddress = reactive({});
 
     const tokens = ref([
       { price: 0, address: ethers.constants.AddressZero, symbol: 'ETH', decimals: 18 },
@@ -4887,14 +4935,51 @@ export default {
     );
     watch(
       () => senderDetails.value,
-      (val) => {
+      async (val, oldVal) => {
         if (!val) {
           isSwapButtonDisabled.value = true;
         } else {
           needsToApprove.value = false;
+
+          // Load mode and contract address for the selected wallet when address changes
+          if (val.address && (!oldVal || oldVal.address !== val.address)) {
+            const mode = await window.electronAPI.getWalletMode(val.address);
+            const contractAddr = await window.electronAPI.getContractAddress(val.address);
+
+            // Update senderDetails with loaded values
+            if (mode !== undefined) {
+              val.mode = mode;
+            }
+
+            // Update contractAddress object
+            if (contractAddr) {
+              contractAddress[val.address] = contractAddr;
+            }
+          }
         }
       },
       { immediate: true }
+    );
+
+    // Watch for mode changes separately
+    watch(
+      () => senderDetails.value?.mode,
+      async (newMode, oldMode) => {
+        // Save mode when it changes (not on initial load)
+        if (oldMode !== undefined && newMode !== oldMode && senderDetails.value?.address) {
+          await window.electronAPI.saveWalletMode(senderDetails.value.address, newMode);
+        }
+      }
+    );
+    // Watch for contract address changes for current wallet
+    watch(
+      () => senderDetails.value?.address ? contractAddress[senderDetails.value.address] : null,
+      async (newContractAddr, oldContractAddr) => {
+        // Save contract address when it changes (not on initial load)
+        if (oldContractAddr !== undefined && newContractAddr !== oldContractAddr && senderDetails.value?.address) {
+          await window.electronAPI.saveContractAddress(senderDetails.value.address, newContractAddr);
+        }
+      }
     );
 
     onMounted(async () => {
@@ -4953,6 +5038,10 @@ export default {
       }
       stopEthBalanceMonitoring();
     });
+
+    const copy = (string) => {
+      navigator.clipboard.writeText(string);
+    }
 
     return {
       // state
@@ -5036,6 +5125,9 @@ export default {
       isGloballyPaused,
       toggleGlobalPause,
       getOrdersForColumn,
+
+      contractAddress,
+      copy,
     };
   }
 };
@@ -5077,7 +5169,7 @@ export default {
   -webkit-box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
   -moz-box-shadow:    0 2px 5px rgba(0, 0, 0, 0.2);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-  margin-bottom: 50px;
+  margin-bottom: 10px;
   text-align: center;
 }
 
@@ -5770,5 +5862,32 @@ input.amount-out {
   font-weight: 500;
   font-size: 22px;
   display: inline-block;
+}
+
+.sender-buttons {
+  margin-left: auto ;
+  margin-right: auto ;
+  display: block;
+  width: 580px;
+}
+
+.sender-buttons select {
+  display: inline-block;
+}
+
+.sender-buttons .addressSelect {
+  margin-left: auto;
+  margin-right: 5px;
+}
+
+.sender-buttons .addressMode {
+  margin-right: auto;
+  width: 100px;
+}
+
+.deployInfo {
+  width: 100px;
+  margin-left: auto;
+  margin-right: auto;
 }
 </style>

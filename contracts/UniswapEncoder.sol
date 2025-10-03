@@ -8,7 +8,7 @@ pragma solidity ^0.8.19;
  */
 contract UniswapEncoder {
     // Uniswap Universal Router address
-    address private constant UNIVERSAL_ROUTER = 0x66a9893cc07d91d95644aedd05d03f95e1dba8af;
+    address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
 
     // Command code for Universal Router V4 swaps
     uint8 private constant V4_SWAP = 0x10;

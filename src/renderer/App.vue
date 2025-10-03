@@ -248,18 +248,6 @@
     <!-- Bottom Section: History and Live Visualization -->
     <div class="bottom-section">
       <div class="history-section">
-        <!-- <TransferControl
-            :settings="currentSettings"
-            :sourceAddresses="sourceAddresses"
-            :destinationAddresses="destinationAddresses"
-            :maxGasPrice="currentSettings?.maxGasPrice"
-            :gasPrice="gasPrice"
-            @sentTransfer="addTransfer"
-            :isTestMode="isTestMode"
-            @update:isProcessRunning="setIsProcessRunning"
-            @deleteHistory="emptyTransfers"
-            :infuraKeys="infuraKeys"
-          /> -->
         <TransferHistory 
           :trades="trades"
           :eth-price="ethPrice"

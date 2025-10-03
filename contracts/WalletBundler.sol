@@ -17,7 +17,7 @@ contract WalletBundler {
     // Pack constants to save deployment gas
     address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address private constant UNIVERSAL_ROUTER = 0x66a9893cc07d91d95644aedd05d03f95e1dba8af; // Uniswap V4
+    address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
     address private constant BALANCER_VAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8; // Balancer V3
     uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
 

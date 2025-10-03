@@ -1151,6 +1151,14 @@ function createWindow() {
       return false;
 
     settings = JSON.parse(fs.readFileSync(settingsPath));
+
+    // Initialize walletModes and contractAddresses if not present
+    if (!settings.walletModes) {
+      settings.walletModes = {};
+    }
+    if (!settings.contractAddresses) {
+      settings.contractAddresses = {};
+    }
     
     // Validate token addresses when loading
     if (settings.tokens && Array.isArray(settings.tokens)) {
@@ -1283,6 +1291,44 @@ function createWindow() {
     
     settings = newSettings;
     fs.writeFileSync(settingsPath, JSON.stringify(settings));
+  });
+
+  // Save wallet mode for a specific address
+  ipcMain.handle('save-wallet-mode', (event, address, mode) => {
+    if (!settings.walletModes) {
+      settings.walletModes = {};
+    }
+    const lowerAddress = address.toLowerCase();
+    settings.walletModes[lowerAddress] = mode;
+    fs.writeFileSync(settingsPath, JSON.stringify(settings));
+  });
+
+  // Save contract address for a specific wallet address
+  ipcMain.handle('save-contract-address', (event, walletAddress, contractAddr) => {
+    if (!settings.contractAddresses) {
+      settings.contractAddresses = {};
+    }
+    const lowerAddress = walletAddress.toLowerCase();
+    settings.contractAddresses[lowerAddress] = contractAddr;
+    fs.writeFileSync(settingsPath, JSON.stringify(settings));
+  });
+
+  // Get wallet mode for a specific address
+  ipcMain.handle('get-wallet-mode', (event, address) => {
+    if (!settings.walletModes) {
+      return undefined;
+    }
+    const lowerAddress = address.toLowerCase();
+    return settings.walletModes[lowerAddress];
+  });
+
+  // Get contract address for a specific wallet address
+  ipcMain.handle('get-contract-address', (event, walletAddress) => {
+    if (!settings.contractAddresses) {
+      return undefined;
+    }
+    const lowerAddress = walletAddress.toLowerCase();
+    return settings.contractAddresses[lowerAddress];
   });
 
   ipcMain.handle('get-trades', async (event) => {
