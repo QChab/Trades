@@ -233,26 +233,28 @@
                 v-model="senderDetails.mode"
               >
                 <option
-                  :key="'none'" 
+                  :key="'none'"
                   :value="undefined"
                 >
                   None
                 </option>
                 <option
-                  :key="'1inch & contract'" 
+                  :key="'1inch & contract'"
                   :value="'1inch & contract'"
+                  :disabled="!contractAddress[senderDetails?.address]"
                 >
                   1inch & contract
                 </option>
                 <option
-                  :key="'1inch'" 
+                  :key="'1inch'"
                   :value="'1inch'"
                 >
                   1inch
                 </option>
                 <option
-                  :key="'contract'" 
+                  :key="'contract'"
                   :value="'contract'"
+                  :disabled="!contractAddress[senderDetails?.address]"
                 >
                   Contract
                 </option>
@@ -4831,6 +4833,12 @@ export default {
       { immediate: true, deep: true }
     );
 
+    watch(() => senderDetails.value?.mode, (newMode) => {
+      if (senderDetails.value.address) {
+        console.log('saving wallet mode');
+        window.electronAPI.saveWalletMode(senderDetails.value.address, newMode)
+      }
+    })
     watch(() => tokens.value, (tokensValue) => emit('update:settings', { tokens: [...tokensValue] }), { deep: true });
     watch(() => tokensInRow, () => emit('update:settings', { tokensInRow: [...tokensInRow] }), { deep: true });
     watch(
@@ -4849,22 +4857,24 @@ export default {
         if (!val) {
           isSwapButtonDisabled.value = true;
         } else {
+          console.log('Loaded senderDetails');
           needsToApprove.value = false;
 
           // Load mode and contract address for the selected wallet when address changes
-          if (val.address && (!oldVal || oldVal.address !== val.address)) {
+          if (val.address) {
             const mode = await window.electronAPI.getWalletMode(val.address);
-            const contractAddr = await window.electronAPI.getContractAddress(val.address);
 
             // Update senderDetails with loaded values
             if (mode !== undefined) {
-              val.mode = mode;
-              walletModes[val.address] = mode;
-            }
-
-            // Update contractAddress object
-            if (contractAddr) {
-              contractAddress[val.address] = contractAddr;
+              // Reset mode if it requires a contract but none is deployed
+              if ((mode === 'contract' || mode === '1inch & contract') && !contractAddress[val.address]) {
+                senderDetails.value.mode = undefined;
+                walletModes[val.address] = undefined;
+                await window.electronAPI.saveWalletMode(val.address, undefined);
+              } else {
+                senderDetails.value.mode = mode;
+                walletModes[val.address] = mode;
+              }
             }
           }
         }
@@ -4876,8 +4886,8 @@ export default {
     watch(
       () => senderDetails.value?.mode,
       async (newMode, oldMode) => {
-        // Save mode when it changes (not on initial load)
-        if (oldMode !== undefined && newMode !== oldMode && senderDetails.value?.address) {
+        // Save mode when it changes
+        if (newMode !== oldMode && senderDetails.value?.address) {
           await window.electronAPI.saveWalletMode(senderDetails.value.address, newMode);
         }
       }
@@ -4948,11 +4958,17 @@ export default {
         outdateOrders.map(o => window.electronAPI.deletePendingOrder(o.id))
       }
 
-      // Check for existing bundler
-      if (senderDetails.value?.address) {
-        const result = await window.electronAPI.getBundler(senderDetails.value.address, undefined);
-        if (result.success && result.address) {
-          contractAddress[senderDetails.value.address] = result.address;
+      // Load contract addresses from registry for all wallets
+      if (props.addresses && props.addresses.length > 0) {
+        for (const address of props.addresses) {
+          if (address?.address) {
+            const result = await window.electronAPI.getBundler(address.address, undefined);
+            if (result.success && result.address) {
+              contractAddress[address.address] = result.address;
+              const mode = await window.electronAPI.getWalletMode(address.address);
+              address.mode = mode;
+            }
+          }
         }
       }
 
@@ -5812,7 +5828,7 @@ input.amount-out {
   margin-left: auto ;
   margin-right: auto ;
   display: block;
-  width: 580px;
+  width: 680px;
 }
 
 .sender-buttons select {
@@ -5826,7 +5842,7 @@ input.amount-out {
 
 .sender-buttons .addressMode {
   margin-right: auto;
-  width: 100px;
+  width: 200px;
 }
 
 .deployInfo {

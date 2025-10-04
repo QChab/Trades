@@ -1,6 +1,6 @@
 import { ethers } from 'ethers';
-import WalletBundlerABI from '../../artifacts/contracts/WalletBundler.sol/WalletBundler.json';
-import BundlerRegistryABI from '../../artifacts/contracts/BundlerRegistry.sol/BundlerRegistry.json';
+import WalletBundlerABI from '../../artifacts/contracts/WalletBundler.sol/WalletBundler.json' with { type: "json" };
+import BundlerRegistryABI from '../../artifacts/contracts/BundlerRegistry.sol/BundlerRegistry.json' with { type: "json" };
 
 const REGISTRY_ADDRESS = '0x...'; // To be deployed
 const UNIVERSAL_ROUTER_ADDRESS = '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD';

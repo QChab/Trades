@@ -1346,9 +1346,17 @@ function createWindow() {
         return row;
       });
     }
-    
-    settings = newSettings;
-    fs.writeFileSync(settingsPath, JSON.stringify(settings));
+
+    // Preserve walletModes and contractAddresses when updating settings
+    const preservedWalletModes = settings.walletModes || {};
+    const preservedContractAddresses = settings.contractAddresses || {};
+
+    settings = {
+      ...newSettings,
+      walletModes: preservedWalletModes,
+      contractAddresses: preservedContractAddresses
+    };
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
   });
 
   // Save wallet mode for a specific address
@@ -1358,7 +1366,9 @@ function createWindow() {
     }
     const lowerAddress = address.toLowerCase();
     settings.walletModes[lowerAddress] = mode;
-    fs.writeFileSync(settingsPath, JSON.stringify(settings));
+    console.log(`[SAVE] Saving mode "${mode}" for address ${lowerAddress}`);
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    console.log(`[SAVE] Settings written to disk. walletModes:`, settings.walletModes);
   });
 
   // Save contract address for a specific wallet address
@@ -1374,10 +1384,13 @@ function createWindow() {
   // Get wallet mode for a specific address
   ipcMain.handle('get-wallet-mode', (event, address) => {
     if (!settings.walletModes) {
+      console.log(`[LOAD] No walletModes in settings`);
       return undefined;
     }
     const lowerAddress = address.toLowerCase();
-    return settings.walletModes[lowerAddress];
+    const mode = settings.walletModes[lowerAddress];
+    console.log(`[LOAD] Loading mode for ${lowerAddress}: "${mode}". All modes:`, settings.walletModes);
+    return mode;
   });
 
   // Get contract address for a specific wallet address
