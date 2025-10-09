@@ -186,14 +186,42 @@ export function useUniswapV4() {
         }
       }
     `;
+    const poolsInBetweenQuery = gql`
+      query{
+        poolsInBetween: pools(
+          where:{
+            token0_in: [
+              "0x0000000000000000000000000000000000000000",
+              "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+              "0xdac17f958d2ee523a2206206994597c13d831ec7",
+              "0x6b175474e89094c44da98b954eedeac495271d0f"
+            ],
+            token1_in: [
+              "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+              "0xdac17f958d2ee523a2206206994597c13d831ec7",
+              "0x6b175474e89094c44da98b954eedeac495271d0f"
+            ],
+            liquidity_not:"0",
+          },
+          first: 100
+        ) {
+          id feeTier sqrtPrice hooks tick tickSpacing liquidity totalValueLockedUSD
+          token0 { id decimals symbol } token1 { id decimals symbol }
+          ticks(where: { liquidityGross_not: "0" }, first: 1000) {
+            tickIdx liquidityNet liquidityGross
+          }
+        }
+      }
+    `;
     
-    const [{ poolsDirect }, {poolsOut}] = await Promise.all([
+    const [{ poolsDirect }, {poolsOut}, {poolInBetween}] = await Promise.all([
       request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut }),
-      request(SUBGRAPH_URL, poolsOutQuery, { a: tokenIn, b: tokenOut })
+      request(SUBGRAPH_URL, poolsOutQuery, { a: tokenIn, b: tokenOut }),
+      request(SUBGRAPH_URL, poolsInBetweenQuery, {})
     ])
   
       // --- 3) Combine and dedupe ---
-    const rawPools = [...poolsDirect, ...poolsOut];
+    const rawPools = [...poolsDirect, ...poolsOut, ...poolInBetween];
     const unique = new Map();
     rawPools.forEach(p => unique.set(p.id, p));
     let candidatePools = Array.from(unique.values()).filter((pool) => (
