@@ -73,10 +73,10 @@ export async function useMixedUniswapBalancer({
       balancerResult = await discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider);
     }
 
-    results.uniswapPaths = uniswapRoutes;
+    results.uniswapPaths = uniswapRoutes || [];
     results.balancerPaths = balancerResult ? [balancerResult] : [];
 
-    console.log(`📊 Found ${uniswapRoutes.length} Uniswap routes and ${results.balancerPaths.length} Balancer routes`);
+    console.log(`📊 Found ${results.uniswapPaths.length} Uniswap routes and ${results.balancerPaths.length} Balancer routes`);
 
     // Discover cross-DEX multi-hop paths (e.g., ONE -> WETH on Balancer, WETH -> SEV on Uniswap)
     let crossDEXPaths = [];
@@ -166,8 +166,15 @@ function isWETHToETHConversion(original, normalized) {
  */
 async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn) {
   try {
+    // Validate: prevent same-token swaps
+    const normalizeAddress = (addr) => addr === ETH_ADDRESS ? WETH_ADDRESS : addr.toLowerCase();
+    if (normalizeAddress(tokenInObject.address) === normalizeAddress(tokenOutObject.address)) {
+      console.log(`   ⚠️  Skipping same-token swap: ${tokenInObject.symbol} → ${tokenOutObject.symbol}`);
+      return null;
+    }
+
     const uniswap = useUniswapV4();
-    
+
     // Discover paths for both ETH and WETH variants
     const pathVariants = [];
     
@@ -267,6 +274,12 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
     const normalizedTokenOut = tokenOutObject.address === ETH_ADDRESS ?
       { ...tokenOutObject, address: WETH_ADDRESS, symbol: 'WETH' } :
       tokenOutObject;
+
+    // Validate: prevent same-token swaps (after normalization)
+    if (normalizedTokenIn.address.toLowerCase() === normalizedTokenOut.address.toLowerCase()) {
+      console.log(`   ⚠️  Skipping same-token swap: ${normalizedTokenIn.symbol} → ${normalizedTokenOut.symbol}`);
+      return null;
+    }
 
     console.log(`   Querying Balancer for ${normalizedTokenIn.symbol} -> ${normalizedTokenOut.symbol}`);
     console.log(`   Amount: ${ethers.utils.formatUnits(amountIn, normalizedTokenIn.decimals || 18)} ${normalizedTokenIn.symbol}`);
@@ -631,8 +644,10 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
 
       const secondHopLegs = legs.filter(l => {
         // Second hop legs output the target token but don't input the source token
+        // AND must not be swapping token to itself
         return l.token?.symbol === tokenOut.symbol &&
-               (!l.inputToken || l.inputToken?.symbol !== tokenIn.symbol);
+               (!l.inputToken || l.inputToken?.symbol !== tokenIn.symbol) &&
+               (!l.inputToken || l.inputToken?.symbol !== l.token?.symbol);
       });
 
       console.log(`   Found ${firstHopLegs.length} first-hop options, ${secondHopLegs.length} second-hop options`);

@@ -214,14 +214,14 @@ export function useUniswapV4() {
       }
     `;
     
-    const [{ poolsDirect }, {poolsOut}, {poolInBetween}] = await Promise.all([
+    const [{ poolsDirect }, {poolsOut}, {poolsInBetween}] = await Promise.all([
       request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut }),
       request(SUBGRAPH_URL, poolsOutQuery, { a: tokenIn, b: tokenOut }),
       request(SUBGRAPH_URL, poolsInBetweenQuery, {})
     ])
   
       // --- 3) Combine and dedupe ---
-    const rawPools = [...poolsDirect, ...poolsOut, ...poolInBetween];
+    const rawPools = [...poolsDirect, ...poolsOut, ...poolsInBetween];
     const unique = new Map();
     rawPools.forEach(p => unique.set(p.id, p));
     let candidatePools = Array.from(unique.values()).filter((pool) => (

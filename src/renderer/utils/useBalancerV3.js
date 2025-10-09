@@ -290,7 +290,7 @@ export async function useBalancerV3({ tokenInAddress, tokenOutAddress, amountIn,
       const hasInter = pools.filter(p => p.tokens.some(t => t.address.toLowerCase() === inter)).length;
       if (hasInter > 0) optimalPoolsCount += hasInter;
     }
-    console.log(`Found ${optimalPoolsCount} pools with optimal intermediates (WETH, USDC, USDT, DAI)`);
+    console.log(`Found ${optimalPoolsCount} pools with optimal intermediates (WETH, USDC, USDT, DAI, WBTC)`);
     
     // Enrich pools with on-chain data (weights, pool types)
     const enrichedPools = await enrichPoolData(pools, provider);

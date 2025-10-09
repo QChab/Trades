@@ -503,7 +503,7 @@ This dynamic encoding system ensures robust execution of complex cross-DEX trade
   - Seamless routing between Uniswap ETH pools and Balancer WETH pools
 - **Implementation Files**:
   - `useMixedUniswapBalancer.js`: Core router with golden section search
-  - `crossDEXOptimizer.js`: Exact AMM calculations for both protocols
+  - `exactAMMOutputs.js`: Exact AMM calculations for both protocols
   - `testCrossDEXRouting.js`: Test file with target values for validation
 
 ### Development Pain Points to Avoid
