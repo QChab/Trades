@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { useMixedUniswapBalancer } from './useMixedUniswapBalancer.js';
+import { useMixedUniswapBalancer } from '../../src/renderer/utils/useMixedUniswapBalancer.js';
 import { getV4SDK } from './uniswapV4ESM.js';
 
 /**

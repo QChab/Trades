@@ -5,7 +5,36 @@ import Decimal from 'decimal.js';
 // Balancer V3 uses a different architecture than V2
 const BALANCER_V3_SUBGRAPH = 'https://gateway.thegraph.com/api/d692082c59f956790647e889e75fa84d/subgraphs/id/4rixbLvpuBCwXTJSwyAzQgsLR8KprnyMfyCuXT8Fj5cd';
 
-// In-memory cache for browser environment
+// Environment detection and setup
+let fs;
+let isNodeEnvironment = false;
+let nodeTestCachePath;
+
+// Detect and initialize Node.js environment
+const initNodeEnvironment = async () => {
+  try {
+    // Check if we're in Node.js (not browser/Electron renderer)
+    if (typeof process !== 'undefined' && process.versions && process.versions.node && typeof window === 'undefined') {
+      // We're in Node.js test environment
+      isNodeEnvironment = true;
+      // Dynamic import for ESM
+      const fsModule = await import('fs');
+      const pathModule = await import('path');
+      fs = fsModule.default || fsModule;
+      // Use project root for test cache
+      nodeTestCachePath = pathModule.join(process.cwd(), 'balancerPoolsCache.json');
+      console.log('📁 Using Node.js file cache at:', nodeTestCachePath);
+    }
+  } catch (e) {
+    // Ignore errors, we're in browser environment
+    console.log('Running in browser/Electron environment');
+  }
+};
+
+// Initialize immediately
+await initNodeEnvironment();
+
+// In-memory cache fallback
 let memoryCache = { pools: {}, lastUpdated: '', version: '1.0.0' };
 
 // Calculate spot prices from pool data
@@ -55,23 +84,72 @@ function calculateSpotPrices(poolData) {
   return spotPrices;
 }
 
-// Load pool cache (uses in-memory cache for browser, file cache for Node.js via IPC if available)
-function loadPoolCache() {
-  // In browser environment, use memory cache
-  // TODO: Consider using localStorage or IPC to main process for persistence
+// Load pool cache - works in both Electron browser mode and Node.js test mode
+async function loadPoolCache() {
+  // Node.js test environment - use direct file access
+  if (isNodeEnvironment && fs && nodeTestCachePath) {
+    try {
+      if (fs.existsSync(nodeTestCachePath)) {
+        const data = fs.readFileSync(nodeTestCachePath, 'utf8');
+        const cache = JSON.parse(data);
+        console.log(`📦 Loaded ${Object.keys(cache.pools || {}).length} pools from Node.js cache`);
+        return cache;
+      }
+    } catch (error) {
+      console.warn('Failed to load Node.js pool cache:', error.message);
+    }
+    return { pools: {}, lastUpdated: '', version: '1.0.0' };
+  }
+
+  // Electron browser environment - use IPC
+  if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.loadPoolCache) {
+    try {
+      const result = await window.electronAPI.loadPoolCache();
+      if (result.success && result.cache) {
+        console.log(`📦 Loaded ${Object.keys(result.cache.pools || {}).length} pools from Electron cache`);
+        return result.cache;
+      }
+    } catch (error) {
+      console.warn('Failed to load Electron pool cache:', error.message);
+    }
+  }
+
+  // Fallback to memory cache
   return memoryCache;
 }
 
-// Save pool cache (uses in-memory cache for browser)
-function savePoolCache(cache) {
+// Save pool cache - works in both Electron browser mode and Node.js test mode
+async function savePoolCache(cache) {
   cache.lastUpdated = new Date().toISOString();
-  memoryCache = cache;
-  // TODO: Consider using localStorage or IPC to main process for persistence
+  memoryCache = cache; // Always update memory cache
+
+  // Node.js test environment - use direct file access
+  if (isNodeEnvironment && fs && nodeTestCachePath) {
+    try {
+      fs.writeFileSync(nodeTestCachePath, JSON.stringify(cache, null, 2));
+      console.log(`💾 Saved ${Object.keys(cache.pools || {}).length} pools to Node.js cache`);
+      return;
+    } catch (error) {
+      console.error('Failed to save Node.js pool cache:', error.message);
+    }
+  }
+
+  // Electron browser environment - use IPC
+  if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.savePoolCache) {
+    try {
+      const result = await window.electronAPI.savePoolCache(cache);
+      if (result.success) {
+        console.log(`💾 Saved ${Object.keys(cache.pools || {}).length} pools to Electron cache`);
+      }
+    } catch (error) {
+      console.error('Failed to save Electron pool cache:', error.message);
+    }
+  }
 }
 
 // Get pool data from cache or detect
 async function getPoolData(poolAddress, provider, poolInfo = null) {
-  const cache = loadPoolCache();
+  const cache = await loadPoolCache();
   
   // Check if pool data is already cached (static data like weights, type)
   if (cache.pools[poolAddress.toLowerCase()]) {
@@ -130,14 +208,14 @@ async function getPoolData(poolAddress, provider, poolInfo = null) {
   
   // Cache the result
   cache.pools[poolAddress.toLowerCase()] = enrichedData;
-  savePoolCache(cache);
+  await savePoolCache(cache);
   
   return enrichedData;
 }
 
 // Get cache statistics
-export function getCacheStats() {
-  const cache = loadPoolCache();
+export async function getCacheStats() {
+  const cache = await loadPoolCache();
   const poolCount = Object.keys(cache.pools).length;
   const poolTypes = {};
   const weightDistributions = {};

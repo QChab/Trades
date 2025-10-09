@@ -18,6 +18,7 @@ const sourcePath = path.join(userDataPath, 'source.json');
 const destinationPath = path.join(userDataPath, 'destination.json');
 const stateStoreFile = path.join(userDataPath, 'window-state.json');
 const infuraKeyFile = path.join(userDataPath, 'ik.json');
+const poolCachePath = path.join(userDataPath, 'balancerPoolsCache.json');
 let infuraKeys = [];
 
 import { ethers, BigNumber } from 'ethers';
@@ -1428,7 +1429,42 @@ function createWindow() {
         }
       });
     });
-  });  
+  });
+
+  // Pool cache handlers
+  ipcMain.handle('load-pool-cache', () => {
+    try {
+      if (fs.existsSync(poolCachePath)) {
+        const data = fs.readFileSync(poolCachePath, 'utf8');
+        return { success: true, cache: JSON.parse(data) };
+      } else {
+        // Return default empty cache if file doesn't exist
+        return {
+          success: true,
+          cache: { pools: {}, lastUpdated: '', version: '1.0.0' }
+        };
+      }
+    } catch (error) {
+      console.error('Error loading pool cache:', error);
+      return {
+        success: false,
+        error: error.message,
+        cache: { pools: {}, lastUpdated: '', version: '1.0.0' }
+      };
+    }
+  });
+
+  ipcMain.handle('save-pool-cache', (_event, cache) => {
+    try {
+      // Add timestamp to cache
+      cache.lastUpdated = new Date().toISOString();
+      fs.writeFileSync(poolCachePath, JSON.stringify(cache, null, 2));
+      return { success: true };
+    } catch (error) {
+      console.error('Error saving pool cache:', error);
+      return { success: false, error: error.message };
+    }
+  });
 }
 
 // Create the window once the app is ready
