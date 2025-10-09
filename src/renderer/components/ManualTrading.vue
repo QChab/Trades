@@ -4866,15 +4866,8 @@ export default {
 
             // Update senderDetails with loaded values
             if (mode !== undefined) {
-              // Reset mode if it requires a contract but none is deployed
-              if ((mode === 'contract' || mode === '1inch & contract') && !contractAddress[val.address]) {
-                senderDetails.value.mode = undefined;
-                walletModes[val.address] = undefined;
-                await window.electronAPI.saveWalletMode(val.address, undefined);
-              } else {
-                senderDetails.value.mode = mode;
-                walletModes[val.address] = mode;
-              }
+              senderDetails.value.mode = mode;
+              walletModes[val.address] = mode;
             }
           }
         }
