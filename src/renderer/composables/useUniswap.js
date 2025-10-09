@@ -379,7 +379,7 @@ export function useUniswapV4() {
 
       const [[trade0], [trade1]] = await Promise.all([
         Trade.bestTradeExactIn(pools0, amt0, tokenB, {maxHops: 2, maxNumResults: 1}),
-        Trade.bestTradeExactIn(pools1, amt1, tokenB, {maxHops: 2, maxNumResults: 1}),
+        Trade.bestTradeExactIn(pools1, amt1, tokenB, {maxHops: 3, maxNumResults: 1}),
       ])
 
       const out0 = trade0.swaps[0].outputAmount;

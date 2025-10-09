@@ -597,8 +597,35 @@
       "totalLiquidity": 173.92855642308328,
       "swapFee": "0.001",
       "queriedAt": "2025-10-09T17:44:13.526Z"
+    },
+    "0x41dad96b112fdc556e02948a111c8c0e697ac91f": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x41dad96b112fdc556e02948a111c8c0e697ac91f",
+      "id": "0x41dad96b112fdc556e02948a111c8c0e697ac91f",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.001735950376622189",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "416227.030554690163578793",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 416227.0322906405,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-09T17:50:12.230Z"
     }
   },
-  "lastUpdated": "2025-10-09T17:44:13.532Z",
+  "lastUpdated": "2025-10-09T17:50:12.234Z",
   "version": "1.0.0"
 }
