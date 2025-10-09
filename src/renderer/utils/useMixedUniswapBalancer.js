@@ -57,11 +57,11 @@ export async function useMixedUniswapBalancer({
 
     // Discover paths based on enabled DEXs
     let uniswapRoutes = [];
-    let balancerResult = null;
-    
+    let balancerRoutes = [];
+
     if (useUniswap && useBalancer) {
       // Parallel discovery when both enabled
-      [uniswapRoutes, balancerResult] = await Promise.all([
+      [uniswapRoutes, balancerRoutes] = await Promise.all([
         discoverUniswapPaths(tokenInObject, tokenOutObject, amountInBN),
         discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider)
       ]);
@@ -70,11 +70,11 @@ export async function useMixedUniswapBalancer({
       uniswapRoutes = await discoverUniswapPaths(tokenInObject, tokenOutObject, amountInBN);
     } else if (useBalancer) {
       // Only Balancer
-      balancerResult = await discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider);
+      balancerRoutes = await discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider);
     }
 
     results.uniswapPaths = uniswapRoutes || [];
-    results.balancerPaths = balancerResult ? [balancerResult] : [];
+    results.balancerPaths = balancerRoutes || [];
 
     console.log(`📊 Found ${results.uniswapPaths.length} Uniswap routes and ${results.balancerPaths.length} Balancer routes`);
 
@@ -297,14 +297,25 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
       return null;
     }
 
-    // Check if we have multiple paths
+    // Return ALL paths as array
     if (result.allPaths && result.allPaths.length > 1) {
-      console.log(`   Found ${result.allPaths.length} Balancer paths to consider`);
-      // TODO: Return all paths for multi-path optimization
-      // For now, still use the best one
+      console.log(`   ✅ Returning ${result.allPaths.length} Balancer paths`);
+      return result.allPaths.map(pathResult => ({
+        protocol: 'balancer',
+        outputAmount: BigNumber.from(pathResult.amountOut),
+        minAmountOut: BigNumber.from(pathResult.minAmountOut),
+        path: pathResult.path,
+        pools: pathResult.poolAddresses,
+        poolTypes: pathResult.poolTypes,
+        weights: pathResult.weights,
+        hops: pathResult.path.hops.length,
+        fees: pathResult.fees,
+        poolData: pathResult.poolData
+      }));
     }
 
-    return {
+    // Single path - return as array for consistency
+    return [{
       protocol: 'balancer',
       outputAmount: BigNumber.from(result.amountOut),
       minAmountOut: BigNumber.from(result.minAmountOut),
@@ -314,15 +325,12 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
       weights: result.weights,
       hops: result.path.hops.length,
       fees: result.fees,
-      // Pass through poolData for exact AMM calculations
-      poolData: result.poolData,
-      // Include all paths for future multi-path optimization
-      allPaths: result.allPaths
-    };
+      poolData: result.poolData
+    }];
 
   } catch (error) {
     console.error('Balancer path discovery failed:', error);
-    return null;
+    return [];
   }
 }
 
@@ -572,205 +580,53 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
  */
 async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, amountIn, tokenIn, tokenOut) {
   const routes = [];
-  
-  // Group paths by ETH/WETH variants for unified optimization
-  
-  // Single protocol routes (100% on one DEX)
-  if (uniswapPaths.length > 0) {
-    // Best single Uniswap route (considering ETH/WETH variants)
-    const bestUniswap = selectBestVariant(uniswapPaths);
-    routes.push({
-      type: 'single-uniswap',
-      protocol: 'uniswap',
-      totalOutput: bestUniswap.outputAmount,
-      paths: [bestUniswap],
-      requiresWrap: bestUniswap.requiresWrap,
-      requiresUnwrap: bestUniswap.requiresUnwrap
-    });
 
-    // If Uniswap already found an optimal split between 2 paths
-    if (uniswapPaths.length > 1) {
-      const totalOutput = uniswapPaths.reduce(
-        (sum, path) => sum.add(path.outputAmount),
-        BigNumber.from(0)
-      );
-      
+  // Add ALL Uniswap paths as individual routes
+  if (uniswapPaths && uniswapPaths.length > 0) {
+    uniswapPaths.forEach((uniPath, index) => {
       routes.push({
-        type: 'split-uniswap',
+        type: `uniswap-path-${index + 1}`,
         protocol: 'uniswap',
-        totalOutput,
-        paths: uniswapPaths,
-        splits: uniswapPaths.map(path => ({
-          protocol: 'uniswap',
-          percentage: path.inputAmount.mul(10000).div(amountIn).toNumber() / 10000,
-          output: path.outputAmount
-        }))
+        totalOutput: uniPath.outputAmount,
+        paths: [uniPath],
+        requiresWrap: uniPath.requiresWrap,
+        requiresUnwrap: uniPath.requiresUnwrap,
+        description: `Uniswap path ${index + 1}`
       });
-    }
-  }
-
-  if (balancerPaths.length > 0) {
-    const bestBalancer = balancerPaths[0];
-    routes.push({
-      type: 'single-balancer',
-      protocol: 'balancer',
-      totalOutput: bestBalancer.outputAmount,
-      paths: [bestBalancer]
     });
+    console.log(`   Added ${uniswapPaths.length} Uniswap routes`);
+  }
+
+  // Add ALL Balancer paths as individual routes
+  if (balancerPaths && balancerPaths.length > 0) {
+    balancerPaths.forEach((balPath, index) => {
+      routes.push({
+        type: `balancer-path-${index + 1}`,
+        protocol: 'balancer',
+        totalOutput: balPath.outputAmount,
+        paths: [balPath],
+        description: `Balancer path ${index + 1} (${balPath.hops} hops)`
+      });
+    });
+    console.log(`   Added ${balancerPaths.length} Balancer routes`);
   }
 
 
-  // Add optimized cross-DEX multi-hop paths using EXACT computations
+  // Add cross-DEX paths as simple routes
   if (crossDEXPaths && crossDEXPaths.length > 0) {
-    // Check for splittable cross-DEX paths (with parallel first-hop options)
-    const splittablePath = crossDEXPaths.find(p => p.type === 'cross-dex-splittable' && p.canSplitFirstHop);
-    
-    if (splittablePath) {
-      console.log('\n🎯 Found splittable cross-DEX path, optimizing with EXACT AMM computations...');
-      
-      // Analyze the path structure - can have various configurations:
-      // 1. Both legs direct to target: ONE→ETH (Uniswap) + ONE→WETH (Balancer)
-      // 2. One direct, one multi-hop: ONE→ETH (Uniswap) + ONE→USDC→ETH (Balancer)
-      // 3. Both multi-hop through different intermediates
-
-      const legs = splittablePath.legs || [];
-      console.log(`   Analyzing ${legs.length} legs in cross-DEX path`);
-
-      // Group legs by their position in the path
-      const firstHopLegs = legs.filter(l => {
-        // First hop legs are those that take the input token
-        return !l.inputToken || l.inputToken?.symbol === tokenIn.symbol;
-      });
-
-      const secondHopLegs = legs.filter(l => {
-        // Second hop legs output the target token but don't input the source token
-        // AND must not be swapping token to itself
-        return l.token?.symbol === tokenOut.symbol &&
-               (!l.inputToken || l.inputToken?.symbol !== tokenIn.symbol) &&
-               (!l.inputToken || l.inputToken?.symbol !== l.token?.symbol);
-      });
-
-      console.log(`   Found ${firstHopLegs.length} first-hop options, ${secondHopLegs.length} second-hop options`);
-
-      // Check if we have parallel first-hop options that can be split
-      const balancerFirstHop = firstHopLegs.find(l => l.protocol === 'balancer');
-      const uniswapFirstHop = firstHopLegs.find(l => l.protocol === 'uniswap');
-
-      if (balancerFirstHop && uniswapFirstHop) {
-        console.log('   ✓ Found parallel first-hop options for splitting');
-
-        // Check if first hops already reach the target (considering ETH/WETH equivalence)
-        const isETHTarget = tokenOut.symbol === 'ETH' || tokenOut.symbol === 'WETH';
-        const balancerReachesTarget =
-          balancerFirstHop.token?.symbol === tokenOut.symbol ||
-          (isETHTarget && (balancerFirstHop.token?.symbol === 'ETH' || balancerFirstHop.token?.symbol === 'WETH'));
-        const uniswapReachesTarget =
-          uniswapFirstHop.token?.symbol === tokenOut.symbol ||
-          (isETHTarget && (uniswapFirstHop.token?.symbol === 'ETH' || uniswapFirstHop.token?.symbol === 'WETH'));
-
-        if (balancerReachesTarget && uniswapReachesTarget) {
-          console.log('   Both first hops reach target directly - optimizing direct split');
-          // Both reach target directly - optimize split without second hop
-          const optimizedSplit = await optimizeDirectSplit(
-            balancerFirstHop,
-            uniswapFirstHop,
-            amountIn,
-            tokenIn,
-            tokenOut
-          );
-          if (optimizedSplit) {
-            routes.push(optimizedSplit);
-          }
-        } else if (secondHopLegs.length > 0) {
-          console.log('   Need second hop for complete path - optimizing with intermediate');
-          // Need second hop - use the existing optimization
-          const optimizedSplit = await optimizeWithExactAMM(
-            balancerFirstHop,
-            uniswapFirstHop,
-            secondHopLegs[0], // Use the first available second hop
-            amountIn,
-            tokenIn,
-            tokenOut
-          );
-          if (optimizedSplit) {
-            routes.push(optimizedSplit);
-          }
-        }
-      }
-    }
-    
-    // Check if we have separate paths that can be combined
-    const balancerWETHPath = crossDEXPaths.find(p => 
-      p.legs && p.legs.length === 2 && 
-      p.legs[0].protocol === 'balancer' &&
-      p.legs[0].token?.symbol === 'WETH'
-    );
-    
-    const uniswapETHPath = crossDEXPaths.find(p => 
-      p.legs && p.legs.length === 2 && 
-      p.legs[0].protocol === 'uniswap' &&
-      p.legs[0].token?.symbol === 'ETH'
-    );
-    
-    // If we have both ONE->WETH on Balancer and ONE->ETH on Uniswap paths
-    if (balancerWETHPath && uniswapETHPath) {
-      // Check if these paths directly reach the target or need second hop
-      const isETHTarget = tokenOut.symbol === 'ETH' || tokenOut.symbol === 'WETH';
-      const needsSecondHop = !isETHTarget && balancerWETHPath.legs.length > 1;
-
-      if (needsSecondHop && balancerWETHPath.legs[1]) {
-        // Use exact AMM optimization for multi-hop
-        const optimizedCrossDEX = await optimizeWithExactAMM(
-          balancerWETHPath.legs[0],
-          uniswapETHPath.legs[0],
-          balancerWETHPath.legs[1], // Second hop
-          amountIn,
-          tokenIn,
-          tokenOut
-        );
-        if (optimizedCrossDEX) {
-          routes.push(optimizedCrossDEX);
-        }
-      } else {
-        // Use direct split optimization
-        const optimizedCrossDEX = await optimizeDirectSplit(
-          balancerWETHPath.legs[0],
-          uniswapETHPath.legs[0],
-          amountIn,
-          tokenIn,
-          tokenOut
-        );
-        if (optimizedCrossDEX) {
-          routes.push(optimizedCrossDEX);
-        }
-      }
-    }
-    
-    // Also add original cross-DEX paths for comparison
-    // Convert them to have totalOutput field
-    crossDEXPaths.forEach(path => {
+    crossDEXPaths.forEach((path, index) => {
       routes.push({
         ...path,
-        totalOutput: path.totalOutput || path.outputAmount || BigNumber.from(0)
+        type: path.type || `cross-dex-path-${index + 1}`,
+        totalOutput: path.totalOutput || path.outputAmount || BigNumber.from(0),
+        description: path.description || path.path || `Cross-DEX path ${index + 1}`
       });
     });
+    console.log(`   Added ${crossDEXPaths.length} cross-DEX routes`);
   }
 
-  // Advanced: 3-way or 4-way splits if we have multiple paths on each protocol
-  if (uniswapPaths.length >= 2 && balancerPaths.length >= 1) {
-    const advancedRoute = await findAdvancedSplit(
-      uniswapPaths.slice(0, 2),
-      balancerPaths.slice(0, 1),
-      amountIn,
-      tokenIn,
-      tokenOut
-    );
-    
-    if (advancedRoute) {
-      routes.push(advancedRoute);
-    }
-  }
-
+  console.log(`\n📊 Total routes discovered: ${routes.length}`);
+  console.log(routes);
   return routes;
 }
 
