@@ -390,7 +390,7 @@ export function useUniswapV4() {
    */
   async function findBestSplitHillClimb(
     pools0, pools1, rawIn, tokenA, tokenB,
-    { initialFrac = 0.8, initialStep = 0.1, minStep = 0.025 } = {}
+    { initialFrac = 0.8, initialStep = 0.1, minStep = 0.0001 } = {}
   ) {
     let frac   = initialFrac;
     let step   = initialStep;

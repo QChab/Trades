@@ -38,13 +38,25 @@ async function testCrossDEXRouting() {
     decimals: 6  // USDC has 6 decimals
   };
 
-  const rawAmountIn = '10'
+  const AAVE = {
+    address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9',
+    symbol: 'AAVE',
+    decimals: 18
+  };
+
+  const INCH = {
+    address: '0x111111111117dc0aa78b770fa6a738034120c302',
+    symbol: '1INCH',
+    decimals: 18
+  };
+
+  const rawAmountIn = '1000'
   const amountIn = ethers.utils.parseUnits(rawAmountIn, 18);
 
 
   const tokensTraded = {
-    tokenInObject: ONE,
-    tokenOutObject: SEV,
+    tokenInObject: AAVE,
+    tokenOutObject: INCH,
   }
   console.log(`=== Testing Cross-DEX Routing (${tokensTraded.tokenInObject.symbol} -> ${tokensTraded.tokenOutObject.symbol}- ===\n`);
   console.log(`Input: ${rawAmountIn} ${tokensTraded.tokenInObject.symbol}`);
@@ -110,13 +122,13 @@ async function testCrossDEXRouting() {
       }
 
       // Show the execution plan
-      if (result.executionPlan) {
-        console.log('\n   📋 Execution Plan:');
-        console.log('   ================');
-        console.log(JSON.stringify(result.executionPlan, null, 2));
-      } else {
-        console.log('\n   ⚠️ No execution plan generated');
-      }
+      // if (result.executionPlan) {
+      //   console.log('\n   📋 Execution Plan:');
+      //   console.log('   ================');
+      //   console.log(JSON.stringify(result.executionPlan, null, 2));
+      // } else {
+      //   console.log('\n   ⚠️ No execution plan generated');
+      // }
       
     } else {
       console.log('❌ No route found');

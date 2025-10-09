@@ -373,16 +373,25 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
       
       // IMPORTANT: For ETH/WETH, we want to explore BOTH paths as parallel options
       if (intermediate.isETH && balancerLeg1 && uniswapLeg1 && uniswapLeg1.length > 0) {
-        console.log(`   ✓ Found parallel first-hop options:`);
-        console.log(`      • Balancer: ${tokenIn.symbol} -> WETH, output: ${ethers.utils.formatUnits(balancerLeg1.outputAmount, 18)}`);
-        console.log(`      • Uniswap: ${tokenIn.symbol} -> ETH, output: ${ethers.utils.formatUnits(uniswapLeg1[0].outputAmount, 18)}`);
-        
-        // For the second hop, we use Uniswap ETH->tokenOut
-        const ethToTokenOut = await discoverUniswapPaths(
-          { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 },
-          tokenOut,
-          ethers.utils.parseEther('0.646') // Approximate combined output
-        );
+        // Validate that both legs have non-zero outputs
+        if (balancerLeg1.outputAmount.gt(0) && uniswapLeg1[0].outputAmount.gt(0)) {
+          console.log(`   ✓ Found parallel first-hop options:`);
+          console.log(`      • Balancer: ${tokenIn.symbol} -> WETH, output: ${ethers.utils.formatUnits(balancerLeg1.outputAmount, 18)}`);
+          console.log(`      • Uniswap: ${tokenIn.symbol} -> ETH, output: ${ethers.utils.formatUnits(uniswapLeg1[0].outputAmount, 18)}`);
+
+          // Estimate combined output assuming 50/50 split as starting point for path discovery
+          // This will be recalculated with the actual optimal split during optimization
+          // Use sum divided by 2, with a minimum of 1 wei to prevent zero
+          const sum = balancerLeg1.outputAmount.add(uniswapLeg1[0].outputAmount);
+          const estimatedCombinedOutput = sum.div(2).gt(0) ? sum.div(2) : BigNumber.from(1);
+          console.log(`      • Estimated combined output (50/50 split): ${ethers.utils.formatUnits(estimatedCombinedOutput, 18)} ETH`);
+
+          // For the second hop, we use Uniswap ETH->tokenOut
+          const ethToTokenOut = await discoverUniswapPaths(
+            { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 },
+            tokenOut,
+            estimatedCombinedOutput
+          );
         
         if (ethToTokenOut && ethToTokenOut.length > 0) {
           // Create a special cross-DEX path that can be split
@@ -409,7 +418,7 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
                 protocol: 'uniswap',
                 token: { symbol: tokenOut.symbol, decimals: tokenOut.decimals },
                 outputAmount: ethToTokenOut[0].outputAmount,
-                inputAmount: ethers.utils.parseEther('0.646'),
+                inputAmount: estimatedCombinedOutput,  // Use dynamically calculated estimate
                 trade: ethToTokenOut[0].trade
               }
             ],
@@ -417,10 +426,14 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
             canSplitFirstHop: true
           });
         }
+        } else {
+          console.log(`   ⚠ Skipping cross-DEX path: one or both legs have zero output`);
+        }
       }
       
       // If we found a path for the first leg, try the second leg
-      if (balancerLeg1 && balancerLeg1.outputAmount) {
+      // IMPORTANT: Must check .gt(0) because BigNumber objects are always truthy
+      if (balancerLeg1 && balancerLeg1.outputAmount && balancerLeg1.outputAmount.gt(0)) {
         console.log(`   ✓ Found Balancer leg1: ${tokenIn.symbol} -> ${intermediate.symbol}, output: ${ethers.utils.formatUnits(balancerLeg1.outputAmount, intermediate.decimals)}`);
         
         // For ETH/WETH intermediate, we need to handle the conversion
@@ -471,27 +484,31 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
             estimatedGas: 180000
           });
         }
+      } else if (balancerLeg1 && balancerLeg1.outputAmount && balancerLeg1.outputAmount.eq(0)) {
+        console.log(`   ⚠ Skipping Balancer leg1: ${tokenIn.symbol} -> ${intermediate.symbol} (zero output)`);
       }
-      
+
       // Try Uniswap first leg
       if (uniswapLeg1 && uniswapLeg1.length > 0) {
         const bestUniswapLeg1 = selectBestVariant(uniswapLeg1);
-        
-        // For ETH/WETH intermediate, handle conversion for Balancer
-        let intermediateForBalancer = intermediate;
-        let needsETHToWETHConversion = false;
-        
-        if (intermediate.isETH) {
-          // Uniswap outputs ETH, but Balancer needs WETH
-          intermediateForBalancer = { address: WETH_ADDRESS, symbol: 'WETH', decimals: 18 };
-          needsETHToWETHConversion = true;
-        }
-        
-        // Second leg with Uniswap output
-        const [balancerLeg2, uniswapLeg2] = await Promise.all([
-          discoverBalancerPaths(intermediateForBalancer, tokenOut, bestUniswapLeg1.outputAmount, provider),
-          discoverUniswapPaths(intermediate, tokenOut, bestUniswapLeg1.outputAmount)
-        ]);
+
+        // Validate non-zero output before proceeding
+        if (bestUniswapLeg1.outputAmount && bestUniswapLeg1.outputAmount.gt(0)) {
+          // For ETH/WETH intermediate, handle conversion for Balancer
+          let intermediateForBalancer = intermediate;
+          let needsETHToWETHConversion = false;
+
+          if (intermediate.isETH) {
+            // Uniswap outputs ETH, but Balancer needs WETH
+            intermediateForBalancer = { address: WETH_ADDRESS, symbol: 'WETH', decimals: 18 };
+            needsETHToWETHConversion = true;
+          }
+
+          // Second leg with Uniswap output
+          const [balancerLeg2, uniswapLeg2] = await Promise.all([
+            discoverBalancerPaths(intermediateForBalancer, tokenOut, bestUniswapLeg1.outputAmount, provider),
+            discoverUniswapPaths(intermediate, tokenOut, bestUniswapLeg1.outputAmount)
+          ]);
         
         if (balancerLeg2 && balancerLeg2.outputAmount) {
           const conversionStep = needsETHToWETHConversion ? ' -> [wrap ETH to WETH]' : '';
@@ -523,8 +540,11 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
             estimatedGas: 180000
           });
         }
+        } else {
+          console.log(`   ⚠ Skipping Uniswap leg1: ${tokenIn.symbol} -> ${intermediate.symbol} (zero output)`);
+        }
       }
-      
+
     } catch (error) {
       console.error(`Error finding cross-DEX path via ${intermediate.symbol}:`, error.message);
     }
@@ -569,7 +589,7 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
         paths: uniswapPaths,
         splits: uniswapPaths.map(path => ({
           protocol: 'uniswap',
-          percentage: path.inputAmount.mul(100).div(amountIn).toNumber() / 100,
+          percentage: path.inputAmount.mul(10000).div(amountIn).toNumber() / 10000,
           output: path.outputAmount
         }))
       });
@@ -1415,8 +1435,8 @@ async function optimizeWithExactAMM(balancerLeg, uniswapLeg, secondHopLeg, amoun
         secondHopLeg.pool || secondHopLeg.trade?.route?.pools?.[0],
         uniswapLeg.token?.symbol || 'ETH',
         tokenOut.symbol
-      ) : secondHopLeg.outputAmount.mul(totalETH).div(secondHopLeg.inputAmount || ethers.utils.parseEther('0.646'));
-    
+      ) : secondHopLeg.outputAmount.mul(totalETH).div(secondHopLeg.inputAmount);
+
     return BigNumber.from(finalOut);
   };
   
@@ -1425,7 +1445,7 @@ async function optimizeWithExactAMM(balancerLeg, uniswapLeg, secondHopLeg, amoun
   const goldenRatio = (Math.sqrt(5) - 1) / 2;
   let a = 0.0;
   let b = 1.0;
-  const tolerance = 0.000001; // 0.0001% precision (100x better than before)
+  const tolerance = 0.00001; // 0.001% precision (100x better than before)
   let iterations = 0;
 
   // Initial points using golden ratio
