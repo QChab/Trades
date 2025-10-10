@@ -444,66 +444,10 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
         discoverUniswapPaths(tokenIn, intermediateForUniswap, amountIn)
       ]);
       
-      // IMPORTANT: For ETH/WETH, we want to explore BOTH paths as parallel options
-      if (intermediate.isETH && balancerLeg1 && balancerLeg1.length > 0 && uniswapLeg1 && uniswapLeg1.length > 0) {
-        // Validate that both legs have non-zero outputs
-        if (balancerLeg1[0].outputAmount.gt(0) && uniswapLeg1[0].outputAmount.gt(0)) {
-          console.log(`   ✓ Found parallel first-hop options:`);
-          console.log(`      • Balancer: ${tokenIn.symbol} -> WETH, output: ${ethers.utils.formatUnits(balancerLeg1[0].outputAmount, 18)}`);
-          console.log(`      • Uniswap: ${tokenIn.symbol} -> ETH, output: ${ethers.utils.formatUnits(uniswapLeg1[0].outputAmount, 18)}`);
-
-          // Estimate combined output assuming 50/50 split as starting point for path discovery
-          // This will be recalculated with the actual optimal split during optimization
-          // Use sum divided by 2, with a minimum of 1 wei to prevent zero
-          const sum = balancerLeg1[0].outputAmount.add(uniswapLeg1[0].outputAmount);
-          const estimatedCombinedOutput = sum.div(2).gt(0) ? sum.div(2) : BigNumber.from(1);
-          console.log(`      • Estimated combined output (50/50 split): ${ethers.utils.formatUnits(estimatedCombinedOutput, 18)} ETH`);
-
-          // For the second hop, we use Uniswap ETH->tokenOut
-          const ethToTokenOut = await discoverUniswapPaths(
-            { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 },
-            tokenOut,
-            estimatedCombinedOutput
-          );
-        
-        if (ethToTokenOut && ethToTokenOut.length > 0) {
-          // Create a special cross-DEX path that can be split
-          paths.push({
-            type: 'cross-dex-splittable',
-            path: `${tokenIn.symbol} -> [WETH/ETH split] -> ${tokenOut.symbol}`,
-            outputAmount: ethToTokenOut[0].outputAmount, // Will be recalculated with optimal split
-            legs: [
-              {
-                protocol: 'balancer',
-                token: { symbol: 'WETH', decimals: 18 },
-                outputAmount: balancerLeg1[0].outputAmount,
-                inputAmount: amountIn,
-                path: balancerLeg1[0].path,  // CRITICAL: Required for exact output recalculation
-                poolData: balancerLeg1[0].poolData  // This is now properly passed from discoverBalancerPaths
-              },
-              {
-                protocol: 'uniswap',
-                token: { symbol: 'ETH', decimals: 18 },
-                outputAmount: uniswapLeg1[0].outputAmount,
-                inputAmount: amountIn,
-                trade: uniswapLeg1[0].trade
-              },
-              {
-                protocol: 'uniswap',
-                token: { symbol: tokenOut.symbol, decimals: tokenOut.decimals },
-                outputAmount: ethToTokenOut[0].outputAmount,
-                inputAmount: estimatedCombinedOutput,  // Use dynamically calculated estimate
-                trade: ethToTokenOut[0].trade
-              }
-            ],
-            needsWETHToETHConversion: true,
-            canSplitFirstHop: true
-          });
-        }
-        } else {
-          console.log(`   ⚠ Skipping cross-DEX path: one or both legs have zero output`);
-        }
-      }
+      // REMOVED: cross-dex-splittable route creation
+      // This was causing incorrect calculations where sequential execution
+      // passed WETH to a trade expecting AAVE input
+      // Instead, we create separate concrete routes below that work correctly
       
       // If we found a path for the first leg, try the second leg
       // IMPORTANT: Must check .gt(0) because BigNumber objects are always truthy
@@ -1041,6 +985,13 @@ async function calculateRouteExactOutput(route, amountIn, tokenIn, tokenOut) {
 
         if (leg.protocol === 'balancer' && leg.path) {
           currentAmount = await calculateBalancerRouteOutput(leg, currentAmount);
+
+          // IMPORTANT: If route needs WETH→ETH conversion after Balancer, unwrap at 1:1
+          if (route.needsWETHToETHConversion && i === 0) {
+            // WETH to ETH is 1:1, amount stays the same
+            // Just a marker that we've unwrapped
+            currentToken = { symbol: 'ETH', decimals: 18 };
+          }
         } else if (leg.protocol === 'uniswap') {
           // Uniswap leg - could be single trade or pre-optimized split
           if (leg.trade) {
@@ -1552,28 +1503,66 @@ async function selectBestRoute(routes, amountIn, tokenIn, tokenOut) {
         let currentToken = tokenIn;
         const legOutputs = [];
 
-        for (const leg of split.route.legs) {
+        for (let i = 0; i < split.route.legs.length; i++) {
+          const leg = split.route.legs[i];
           const legToken = leg.token || tokenOut;
           let legOutput;
 
           if (leg.protocol === 'balancer' && leg.path) {
             legOutput = await calculateBalancerRouteOutput({ path: leg.path, poolData: leg.poolData }, currentAmount);
+
+            legOutputs.push({
+              protocol: leg.protocol,
+              inputAmount: currentAmount,
+              inputToken: currentToken,
+              outputAmount: legOutput,
+              outputToken: legToken
+            });
+
+            // IMPORTANT: If route needs WETH→ETH unwrap, show it
+            if (split.route.needsWETHToETHConversion && i === 0) {
+              // Add unwrap step (1:1 conversion)
+              legOutputs.push({
+                protocol: 'unwrap',
+                inputAmount: legOutput,
+                inputToken: { symbol: 'WETH', decimals: 18 },
+                outputAmount: legOutput, // 1:1 conversion
+                outputToken: { symbol: 'ETH', decimals: 18 }
+              });
+              currentToken = { symbol: 'ETH', decimals: 18 };
+            } else {
+              currentToken = legToken;
+            }
+
+            currentAmount = legOutput;
+
           } else if (leg.protocol === 'uniswap' && leg.trade) {
             legOutput = await calculateUniswapRouteOutput({ trade: leg.trade }, currentAmount);
+
+            legOutputs.push({
+              protocol: leg.protocol,
+              inputAmount: currentAmount,
+              inputToken: currentToken,
+              outputAmount: legOutput,
+              outputToken: legToken
+            });
+
+            currentAmount = legOutput;
+            currentToken = legToken;
           } else {
             legOutput = currentAmount; // fallback
+
+            legOutputs.push({
+              protocol: leg.protocol,
+              inputAmount: currentAmount,
+              inputToken: currentToken,
+              outputAmount: legOutput,
+              outputToken: legToken
+            });
+
+            currentAmount = legOutput;
+            currentToken = legToken;
           }
-
-          legOutputs.push({
-            protocol: leg.protocol,
-            inputAmount: currentAmount,
-            inputToken: currentToken,
-            outputAmount: legOutput,
-            outputToken: legToken
-          });
-
-          currentAmount = legOutput;
-          currentToken = legToken;
         }
 
         // Display each leg
