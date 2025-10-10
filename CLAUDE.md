@@ -111,12 +111,6 @@ The system implements sophisticated gas cost calculations:
 - ES2022 target with ESM modules
 - JSBI pre-bundling for SDK compatibility
 
-### Testing Configuration
-- Jest with Vue 3 support
-- Test files: `**/tests/unit/**/*.spec.(js|jsx|ts|tsx)`
-- jsdom environment for DOM testing
-- Module aliases: `@/` maps to `src/`
-
 ### Electron Integration
 - Main process handles blockchain interactions
 - IPC communication for secure operations
@@ -124,8 +118,6 @@ The system implements sophisticated gas cost calculations:
 - Developer tools auto-open in development mode
 
 When working with this codebase, pay special attention to the order type determination logic, gas cost calculations, and price inversion handling as these are complex areas with many edge cases that have been specifically addressed.
-
-## Recent Critical Fixes and Implementations
 
 ### Token Address Validation System
 - **Save/Load Operations**: Both `save-settings` and `load-settings` handlers in `main.mjs` now validate token addresses
@@ -168,18 +160,8 @@ The application follows a secure Electron architecture where all private key ope
 **1. Main Process - IPC Handlers** (`main.mjs:1097-1119`):
 ```javascript
 ipcMain.handle('deploy-bundler', async (event, walletAddress, salt = 0) => {
-  const wallet = getWallet(walletAddress.toLowerCase(), true);
-  const bundlerManager = new BundlerManager(provider, wallet);
-  const bundlerContract = await bundlerManager.deployBundler(salt);
-  return { success: true, address: bundlerContract.address };
-});
 
 ipcMain.handle('get-bundler', async (event, walletAddress) => {
-  const wallet = getWallet(walletAddress.toLowerCase(), true);
-  const bundlerManager = new BundlerManager(provider, wallet);
-  const bundlerContract = await bundlerManager.getBundler(walletAddress);
-  return { success: true, address: bundlerContract ? bundlerContract.address : null };
-});
 ```
 
 **Key Implementation Details**:
@@ -197,19 +179,9 @@ getBundler: (walletAddress) => ipcRenderer.invoke('get-bundler', walletAddress),
 
 **3. Renderer Process - UI Integration** (`ManualTrading.vue:261-273, 5070-5089`):
 ```javascript
-// Deploy button in template
-<button
-  v-if="!contractAddress?.[senderDetails?.address]"
   @click="deployBundler"
-  :disabled="isDeploying"
->
   {{ isDeploying ? 'Deploying...' : 'Deploy' }}
 </button>
-
-// Deployment function
-const deployBundler = async () => {
-  isDeploying.value = true;
-  swapMessage.value = 'Deploying bundler contract...';
 
   const result = await window.electronAPI.deployBundler(senderDetails.value.address);
 
@@ -219,29 +191,6 @@ const deployBundler = async () => {
   }
 };
 ```
-
-#### Contract Address Storage
-
-**In-Memory Storage** (`ManualTrading.vue:697`):
-```javascript
-const contractAddress = reactive({});  // Keyed by wallet address
-```
-
-**Initialization on Mount** (`ManualTrading.vue:5058-5064`):
-```javascript
-// Check for existing bundler
-if (senderDetails.value?.address) {
-  const result = await window.electronAPI.getBundler(senderDetails.value.address);
-  if (result.success && result.address) {
-    contractAddress[senderDetails.value.address] = result.address;
-  }
-}
-```
-
-**Display in UI**:
-- Shows "Deploy" button when no bundler exists for current wallet
-- Shows bundler address with copy functionality when deployed
-- Address format: `0x1234...5678` (shortened for display)
 
 #### BundlerManager Integration (`src/bundler/BundlerManager.js`)
 
@@ -263,12 +212,6 @@ if (senderDetails.value?.address) {
 - `getWallet()` retrieves from AES-256 encrypted storage
 - All signing operations occur in main.mjs
 - Renderer only receives transaction results
-
-**IPC Security**:
-- `contextBridge` prevents direct access to Node.js APIs
-- Only whitelisted functions exposed to renderer
-- All parameters validated in main process handlers
-- Error messages sanitized before returning to renderer
 
 **Wallet Selection**:
 - Deployment tied to `senderDetails.value.address` (current selected wallet)
@@ -346,7 +289,6 @@ Two stateless encoder contracts generate calldata dynamically:
 
 **BalancerEncoder.sol**:
 - `encodeSingleSwap`: Encodes single Balancer swaps
-- `encodeBatchSwap`: Encodes multi-hop Balancer paths
 - `encodeUseAllBalanceSwap`: Special function using `type(uint256).max` marker
 
 **UniswapEncoder.sol**:
@@ -511,25 +453,6 @@ This dynamic encoding system ensures robust execution of complex cross-DEX trade
 #### Overview
 The routing system now discovers ALL available paths across both DEXs and optimizes splits using exact AMM calculations. This replaces expensive multi-dimensional optimization with a fast, practical approach.
 
-#### Path Discovery Strategy
-**Returns ALL Paths as Individual Routes**:
-- `discoverBalancerPaths()` returns an **array** of all valid Balancer paths (not just the best)
-- Each Uniswap path becomes a separate route
-- Each Balancer path becomes a separate route
-- Each cross-DEX multi-hop path becomes a separate route
-- Fast discovery phase (< 1 second for typical trades)
-
-**Example Output**:
-```javascript
-routes = [
-  { type: 'balancer-path-1', totalOutput: X, hops: 1 },  // ONE → USDC
-  { type: 'balancer-path-2', totalOutput: Y, hops: 1 },  // ONE → ETH
-  { type: 'balancer-path-3', totalOutput: Z, hops: 2 },  // ONE → WETH → USDC
-  { type: 'uniswap-path-1', totalOutput: A },            // ONE → ETH
-  { type: 'cross-dex-...', totalOutput: B }              // USDC → SEV
-]
-```
-
 #### Simple Iterative Split Optimization
 **Algorithm**: Hill climbing with exact AMM recalculation at each step
 
@@ -541,16 +464,6 @@ routes = [
 5. **Typical Performance**: Converges in 5-20 iterations, < 2 seconds total
 
 **Code Location**: `optimizeSplitSimple()` at line ~684
-
-```javascript
-// Example optimization output:
-Initial split: 33.5% / 33.2% / 33.3%
-Iteration 1: Output increased - Split: 35.5% / 31.2% / 33.3%
-Iteration 2: Output increased - Split: 37.5% / 29.2% / 33.3%
-...
-✅ Optimized in 8 iterations
-Final split: 42.1% / 27.4% / 30.5%
-```
 
 #### CRITICAL: Exact AMM Calculations Only
 
@@ -657,11 +570,37 @@ return route.outputAmount; // Don't use this for splits
 const exactOutput = await calculateRouteExactOutput(route, splitAmount);
 ```
 
+#### Latest Routing System Improvements (Completed)
+
+The cross-DEX routing system has been significantly enhanced with the following features:
+
+1. ✅ **Pool Deduplication by Pool Address**: Both Uniswap and Balancer paths are deduplicated by actual pool addresses (not output amounts) to prevent the same pool from being included multiple times in optimization.
+
+2. ✅ **Per-Route Output Calculation**: Each multi-hop route now queries its second leg using its own first leg's specific output. Previously, all routes shared the same estimated output from the best first-leg pool, causing incorrect output calculations for weaker pools.
+
+3. ✅ **Balancer Path Structure Handling**: Proper handling of Balancer's path structure (`pathResult.poolAddresses` and `pathResult.path.hops`) for reliable pool identification and deduplication.
+
+4. ✅ **Uniswap Shows ETH (not WETH)**: Uniswap V4 routes correctly display and use ETH as the native token, while Balancer routes use WETH. The intermediate token is automatically selected based on protocol (`intermediate.isETH` flag).
+
+5. ✅ **WETH → ETH Unwrap at 1:1**: Cross-DEX routes that bridge from Balancer (WETH) to Uniswap (ETH) now correctly show and handle the 1:1 unwrap operation, not a swap through a pool.
+
+6. ✅ **3-Hop Routes Working Correctly**: Routes like AAVE → USDC → ETH → 1INCH are properly discovered and each leg calculates based on the actual output from the previous leg.
+
+7. ✅ **Pool Convergence Detection**: The system detects when multiple routes converge to the same final pool (e.g., 5 routes all ending at ETH-1INCH pool) and logs a warning about potential compounding price impact.
+
+8. ✅ **Optimizer Correctly Minimizes Bad Pools**: The hill-climbing optimizer now correctly allocates minimal percentage (e.g., 1.5%) to inferior pools while maximizing allocation to better pools, based on their actual calculated outputs.
+
+**Example Results**:
+- Input: 1000 AAVE → 1INCH
+- Output: ~470,000 1INCH (vs. ~240,000 from single best route)
+- Optimal split: 67% best pool, 1.5% worst pool, 13.6% USDC path, 13.3% 3-hop path, 4.6% Balancer path
+
 #### Future Enhancements
 - Parallel route execution via WalletBundler contract
 - Dynamic route discovery during optimization
 - Gas cost integration into optimization objective
 - Multi-hop convergence path support (currently disabled due to performance)
+- Hierarchical optimization to properly handle pool convergence
 
 ### CRITICAL: Uniswap Route Discovery Constraints
 
@@ -688,74 +627,6 @@ When building multi-hop cross-DEX routes (e.g., AAVE → ETH → 1INCH), the sys
 - Assume `selectBestPath` returns pre-split amounts
 - Sum route outputs without considering they all need the same input
 - Use only the best single route (wastes available liquidity in other pools)
-
-### Pre-Optimized Split Handling (DEPRECATED - NO LONGER APPLICABLE)
-
-#### Historical Context
-Previously, the `useUniswap.selectBestPath()` function performed split optimization when it found multiple viable routes through different pools. It used hill-climbing to find the optimal split between two non-overlapping Uniswap pools and returned an array of TWO trades with their optimized split amounts (e.g., 60% via pool A, 40% via pool B).
-
-**This is NO LONGER the case** - see "Uniswap Route Discovery Constraints" above.
-
-Previously, `useMixedUniswapBalancer.js` was incorrectly treating these pre-optimized splits as separate independent routes, breaking the optimization because:
-1. Each route showed the output for a PARTIAL input amount (the split amount)
-2. When `optimizeSplitSimple` tried to re-optimize, it passed the FULL amount to these routes
-3. The routes didn't know they were part of a split, resulting in incorrect calculations
-
-#### Solution
-Modified `discoverUniswapPaths()` in `useMixedUniswapBalancer.js` (lines 239-286) to:
-
-1. **Detect Pre-Optimized Splits**: Check if `trades.length > 1` (indicates an optimized split)
-2. **Keep Splits Together**: Create a SINGLE route object with type `'uniswap-pre-optimized-split'`
-3. **Preserve Split Data**: Store all trades together with their split percentages and amounts
-4. **Calculate Combined Output**: Sum the outputs from all trades in the split
-
-```javascript
-if (trades.length > 1) {
-  // This is a split that was already optimized by selectBestPath
-  const totalOutput = trades.reduce((sum, trade) =>
-    sum.add(BigNumber.from(trade.outputAmount.quotient.toString())),
-    BigNumber.from(0)
-  );
-
-  const splitPath = {
-    protocol: 'uniswap',
-    type: 'uniswap-pre-optimized-split',
-    trades,  // Keep all trades together
-    splits: trades.map(trade => ({
-      trade,
-      inputAmount: BigNumber.from(trade.inputAmount.quotient.toString()),
-      outputAmount: BigNumber.from(trade.outputAmount.quotient.toString()),
-      percentage: ...
-    })),
-    inputAmount: amountIn,
-    outputAmount: totalOutput,
-    ...
-  };
-}
-```
-
-#### Execution Support
-Added handling for `'uniswap-pre-optimized-split'` routes in `createExecutionPlan()` (lines 1444-1460):
-
-```javascript
-} else if (route.type === 'uniswap-pre-optimized-split') {
-  // Pre-optimized split from useUniswap (already has optimized split amounts)
-  plan.executionSteps.push({
-    protocol: 'uniswap',
-    method: 'executeMixedSwaps',
-    trades: route.trades,  // Use trades from the pre-optimized split
-    totalInput: route.splits.reduce((sum, s) => sum.add(s.inputAmount), BigNumber.from(0)),
-    totalOutput: route.totalOutput
-  });
-}
-```
-
-#### Benefits
-- **Preserves Uniswap's Internal Optimization**: Respects the split optimization already performed by `selectBestPath`
-- **Accurate Output Calculations**: Routes show correct total output for full input amount
-- **No Double Optimization**: Prevents `optimizeSplitSimple` from trying to re-optimize pre-optimized splits
-- **Better Trade Execution**: Pre-optimized splits are now properly selected when they provide the best output
-- **Fixes AAVE→1INCH Issue**: Restores the split routing that was providing better output than single routes
 
 ### Development Pain Points to Avoid
 - **Price Inversion Logic**: Complex interaction between `shouldSwitchTokensForLimit` and order types

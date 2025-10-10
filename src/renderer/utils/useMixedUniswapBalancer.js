@@ -246,11 +246,41 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn) {
           continue;
         }
 
-        // Multiple trades returned - add each as separate route for optimization
-        if (trades.length > 1) {
-          console.log(`   ✓ Found ${trades.length} non-conflicting Uniswap routes`);
+        // Deduplicate trades by pool address (same pool returned multiple times)
+        const seenPools = new Set();
+        const uniqueTrades = trades.filter(trade => {
+          if (!trade || !trade.swaps || trade.swaps.length === 0) return false;
 
-          const paths = trades.filter(trade => trade && trade.swaps).map((trade, i) => {
+          // Get pool address from the trade
+          const route = trade.swaps[0].route;
+          if (!route || !route.pools || route.pools.length === 0) return false;
+
+          const pool = route.pools[0];
+          const poolKey = pool.address || pool.poolId || pool.id;
+
+          if (!poolKey) {
+            console.warn(`   ⚠️  Trade has no pool identifier`);
+            return true; // Keep it if we can't identify
+          }
+
+          if (seenPools.has(poolKey)) {
+            console.log(`   ⚠️  Removing duplicate pool ${poolKey.slice(0, 10)}...`);
+            return false; // Skip duplicate
+          }
+
+          seenPools.add(poolKey);
+          return true;
+        });
+
+        if (uniqueTrades.length < trades.length) {
+          console.log(`   ✅ Removed ${trades.length - uniqueTrades.length} duplicate pools for ${variant.tokenIn.symbol} → ${variant.tokenOut.symbol}`);
+        }
+
+        // Multiple unique trades - add each as separate route for optimization
+        if (uniqueTrades.length > 1) {
+          console.log(`   ✓ Found ${uniqueTrades.length} unique Uniswap routes`);
+
+          const paths = uniqueTrades.filter(trade => trade && trade.swaps).map((trade, i) => {
             const path = trade.swaps[0].route.currencyPath.map(c => c.symbol).join(' → ');
             const inputAmount = BigNumber.from(trade.inputAmount.quotient.toString());
             const outputAmount = BigNumber.from(trade.outputAmount.quotient.toString());
@@ -276,7 +306,7 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn) {
           allPaths.push(...paths);
         } else {
           // Single trade - add as individual path
-          const paths = trades.filter(trade => trade && trade.swaps).map(trade => {
+          const paths = uniqueTrades.filter(trade => trade && trade.swaps).map(trade => {
             const inputAmount = BigNumber.from(trade.inputAmount.quotient.toString());
             const outputAmount = BigNumber.from(trade.outputAmount.quotient.toString());
             const path = trade.swaps[0].route.currencyPath.map(c => c.symbol).join(' → ');
@@ -349,10 +379,51 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
       return null;
     }
 
-    // Return ALL paths as array
-    if (result.allPaths && result.allPaths.length > 1) {
-      console.log(`   ✅ Returning ${result.allPaths.length} Balancer paths`);
-      return result.allPaths.map(pathResult => ({
+    // Deduplicate paths by pool addresses
+    let pathsToReturn = result.allPaths || [result];
+
+    if (pathsToReturn.length > 1) {
+      const seenPools = new Set();
+      const uniquePaths = pathsToReturn.filter(pathResult => {
+        // Use poolAddresses array if available, otherwise try to extract from path.hops
+        let poolAddresses = pathResult.poolAddresses;
+
+        if (!poolAddresses && pathResult.path && pathResult.path.hops) {
+          poolAddresses = pathResult.path.hops.map(h => h.pool);
+        }
+
+        if (!poolAddresses || poolAddresses.length === 0) {
+          console.warn(`   ⚠️  Balancer path has no pool identifiers`);
+          return true; // Keep it if we can't identify
+        }
+
+        // Create a key from all pool addresses in the path
+        const poolKey = poolAddresses.map(p => p?.toLowerCase() || '').join('-');
+
+        if (!poolKey) {
+          return true; // Keep it if key is empty
+        }
+
+        if (seenPools.has(poolKey)) {
+          console.log(`   ⚠️  Removing duplicate Balancer path with pools ${poolKey.slice(0, 30)}...`);
+          return false; // Skip duplicate
+        }
+
+        seenPools.add(poolKey);
+        return true;
+      });
+
+      if (uniquePaths.length < pathsToReturn.length) {
+        console.log(`   ✅ Removed ${pathsToReturn.length - uniquePaths.length} duplicate Balancer paths`);
+      }
+
+      pathsToReturn = uniquePaths;
+    }
+
+    // Return ALL unique paths as array
+    if (pathsToReturn.length > 1) {
+      console.log(`   ✅ Returning ${pathsToReturn.length} unique Balancer paths`);
+      return pathsToReturn.map(pathResult => ({
         protocol: 'balancer',
         outputAmount: BigNumber.from(pathResult.amountOut),
         minAmountOut: BigNumber.from(pathResult.minAmountOut),
@@ -366,19 +437,25 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
       }));
     }
 
-    // Single path - return as array for consistency
-    return [{
-      protocol: 'balancer',
-      outputAmount: BigNumber.from(result.amountOut),
-      minAmountOut: BigNumber.from(result.minAmountOut),
-      path: result.path,
-      pools: result.poolAddresses,
-      poolTypes: result.poolTypes,
-      weights: result.weights,
-      hops: result.path.hops.length,
-      fees: result.fees,
-      poolData: result.poolData
-    }];
+    // Single path (or deduplicated to single) - return as array for consistency
+    if (pathsToReturn.length === 1) {
+      const pathResult = pathsToReturn[0];
+      return [{
+        protocol: 'balancer',
+        outputAmount: BigNumber.from(pathResult.amountOut),
+        minAmountOut: BigNumber.from(pathResult.minAmountOut),
+        path: pathResult.path,
+        pools: pathResult.poolAddresses,
+        poolTypes: pathResult.poolTypes,
+        weights: pathResult.weights,
+        hops: pathResult.path.hops.length,
+        fees: pathResult.fees,
+        poolData: pathResult.poolData
+      }];
+    }
+
+    // No paths left after deduplication
+    return null;
 
   } catch (error) {
     console.error('Balancer path discovery failed:', error);
@@ -563,21 +640,39 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
         }
 
         if (uniswapLeg2 && uniswapLeg2.length > 0) {
-          const bestUniswapLeg2 = selectBestVariant(uniswapLeg2);
-          // Create a cross-DEX route for EACH first-leg pool
-          uniswapLeg1.forEach((firstLegRoute, i) => {
+          // IMPORTANT: Calculate second leg output for EACH first-leg pool's specific output
+          // Don't use the same output for all routes!
+          for (let i = 0; i < uniswapLeg1.length; i++) {
+            const firstLegRoute = uniswapLeg1[i];
+            const firstLegOutput = firstLegRoute.outputAmount;
+
+            // Query second leg with THIS specific first leg's output
+            const secondLegForThisRoute = await discoverUniswapPaths(intermediate, tokenOut, firstLegOutput);
+
+            if (!secondLegForThisRoute || secondLegForThisRoute.length === 0) {
+              console.log(`   ⚠️  No second leg found for pool ${i + 1} output: ${ethers.utils.formatUnits(firstLegOutput, intermediate.decimals)} ${intermediate.symbol}`);
+              continue;
+            }
+
+            const bestUniswapLeg2 = selectBestVariant(secondLegForThisRoute);
+
+            // IMPORTANT: Uniswap uses ETH, not WETH
+            const uniswapToken = intermediate.isETH
+              ? { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 }
+              : intermediate;
+
             paths.push({
               type: 'cross-dex-uniswap-uniswap',
               protocol: 'uniswap',
               legs: [
-                { ...firstLegRoute, protocol: 'uniswap', token: intermediate },
+                { ...firstLegRoute, protocol: 'uniswap', token: uniswapToken },
                 { ...bestUniswapLeg2, protocol: 'uniswap' }
               ],
-              totalOutput: bestUniswapLeg2.outputAmount,
-              path: `${tokenIn.symbol} -> ${intermediate.symbol} (pool ${i + 1}) -> ${tokenOut.symbol} (Uniswap)`,
+              totalOutput: bestUniswapLeg2.outputAmount, // Now specific to this route!
+              path: `${tokenIn.symbol} -> ${uniswapToken.symbol} (pool ${i + 1}) -> ${tokenOut.symbol} (Uniswap)`,
               estimatedGas: 180000
             });
-          });
+          }
         }
 
         // IMPORTANT: Add 3-hop paths for better liquidity distribution
@@ -596,26 +691,47 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
             const uniswapLeg3 = await discoverUniswapPaths(ethIntermediate, tokenOut, bestLeg2.outputAmount);
 
             if (uniswapLeg3 && uniswapLeg3.length > 0) {
-              const bestLeg3 = selectBestVariant(uniswapLeg3);
+              // IMPORTANT: Calculate output for EACH first-leg pool's specific output chain
+              for (let i = 0; i < uniswapLeg1.length; i++) {
+                const firstLegRoute = uniswapLeg1[i];
+                const firstLegOutput = firstLegRoute.outputAmount;
 
-              // Create 3-hop route for EACH first-leg pool
-              uniswapLeg1.forEach((firstLegRoute, i) => {
+                // Query second leg with THIS specific first leg's output
+                const leg2ForThisRoute = await discoverUniswapPaths(intermediate, ethIntermediate, firstLegOutput);
+
+                if (!leg2ForThisRoute || leg2ForThisRoute.length === 0) {
+                  console.log(`   ⚠️  No second leg found for 3-hop pool ${i + 1}`);
+                  continue;
+                }
+
+                const bestLeg2ForThisRoute = selectBestVariant(leg2ForThisRoute);
+                const secondLegOutput = bestLeg2ForThisRoute.outputAmount;
+
+                // Query third leg with second leg's output
+                const leg3ForThisRoute = await discoverUniswapPaths(ethIntermediate, tokenOut, secondLegOutput);
+
+                if (!leg3ForThisRoute || leg3ForThisRoute.length === 0) {
+                  console.log(`   ⚠️  No third leg found for 3-hop pool ${i + 1}`);
+                  continue;
+                }
+
+                const bestLeg3 = selectBestVariant(leg3ForThisRoute);
+
                 paths.push({
                   type: 'cross-dex-uniswap-3hop',
                   protocol: 'uniswap',
                   legs: [
                     { ...firstLegRoute, protocol: 'uniswap', token: intermediate },
-                    { ...bestLeg2, protocol: 'uniswap', token: ethIntermediate },
+                    { ...bestLeg2ForThisRoute, protocol: 'uniswap', token: ethIntermediate },
                     { ...bestLeg3, protocol: 'uniswap' }
                   ],
-                  totalOutput: bestLeg3.outputAmount,
+                  totalOutput: bestLeg3.outputAmount, // Now specific to this route!
                   path: `${tokenIn.symbol} -> ${intermediate.symbol} (pool ${i + 1}) -> ETH -> ${tokenOut.symbol} (Uniswap 3-hop)`,
                   estimatedGas: 250000 // Higher gas for 3 hops
                 });
-              });
+              }
 
-              console.log(`   ✓ Found 3-hop route: ${tokenIn.symbol} -> ${intermediate.symbol} -> ETH -> ${tokenOut.symbol}`);
-              console.log(`      Output: ${ethers.utils.formatUnits(bestLeg3.outputAmount, tokenOut.decimals)} ${tokenOut.symbol}`);
+              console.log(`   ✓ Found 3-hop routes: ${tokenIn.symbol} -> ${intermediate.symbol} -> ETH -> ${tokenOut.symbol}`);
             }
           }
         }
@@ -824,19 +940,43 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
     console.log(`   ⚡ Using hierarchical optimization to account for shared pool impact\n`);
   }
 
-  // Calculate initial split based on relative outputs (proportional allocation)
+  // Calculate initial split with pivot-based amplification
+  // Routes above 40% get amplified (increased), routes below 40% get dampened (decreased)
   const totalOutput = routes.reduce((sum, r) => sum.add(r.totalOutput), BigNumber.from(0));
 
-  let currentSplit = routes.map(route => {
-    const proportion = route.totalOutput.mul(100000).div(totalOutput).toNumber() / 100000;
-    return Math.max(0.01, proportion); // Minimum 1% per route
+  // First, get proportional allocation
+  const proportions = routes.map(route => {
+    return route.totalOutput.mul(100000).div(totalOutput).toNumber() / 100000;
+  });
+
+  // Apply pivot-based amplification at 40%
+  const PIVOT = 0.40;
+  const amplifiedProportions = proportions.map(p => {
+    if (p > PIVOT) {
+      // Above pivot: amplify upward using square root
+      // Maps 0.40-1.00 range, makes higher values even higher
+      const normalized = (p - PIVOT) / (1.0 - PIVOT); // 0.0 to 1.0
+      const amplified = Math.sqrt(normalized); // Apply sqrt
+      return PIVOT + amplified * (1.0 - PIVOT); // Map back
+    } else {
+      // Below pivot: dampen downward using square
+      // Maps 0.0-0.40 range, makes lower values even lower
+      const normalized = p / PIVOT; // 0.0 to 1.0
+      const dampened = Math.pow(normalized, 2); // Apply square
+      return dampened * PIVOT; // Map back
+    }
   });
 
   // Normalize to sum to 1.0
-  const sum = currentSplit.reduce((a, b) => a + b, 0);
-  currentSplit = currentSplit.map(x => x / sum);
+  const ampSum = amplifiedProportions.reduce((a, b) => a + b, 0);
+  let currentSplit = amplifiedProportions.map(x => Math.max(0.001, x / ampSum)); // Minimum 0.1% per route (allow aggressive reallocation)
 
-  console.log(`   Initial split: ${currentSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+  // Final normalization to ensure exact 1.0 sum
+  const finalSum = currentSplit.reduce((a, b) => a + b, 0);
+  currentSplit = currentSplit.map(x => x / finalSum);
+
+  console.log(`   Initial split (pivot 40%): ${currentSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+  console.log(`   Original proportions: ${proportions.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
 
   // Calculate initial total output
   let bestSplit = [...currentSplit];
@@ -844,21 +984,29 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
 
   console.log(`   Initial output: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol}`);
 
-  // Iterative improvement (hill climbing)
-  const maxIterations = 20;
-  const stepSize = 0.02; // 2% adjustment per iteration
-  let improved = true;
+  // Iterative improvement (hill climbing with adaptive step size)
+  const maxIterations = 200; // Increased to allow more aggressive reallocation
+  const initialStepSize = 0.02; // Start with 2% adjustment
+  const minStepSize = 0.0001; // Minimum 0.01% adjustment for fine-tuning
+  const stepReduction = 0.7; // Reduce step by 30% when no improvement found
+  let stepSize = initialStepSize;
   let iteration = 0;
 
-  while (improved && iteration < maxIterations) {
-    improved = false;
+  // Calculate total number of pair combinations that could be tested
+  const totalPairs = (numRoutes * (numRoutes - 1)); // Each pair tested in both directions
+  console.log(`   Using greedy first-improvement strategy (early break on improvement)`);
+  console.log(`   Max ${totalPairs} directional adjustments per iteration across ${numRoutes} routes\n`);
+
+  while (stepSize >= minStepSize && iteration < maxIterations) {
+    let improved = false;
     iteration++;
 
-    // Try adjusting each pair of routes
+    outerLoop:
     for (let i = 0; i < numRoutes - 1; i++) {
       for (let j = i + 1; j < numRoutes; j++) {
         // Try moving percentage from route i to route j
-        if (currentSplit[i] > 0.02) {
+        // Allow reduction if it doesn't go below minimum
+        if (currentSplit[i] >= stepSize) {
           const testSplit = [...currentSplit];
           testSplit[i] -= stepSize;
           testSplit[j] += stepSize;
@@ -870,11 +1018,14 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
             bestSplit = testSplit;
             currentSplit = testSplit;
             improved = true;
+            // Early break: apply improvement immediately and restart
+            break outerLoop;
           }
         }
 
         // Try moving percentage from route j to route i
-        if (currentSplit[j] > 0.02) {
+        // Allow reduction if it doesn't go below minimum
+        if (currentSplit[j] >= stepSize) {
           const testSplit = [...currentSplit];
           testSplit[j] -= stepSize;
           testSplit[i] += stepSize;
@@ -886,13 +1037,20 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
             bestSplit = testSplit;
             currentSplit = testSplit;
             improved = true;
+            // Early break: apply improvement immediately and restart
+            break outerLoop;
           }
         }
       }
     }
 
     if (improved) {
-      console.log(`   Iteration ${iteration}: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol} - Split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+      console.log(`   Iteration ${iteration} (step: ${(stepSize * 100).toFixed(3)}%): ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol} - Split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+    } else {
+      // No improvement found after testing all combinations - reduce step size
+      const oldStepSize = stepSize;
+      stepSize = stepSize * stepReduction;
+      console.log(`   Iteration ${iteration}: Tested all combinations, no improvement. Step ${(oldStepSize * 100).toFixed(3)}% → ${(stepSize * 100).toFixed(3)}%`);
     }
   }
 
