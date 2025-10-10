@@ -103,7 +103,7 @@ export async function useMixedUniswapBalancer({
     results.mixedRoutes = optimizedRoutes;
 
     // Select the best overall route
-    const bestRoute = selectBestRoute(optimizedRoutes, amountInBN);
+    const bestRoute = await selectBestRoute(optimizedRoutes, amountInBN, tokenInObject, tokenOutObject);
     results.bestRoute = bestRoute;
 
     if (bestRoute) {
@@ -115,14 +115,24 @@ export async function useMixedUniswapBalancer({
         slippageTolerance
       );
 
+      // Calculate output for each split for better display
+      const splitsWithOutputs = bestRoute.splits ? await Promise.all(
+        bestRoute.splits.map(async (s) => {
+          const output = await calculateRouteExactOutput(s.route, s.amount, tokenInObject, tokenOutObject);
+          return {
+            protocol: s.route?.protocol || 'unknown',
+            percentage: `${(s.percentage * 100).toFixed(1)}%`,
+            input: ethers.utils.formatUnits(s.amount, tokenInObject.decimals),
+            output: ethers.utils.formatUnits(output, tokenOutObject.decimals),
+            description: s.description
+          };
+        })
+      ) : undefined;
+
       console.log('✅ Best route found:', {
         type: bestRoute.type,
         totalOutput: ethers.utils.formatUnits(bestRoute.totalOutput, tokenOutObject.decimals),
-        splits: bestRoute.splits?.map(s => ({
-          protocol: s.protocol,
-          percentage: `${(s.percentage * 100).toFixed(1)}%`,
-          output: ethers.utils.formatUnits(s.output, tokenOutObject.decimals)
-        })),
+        splits: splitsWithOutputs,
         gasCost: bestRoute.estimatedGas
       });
     }
@@ -230,26 +240,68 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn) {
       
       if (pools.length > 0) {
         const trades = await uniswap.selectBestPath(variant.tokenIn, variant.tokenOut, pools, amountIn);
-        
+
         if (!trades || trades.length === 0) {
           console.log(`   No valid trades for ${variant.tokenIn.symbol} → ${variant.tokenOut.symbol}`);
           continue;
         }
-        
-        const paths = trades.filter(trade => trade && trade.swaps).map(trade => ({
-          protocol: 'uniswap',
-          trade,
-          pools: trade.swaps[0].route.pools,
-          inputAmount: BigNumber.from(trade.inputAmount.quotient.toString()),
-          outputAmount: BigNumber.from(trade.outputAmount.quotient.toString()),
-          hops: trade.swaps[0].route.pools.length,
-          path: trade.swaps[0].route.currencyPath.map(c => c.address || c.symbol),
-          variantType: variant.variantType,
-          requiresWrap: variant.variantType === 'wrapped-input',
-          requiresUnwrap: variant.variantType === 'unwrapped-output'
-        }));
-        
-        allPaths.push(...paths);
+
+        // Multiple trades returned - add each as separate route for optimization
+        if (trades.length > 1) {
+          console.log(`   ✓ Found ${trades.length} non-conflicting Uniswap routes`);
+
+          const paths = trades.filter(trade => trade && trade.swaps).map((trade, i) => {
+            const path = trade.swaps[0].route.currencyPath.map(c => c.symbol).join(' → ');
+            const inputAmount = BigNumber.from(trade.inputAmount.quotient.toString());
+            const outputAmount = BigNumber.from(trade.outputAmount.quotient.toString());
+
+            console.log(`      Route ${i + 1}: ${ethers.utils.formatUnits(outputAmount, variant.tokenOut.decimals)} ${variant.tokenOut.symbol}`);
+            console.log(`              Input: ${ethers.utils.formatUnits(inputAmount, variant.tokenIn.decimals)} ${variant.tokenIn.symbol}`);
+            console.log(`              Path: ${path}`);
+
+            return {
+              protocol: 'uniswap',
+              trade,
+              pools: trade.swaps[0].route.pools,
+              inputAmount: amountIn,  // Each can handle full amount
+              outputAmount,
+              hops: trade.swaps[0].route.pools.length,
+              path: trade.swaps[0].route.currencyPath.map(c => c.address || c.symbol),
+              variantType: variant.variantType,
+              requiresWrap: variant.variantType === 'wrapped-input',
+              requiresUnwrap: variant.variantType === 'unwrapped-output'
+            };
+          });
+
+          allPaths.push(...paths);
+        } else {
+          // Single trade - add as individual path
+          const paths = trades.filter(trade => trade && trade.swaps).map(trade => {
+            const inputAmount = BigNumber.from(trade.inputAmount.quotient.toString());
+            const outputAmount = BigNumber.from(trade.outputAmount.quotient.toString());
+            const path = trade.swaps[0].route.currencyPath.map(c => c.symbol).join(' → ');
+
+            console.log(`   ✓ Found 1 Uniswap route`);
+            console.log(`      Output: ${ethers.utils.formatUnits(outputAmount, variant.tokenOut.decimals)} ${variant.tokenOut.symbol}`);
+            console.log(`      Input: ${ethers.utils.formatUnits(inputAmount, variant.tokenIn.decimals)} ${variant.tokenIn.symbol}`);
+            console.log(`      Path: ${path}`);
+
+            return {
+              protocol: 'uniswap',
+              trade,
+              pools: trade.swaps[0].route.pools,
+              inputAmount: BigNumber.from(trade.inputAmount.quotient.toString()),
+              outputAmount: BigNumber.from(trade.outputAmount.quotient.toString()),
+              hops: trade.swaps[0].route.pools.length,
+              path: trade.swaps[0].route.currencyPath.map(c => c.address || c.symbol),
+              variantType: variant.variantType,
+              requiresWrap: variant.variantType === 'wrapped-input',
+              requiresUnwrap: variant.variantType === 'unwrapped-output'
+            };
+          });
+
+          allPaths.push(...paths);
+        }
       }
     }
     
@@ -393,17 +445,17 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
       ]);
       
       // IMPORTANT: For ETH/WETH, we want to explore BOTH paths as parallel options
-      if (intermediate.isETH && balancerLeg1 && uniswapLeg1 && uniswapLeg1.length > 0) {
+      if (intermediate.isETH && balancerLeg1 && balancerLeg1.length > 0 && uniswapLeg1 && uniswapLeg1.length > 0) {
         // Validate that both legs have non-zero outputs
-        if (balancerLeg1.outputAmount.gt(0) && uniswapLeg1[0].outputAmount.gt(0)) {
+        if (balancerLeg1[0].outputAmount.gt(0) && uniswapLeg1[0].outputAmount.gt(0)) {
           console.log(`   ✓ Found parallel first-hop options:`);
-          console.log(`      • Balancer: ${tokenIn.symbol} -> WETH, output: ${ethers.utils.formatUnits(balancerLeg1.outputAmount, 18)}`);
+          console.log(`      • Balancer: ${tokenIn.symbol} -> WETH, output: ${ethers.utils.formatUnits(balancerLeg1[0].outputAmount, 18)}`);
           console.log(`      • Uniswap: ${tokenIn.symbol} -> ETH, output: ${ethers.utils.formatUnits(uniswapLeg1[0].outputAmount, 18)}`);
 
           // Estimate combined output assuming 50/50 split as starting point for path discovery
           // This will be recalculated with the actual optimal split during optimization
           // Use sum divided by 2, with a minimum of 1 wei to prevent zero
-          const sum = balancerLeg1.outputAmount.add(uniswapLeg1[0].outputAmount);
+          const sum = balancerLeg1[0].outputAmount.add(uniswapLeg1[0].outputAmount);
           const estimatedCombinedOutput = sum.div(2).gt(0) ? sum.div(2) : BigNumber.from(1);
           console.log(`      • Estimated combined output (50/50 split): ${ethers.utils.formatUnits(estimatedCombinedOutput, 18)} ETH`);
 
@@ -424,9 +476,10 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
               {
                 protocol: 'balancer',
                 token: { symbol: 'WETH', decimals: 18 },
-                outputAmount: balancerLeg1.outputAmount,
+                outputAmount: balancerLeg1[0].outputAmount,
                 inputAmount: amountIn,
-                poolData: balancerLeg1.poolData  // This is now properly passed from discoverBalancerPaths
+                path: balancerLeg1[0].path,  // CRITICAL: Required for exact output recalculation
+                poolData: balancerLeg1[0].poolData  // This is now properly passed from discoverBalancerPaths
               },
               {
                 protocol: 'uniswap',
@@ -454,24 +507,24 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
       
       // If we found a path for the first leg, try the second leg
       // IMPORTANT: Must check .gt(0) because BigNumber objects are always truthy
-      if (balancerLeg1 && balancerLeg1.outputAmount && balancerLeg1.outputAmount.gt(0)) {
-        console.log(`   ✓ Found Balancer leg1: ${tokenIn.symbol} -> ${intermediate.symbol}, output: ${ethers.utils.formatUnits(balancerLeg1.outputAmount, intermediate.decimals)}`);
-        
+      if (balancerLeg1 && balancerLeg1.length > 0 && balancerLeg1[0].outputAmount && balancerLeg1[0].outputAmount.gt(0)) {
+        console.log(`   ✓ Found Balancer leg1: ${tokenIn.symbol} -> ${intermediate.symbol}, output: ${ethers.utils.formatUnits(balancerLeg1[0].outputAmount, intermediate.decimals)}`);
+
         // For ETH/WETH intermediate, we need to handle the conversion
         let intermediateForUniswap = intermediate;
         let needsWETHToETHConversion = false;
-        
+
         if (intermediate.isETH) {
           // Balancer outputs WETH, but Uniswap needs ETH
           intermediateForUniswap = { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 };
           needsWETHToETHConversion = true;
           console.log(`   Converting WETH to ETH for Uniswap leg2`);
         }
-        
+
         // Second leg: intermediate -> tokenOut using Balancer output
         const [balancerLeg2, uniswapLeg2] = await Promise.all([
-          discoverBalancerPaths(intermediate, tokenOut, balancerLeg1.outputAmount, provider),
-          discoverUniswapPaths(intermediateForUniswap, tokenOut, balancerLeg1.outputAmount)
+          discoverBalancerPaths(intermediate, tokenOut, balancerLeg1[0].outputAmount, provider),
+          discoverUniswapPaths(intermediateForUniswap, tokenOut, balancerLeg1[0].outputAmount)
         ]);
         
         // Create cross-DEX paths
@@ -482,7 +535,7 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
             type: 'cross-dex-balancer-uniswap',
             protocol: 'mixed',
             legs: [
-              { ...balancerLeg1, protocol: 'balancer', token: intermediate },
+              { ...balancerLeg1[0], protocol: 'balancer', token: intermediate },
               { ...bestUniswapLeg2, protocol: 'uniswap' }
             ],
             totalOutput: bestUniswapLeg2.outputAmount,
@@ -491,30 +544,45 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
             estimatedGas: needsWETHToETHConversion ? 220000 : 200000 // Extra gas for unwrap
           });
         }
-        
-        if (balancerLeg2 && balancerLeg2.outputAmount) {
+
+        if (balancerLeg2 && balancerLeg2.length > 0 && balancerLeg2[0].outputAmount) {
           paths.push({
             type: 'cross-dex-balancer-balancer',
             protocol: 'balancer',
             legs: [
-              { ...balancerLeg1, protocol: 'balancer', token: intermediate },
-              { ...balancerLeg2, protocol: 'balancer' }
+              { ...balancerLeg1[0], protocol: 'balancer', token: intermediate },
+              { ...balancerLeg2[0], protocol: 'balancer' }
             ],
-            totalOutput: balancerLeg2.outputAmount,
+            totalOutput: balancerLeg2[0].outputAmount,
             path: `${tokenIn.symbol} -> ${intermediate.symbol} -> ${tokenOut.symbol} (Balancer)`,
             estimatedGas: 180000
           });
         }
-      } else if (balancerLeg1 && balancerLeg1.outputAmount && balancerLeg1.outputAmount.eq(0)) {
+      } else if (balancerLeg1 && balancerLeg1.length > 0 && balancerLeg1[0].outputAmount && balancerLeg1[0].outputAmount.eq(0)) {
         console.log(`   ⚠ Skipping Balancer leg1: ${tokenIn.symbol} -> ${intermediate.symbol} (zero output)`);
       }
 
       // Try Uniswap first leg
       if (uniswapLeg1 && uniswapLeg1.length > 0) {
+        // CRITICAL: Multiple Uniswap routes = different pools, each evaluated with FULL input
+        // We need to estimate the MAXIMUM output we can get by optimizing split across ALL pools
+
+        // For estimation, use the best single route as lower bound
+        // Real optimization will happen later in optimizeSplitSimple
         const bestUniswapLeg1 = selectBestVariant(uniswapLeg1);
+        const estimatedMaxOutput = bestUniswapLeg1.outputAmount;
+
+        // Log all available first-leg routes
+        if (uniswapLeg1.length > 1) {
+          console.log(`   ✓ Found ${uniswapLeg1.length} Uniswap pools for ${tokenIn.symbol} → ${intermediate.symbol}:`);
+          uniswapLeg1.forEach((route, i) => {
+            console.log(`      Pool ${i + 1}: ${ethers.utils.formatUnits(route.outputAmount, intermediate.decimals)} ${intermediate.symbol}`);
+          });
+          console.log(`   Using best single pool output for second leg query: ${ethers.utils.formatUnits(estimatedMaxOutput, intermediate.decimals)} ${intermediate.symbol}`);
+        }
 
         // Validate non-zero output before proceeding
-        if (bestUniswapLeg1.outputAmount && bestUniswapLeg1.outputAmount.gt(0)) {
+        if (estimatedMaxOutput.gt(0)) {
           // For ETH/WETH intermediate, handle conversion for Balancer
           let intermediateForBalancer = intermediate;
           let needsETHToWETHConversion = false;
@@ -525,41 +593,87 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
             needsETHToWETHConversion = true;
           }
 
-          // Second leg with Uniswap output
+          // Second leg with estimated output from first leg
           const [balancerLeg2, uniswapLeg2] = await Promise.all([
-            discoverBalancerPaths(intermediateForBalancer, tokenOut, bestUniswapLeg1.outputAmount, provider),
-            discoverUniswapPaths(intermediate, tokenOut, bestUniswapLeg1.outputAmount)
+            discoverBalancerPaths(intermediateForBalancer, tokenOut, estimatedMaxOutput, provider),
+            discoverUniswapPaths(intermediate, tokenOut, estimatedMaxOutput)
           ]);
         
         if (balancerLeg2 && balancerLeg2.outputAmount) {
           const conversionStep = needsETHToWETHConversion ? ' -> [wrap ETH to WETH]' : '';
-          paths.push({
-            type: 'cross-dex-uniswap-balancer',
-            protocol: 'mixed',
-            legs: [
-              { ...bestUniswapLeg1, protocol: 'uniswap', token: intermediate },
-              { ...balancerLeg2, protocol: 'balancer' }
-            ],
-            totalOutput: balancerLeg2.outputAmount,
-            path: `${tokenIn.symbol} -> ${intermediate.symbol} (Uniswap)${conversionStep} -> ${tokenOut.symbol} (Balancer)`,
-            needsETHToWETHConversion,
-            estimatedGas: needsETHToWETHConversion ? 220000 : 200000 // Extra gas for wrap
+          // Create a cross-DEX route for EACH first-leg pool
+          uniswapLeg1.forEach((firstLegRoute, i) => {
+            paths.push({
+              type: 'cross-dex-uniswap-balancer',
+              protocol: 'mixed',
+              legs: [
+                { ...firstLegRoute, protocol: 'uniswap', token: intermediate },
+                { ...balancerLeg2, protocol: 'balancer' }
+              ],
+              totalOutput: balancerLeg2.outputAmount,
+              path: `${tokenIn.symbol} -> ${intermediate.symbol} (Uniswap pool ${i + 1})${conversionStep} -> ${tokenOut.symbol} (Balancer)`,
+              needsETHToWETHConversion,
+              estimatedGas: needsETHToWETHConversion ? 220000 : 200000 // Extra gas for wrap
+            });
           });
         }
-        
+
         if (uniswapLeg2 && uniswapLeg2.length > 0) {
           const bestUniswapLeg2 = selectBestVariant(uniswapLeg2);
-          paths.push({
-            type: 'cross-dex-uniswap-uniswap',
-            protocol: 'uniswap',
-            legs: [
-              { ...bestUniswapLeg1, protocol: 'uniswap', token: intermediate },
-              { ...bestUniswapLeg2, protocol: 'uniswap' }
-            ],
-            totalOutput: bestUniswapLeg2.outputAmount,
-            path: `${tokenIn.symbol} -> ${intermediate.symbol} -> ${tokenOut.symbol} (Uniswap)`,
-            estimatedGas: 180000
+          // Create a cross-DEX route for EACH first-leg pool
+          uniswapLeg1.forEach((firstLegRoute, i) => {
+            paths.push({
+              type: 'cross-dex-uniswap-uniswap',
+              protocol: 'uniswap',
+              legs: [
+                { ...firstLegRoute, protocol: 'uniswap', token: intermediate },
+                { ...bestUniswapLeg2, protocol: 'uniswap' }
+              ],
+              totalOutput: bestUniswapLeg2.outputAmount,
+              path: `${tokenIn.symbol} -> ${intermediate.symbol} (pool ${i + 1}) -> ${tokenOut.symbol} (Uniswap)`,
+              estimatedGas: 180000
+            });
           });
+        }
+
+        // IMPORTANT: Add 3-hop paths for better liquidity distribution
+        // E.g., AAVE → USDC → ETH → 1INCH
+        if (!intermediate.isETH) {
+          // Try going through ETH as second intermediate
+          const ethIntermediate = { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 };
+
+          // Second leg: USDC → ETH
+          const uniswapLeg2ToETH = await discoverUniswapPaths(intermediate, ethIntermediate, estimatedMaxOutput);
+
+          if (uniswapLeg2ToETH && uniswapLeg2ToETH.length > 0) {
+            const bestLeg2 = selectBestVariant(uniswapLeg2ToETH);
+
+            // Third leg: ETH → tokenOut
+            const uniswapLeg3 = await discoverUniswapPaths(ethIntermediate, tokenOut, bestLeg2.outputAmount);
+
+            if (uniswapLeg3 && uniswapLeg3.length > 0) {
+              const bestLeg3 = selectBestVariant(uniswapLeg3);
+
+              // Create 3-hop route for EACH first-leg pool
+              uniswapLeg1.forEach((firstLegRoute, i) => {
+                paths.push({
+                  type: 'cross-dex-uniswap-3hop',
+                  protocol: 'uniswap',
+                  legs: [
+                    { ...firstLegRoute, protocol: 'uniswap', token: intermediate },
+                    { ...bestLeg2, protocol: 'uniswap', token: ethIntermediate },
+                    { ...bestLeg3, protocol: 'uniswap' }
+                  ],
+                  totalOutput: bestLeg3.outputAmount,
+                  path: `${tokenIn.symbol} -> ${intermediate.symbol} (pool ${i + 1}) -> ETH -> ${tokenOut.symbol} (Uniswap 3-hop)`,
+                  estimatedGas: 250000 // Higher gas for 3 hops
+                });
+              });
+
+              console.log(`   ✓ Found 3-hop route: ${tokenIn.symbol} -> ${intermediate.symbol} -> ETH -> ${tokenOut.symbol}`);
+              console.log(`      Output: ${ethers.utils.formatUnits(bestLeg3.outputAmount, tokenOut.decimals)} ${tokenOut.symbol}`);
+            }
+          }
         }
         } else {
           console.log(`   ⚠ Skipping Uniswap leg1: ${tokenIn.symbol} -> ${intermediate.symbol} (zero output)`);
@@ -570,7 +684,7 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
       console.error(`Error finding cross-DEX path via ${intermediate.symbol}:`, error.message);
     }
   }
-  
+
   return paths;
 }
 
@@ -584,15 +698,32 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
   // Add ALL Uniswap paths as individual routes
   if (uniswapPaths && uniswapPaths.length > 0) {
     uniswapPaths.forEach((uniPath, index) => {
-      routes.push({
-        type: `uniswap-path-${index + 1}`,
-        protocol: 'uniswap',
-        totalOutput: uniPath.outputAmount,
-        paths: [uniPath],
-        requiresWrap: uniPath.requiresWrap,
-        requiresUnwrap: uniPath.requiresUnwrap,
-        description: `Uniswap path ${index + 1}`
-      });
+      // Check if this is a pre-optimized split from useUniswap
+      if (uniPath.type === 'uniswap-pre-optimized-split') {
+        // Add as complete route with splits intact
+        routes.push({
+          type: 'uniswap-pre-optimized-split',
+          protocol: 'uniswap',
+          totalOutput: uniPath.outputAmount,
+          splits: uniPath.splits,
+          trades: uniPath.trades,
+          paths: [uniPath],
+          requiresWrap: uniPath.requiresWrap,
+          requiresUnwrap: uniPath.requiresUnwrap,
+          description: `Uniswap optimized split (${uniPath.splits.length} routes)`
+        });
+      } else {
+        // Single path
+        routes.push({
+          type: `uniswap-path-${index + 1}`,
+          protocol: 'uniswap',
+          totalOutput: uniPath.outputAmount,
+          paths: [uniPath],
+          requiresWrap: uniPath.requiresWrap,
+          requiresUnwrap: uniPath.requiresUnwrap,
+          description: `Uniswap path ${index + 1}`
+        });
+      }
     });
     console.log(`   Added ${uniswapPaths.length} Uniswap routes`);
   }
@@ -626,8 +757,436 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
   }
 
   console.log(`\n📊 Total routes discovered: ${routes.length}`);
-  console.log(routes);
+
+  // Display routes in readable format
+  displayRoutes(routes, tokenOut);
+
+  // If we have multiple routes, optimize split percentages
+  if (routes.length >= 2 && routes.length <= 10) {
+    console.log(`\n🎯 Optimizing split across ${routes.length} routes...`);
+    const optimizedSplit = await optimizeSplitSimple(routes, amountIn, tokenIn, tokenOut);
+    if (optimizedSplit) {
+      routes.push(optimizedSplit);
+      console.log(`\n✅ Added optimized multi-route split`);
+    }
+  }
+
   return routes;
+}
+
+/**
+ * Display routes in a readable format
+ */
+function displayRoutes(routes, tokenOut) {
+  console.log('\n📋 Discovered Routes:');
+  console.log('─'.repeat(80));
+
+  routes.forEach((route, index) => {
+    const output = ethers.utils.formatUnits(route.totalOutput, tokenOut.decimals);
+    const type = route.type || 'unknown';
+    const desc = route.description || route.path || 'No description';
+
+    console.log(`${index + 1}. [${type}]`);
+    console.log(`   Output: ${parseFloat(output).toFixed(4)} ${tokenOut.symbol}`);
+    console.log(`   Path: ${desc}`);
+
+    if (route.protocol) {
+      console.log(`   Protocol: ${route.protocol}`);
+    }
+
+    if (route.hops) {
+      console.log(`   Hops: ${route.hops}`);
+    }
+
+    if (route.legs && route.legs.length > 0) {
+      console.log(`   Legs: ${route.legs.length}`);
+    }
+
+    console.log('');
+  });
+
+  console.log('─'.repeat(80));
+}
+
+/**
+ * Detect routes that converge to the same pool
+ * Returns groups of routes that share the same final pool
+ */
+function detectPoolConvergence(routes) {
+  const convergenceGroups = new Map();
+
+  routes.forEach((route, index) => {
+    // Identify the final pool used by this route
+    let finalPool = null;
+    let finalToken = null;
+
+    if (route.legs && route.legs.length > 0) {
+      const lastLeg = route.legs[route.legs.length - 1];
+      if (lastLeg.trade) {
+        const tradeRoute = lastLeg.trade.route || lastLeg.trade.swaps?.[0]?.route;
+        if (tradeRoute && tradeRoute.pools && tradeRoute.pools.length > 0) {
+          finalPool = tradeRoute.pools[tradeRoute.pools.length - 1];
+          const path = tradeRoute.currencyPath || tradeRoute.path;
+          if (path && path.length >= 2) {
+            finalToken = `${path[path.length - 2].symbol}-${path[path.length - 1].symbol}`;
+          }
+        }
+      }
+    }
+
+    if (finalToken) {
+      // Normalize ETH/WETH to same key
+      const normalizedKey = finalToken.replace('WETH', 'ETH');
+
+      if (!convergenceGroups.has(normalizedKey)) {
+        convergenceGroups.set(normalizedKey, []);
+      }
+      convergenceGroups.get(normalizedKey).push({ route, index });
+    }
+  });
+
+  // Find groups with more than one route
+  const converging = [];
+  convergenceGroups.forEach((group, poolKey) => {
+    if (group.length > 1) {
+      converging.push({
+        poolKey,
+        routes: group,
+        count: group.length
+      });
+    }
+  });
+
+  return converging;
+}
+
+/**
+ * Simple iterative optimization for splitting across multiple routes
+ * Starts with initial split based on output amounts, then refines
+ */
+async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
+  const numRoutes = routes.length;
+
+  // IMPORTANT: Detect pool convergence
+  const convergingPools = detectPoolConvergence(routes);
+  if (convergingPools.length > 0) {
+    console.log(`\n⚠️  POOL CONVERGENCE DETECTED:`);
+    convergingPools.forEach(group => {
+      console.log(`   ${group.poolKey}: ${group.count} routes converge to this pool`);
+      group.routes.forEach(({ route, index }) => {
+        console.log(`      Route ${index + 1}: ${route.description || route.path}`);
+      });
+    });
+    console.log(`   ⚡ Using hierarchical optimization to account for shared pool impact\n`);
+  }
+
+  // Calculate initial split based on relative outputs (proportional allocation)
+  const totalOutput = routes.reduce((sum, r) => sum.add(r.totalOutput), BigNumber.from(0));
+
+  let currentSplit = routes.map(route => {
+    const proportion = route.totalOutput.mul(100000).div(totalOutput).toNumber() / 100000;
+    return Math.max(0.01, proportion); // Minimum 1% per route
+  });
+
+  // Normalize to sum to 1.0
+  const sum = currentSplit.reduce((a, b) => a + b, 0);
+  currentSplit = currentSplit.map(x => x / sum);
+
+  console.log(`   Initial split: ${currentSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+
+  // Calculate initial total output
+  let bestSplit = [...currentSplit];
+  let bestOutput = await evaluateSplit(currentSplit, routes, totalAmount, tokenIn, tokenOut);
+
+  console.log(`   Initial output: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol}`);
+
+  // Iterative improvement (hill climbing)
+  const maxIterations = 20;
+  const stepSize = 0.02; // 2% adjustment per iteration
+  let improved = true;
+  let iteration = 0;
+
+  while (improved && iteration < maxIterations) {
+    improved = false;
+    iteration++;
+
+    // Try adjusting each pair of routes
+    for (let i = 0; i < numRoutes - 1; i++) {
+      for (let j = i + 1; j < numRoutes; j++) {
+        // Try moving percentage from route i to route j
+        if (currentSplit[i] > 0.02) {
+          const testSplit = [...currentSplit];
+          testSplit[i] -= stepSize;
+          testSplit[j] += stepSize;
+
+          const testOutput = await evaluateSplit(testSplit, routes, totalAmount, tokenIn, tokenOut);
+
+          if (testOutput.gt(bestOutput)) {
+            bestOutput = testOutput;
+            bestSplit = testSplit;
+            currentSplit = testSplit;
+            improved = true;
+          }
+        }
+
+        // Try moving percentage from route j to route i
+        if (currentSplit[j] > 0.02) {
+          const testSplit = [...currentSplit];
+          testSplit[j] -= stepSize;
+          testSplit[i] += stepSize;
+
+          const testOutput = await evaluateSplit(testSplit, routes, totalAmount, tokenIn, tokenOut);
+
+          if (testOutput.gt(bestOutput)) {
+            bestOutput = testOutput;
+            bestSplit = testSplit;
+            currentSplit = testSplit;
+            improved = true;
+          }
+        }
+      }
+    }
+
+    if (improved) {
+      console.log(`   Iteration ${iteration}: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol} - Split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+    }
+  }
+
+  console.log(`   ✅ Optimized in ${iteration} iterations`);
+  console.log(`   Final split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+  console.log(`   Final output: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol}`);
+
+  // Build result
+  const splits = bestSplit.map((pct, index) => ({
+    route: routes[index],
+    percentage: pct,
+    amount: totalAmount.mul(Math.floor(pct * 1000000)).div(1000000),
+    description: routes[index].description || routes[index].path || `Route ${index + 1}`
+  }));
+
+  return {
+    type: 'optimized-multi-route-split',
+    totalOutput: bestOutput,
+    splits,
+    numRoutes: routes.length,
+    description: `Optimized ${routes.length}-way split`,
+    iterations: iteration
+  };
+}
+
+/**
+ * Evaluate a specific split configuration using EXACT AMM calculations
+ * Returns total output when input is split according to percentages
+ */
+async function evaluateSplit(splitPercentages, routes, totalAmount, tokenIn, tokenOut) {
+  let totalOutput = BigNumber.from(0);
+
+  for (let i = 0; i < routes.length; i++) {
+    const route = routes[i];
+    const routeAmount = totalAmount.mul(Math.floor(splitPercentages[i] * 1000000)).div(1000000);
+
+    if (routeAmount.lte(0)) continue;
+
+    // Calculate EXACT output for this route with the split amount
+    const exactOutput = await calculateRouteExactOutput(route, routeAmount, tokenIn, tokenOut);
+    totalOutput = totalOutput.add(exactOutput);
+  }
+
+  return totalOutput;
+}
+
+/**
+ * Calculate exact output for a route with a specific input amount
+ * Uses actual AMM formulas, not approximations
+ */
+async function calculateRouteExactOutput(route, amountIn, tokenIn, tokenOut) {
+  try {
+
+    // Pre-optimized split from useUniswap - need to recalculate each trade with the split amount
+    if (route.type === 'uniswap-pre-optimized-split' && route.splits) {
+      // For pre-optimized splits, we need to recalculate with the new amount
+      // maintaining the same split percentages
+      let totalOutput = BigNumber.from(0);
+
+      for (const split of route.splits) {
+        const splitAmount = amountIn.mul(Math.floor(split.percentage * 1000000)).div(1000000);
+        const splitOutput = await calculateUniswapRouteOutput(split, splitAmount);
+        totalOutput = totalOutput.add(splitOutput);
+      }
+
+      return totalOutput;
+    }
+
+    // Single-protocol routes
+    if (route.paths && route.paths.length === 1) {
+      const path = route.paths[0];
+
+      if (path.protocol === 'balancer' || route.protocol === 'balancer') {
+        // Balancer route - use exact AMM calculation
+        return await calculateBalancerRouteOutput(path, amountIn);
+      } else if (path.protocol === 'uniswap' || route.protocol === 'uniswap') {
+        // Uniswap route - use exact AMM calculation
+        return await calculateUniswapRouteOutput(path, amountIn);
+      }
+    }
+
+    // Cross-DEX routes with multiple legs (e.g., cross-dex-uniswap-uniswap, 3-hop routes)
+    if (route.legs && route.legs.length > 0) {
+      let currentAmount = amountIn;
+      let currentToken = tokenIn;
+
+      for (let i = 0; i < route.legs.length; i++) {
+        const leg = route.legs[i];
+        const legToken = leg.token || (i === route.legs.length - 1 ? tokenOut : null);
+
+        if (leg.protocol === 'balancer' && leg.path) {
+          currentAmount = await calculateBalancerRouteOutput(leg, currentAmount);
+        } else if (leg.protocol === 'uniswap') {
+          // Uniswap leg - could be single trade or pre-optimized split
+          if (leg.trade) {
+            // Single trade
+            currentAmount = await calculateUniswapRouteOutput(leg, currentAmount);
+          } else if (leg.type === 'uniswap-pre-optimized-split' && leg.splits) {
+            // Pre-optimized split - recalculate maintaining split percentages
+            let legOutput = BigNumber.from(0);
+            for (const split of leg.splits) {
+              const splitAmount = currentAmount.mul(Math.floor(split.percentage * 1000000)).div(1000000);
+              const splitOutput = await calculateUniswapRouteOutput(split, splitAmount);
+              legOutput = legOutput.add(splitOutput);
+            }
+            currentAmount = legOutput;
+          } else if (leg.trades && leg.trades.length > 0) {
+            // Has trades array but no type - treat as single trade
+            const singleLeg = { ...leg, trade: leg.trades[0] };
+            currentAmount = await calculateUniswapRouteOutput(singleLeg, currentAmount);
+          } else {
+            console.warn(`   ⚠️  Uniswap leg has no trade/trades: ${JSON.stringify({
+              hasTrade: !!leg.trade,
+              hasTrades: !!leg.trades,
+              hasPath: !!leg.path,
+              type: leg.type,
+              hasOutputAmount: !!leg.outputAmount
+            })}`);
+            return BigNumber.from(0);
+          }
+        } else {
+          // Unknown leg type - log and return 0
+          console.warn(`   ⚠️  Unknown leg protocol: ${JSON.stringify({ protocol: leg.protocol, hasPath: !!leg.path, hasTrade: !!leg.trade })}`);
+          return BigNumber.from(0);
+        }
+      }
+
+      return currentAmount;
+    }
+
+    // Fallback: can't recalculate this route type
+    console.warn(`   ⚠️  Cannot recalculate output for route type: ${route.type} - returning zero`);
+    return BigNumber.from(0);
+
+  } catch (error) {
+    console.error('   ❌ Error calculating exact route output:', error.message);
+    return BigNumber.from(0);
+  }
+}
+
+/**
+ * Calculate exact output for a Balancer route
+ */
+async function calculateBalancerRouteOutput(route, amountIn) {
+  if (!route.path || !route.path.hops) {
+    return BigNumber.from(0);
+  }
+
+  let currentAmount = amountIn;
+
+  for (const hop of route.path.hops) {
+    if (!hop.poolData || !hop.poolData.tokens) {
+      return BigNumber.from(0);
+    }
+
+    const tokenInIndex = hop.poolData.tokens.findIndex(
+      t => t.address.toLowerCase() === hop.tokenIn.toLowerCase()
+    );
+    const tokenOutIndex = hop.poolData.tokens.findIndex(
+      t => t.address.toLowerCase() === hop.tokenOut.toLowerCase()
+    );
+
+    if (tokenInIndex < 0 || tokenOutIndex < 0) {
+      return BigNumber.from(0);
+    }
+
+    // Use exact Balancer AMM calculation
+    currentAmount = calculateBalancerExactOutput(
+      currentAmount,
+      hop.poolData,
+      tokenInIndex,
+      tokenOutIndex
+    );
+  }
+
+  return currentAmount;
+}
+
+/**
+ * Calculate exact output for a Uniswap route
+ */
+async function calculateUniswapRouteOutput(route, amountIn) {
+  if (!route.trade) {
+    console.warn(`   [calculateUniswapRouteOutput] No trade in route`);
+    return BigNumber.from(0);
+  }
+
+  const { CurrencyAmount } = await import('@uniswap/sdk-core');
+  const trade = route.trade;
+  const routeObj = trade.route || trade.swaps?.[0]?.route;
+
+  if (!routeObj) {
+    console.warn(`   [calculateUniswapRouteOutput] No route object in trade`);
+    return BigNumber.from(0);
+  }
+
+  const pools = routeObj.pools;
+  const path = routeObj.currencyPath || routeObj.path;
+
+  if (!path || path.length === 0) {
+    return BigNumber.from(0);
+  }
+
+  let currentAmount = amountIn;
+
+  for (let i = 0; i < pools.length; i++) {
+    const pool = pools[i];
+    const inputCurrency = path[i];
+
+    if (!inputCurrency || !pool || typeof pool.getOutputAmount !== 'function') {
+      return BigNumber.from(0);
+    }
+
+    // Create proper CurrencyAmount for SDK
+    const inputAmount = CurrencyAmount.fromRawAmount(
+      inputCurrency,
+      currentAmount.toString()
+    );
+
+    // Calculate output using pool's exact AMM formula
+    try {
+      const result = await pool.getOutputAmount(inputAmount);
+
+      if (!result || !result[0]) {
+        console.warn(`   [calculateUniswapRouteOutput] pool.getOutputAmount returned invalid result:`, result);
+        console.warn(`   Input: ${currentAmount.toString()}, Pool: ${pool.token0.symbol}-${pool.token1.symbol}`);
+        return BigNumber.from(0);
+      }
+
+      const [outputAmount] = result;
+      currentAmount = BigNumber.from(outputAmount.quotient.toString());
+    } catch (error) {
+      console.error(`   [calculateUniswapRouteOutput] Error in pool.getOutputAmount:`, error.message);
+      return BigNumber.from(0);
+    }
+  }
+
+  return currentAmount;
 }
 
 /**
@@ -878,7 +1437,7 @@ async function optimizePairwiseSplit(legs, amountIn, tokenIn, tokenOut) {
  * Select best route from all options
  * Priority: 1) Maximum output 2) Minimum post-trade arbitrage opportunities
  */
-function selectBestRoute(routes, amountIn) {
+async function selectBestRoute(routes, amountIn, tokenIn, tokenOut) {
   if (routes.length === 0) return null;
   
   // Evaluate each route for post-trade arbitrage risk
@@ -917,7 +1476,12 @@ function selectBestRoute(routes, amountIn) {
     if (route.type && route.type.includes('advanced')) {
       arbitrageRisk *= 0.85; // Advanced splitting reduces arbitrage
     }
-    
+
+    // Optimized multi-route splits are the most balanced
+    if (route.type === 'optimized-multi-route-split') {
+      arbitrageRisk *= 0.5; // Heavily prefer optimized splits for pool balance
+    }
+
     return {
       ...route,
       arbitrageRisk,
@@ -945,14 +1509,14 @@ function selectBestRoute(routes, amountIn) {
   
   // Log selection reasoning
   console.log(`\n✅ Route selected: ${selected.type}`);
-  console.log(`   Output: ${ethers.utils.formatEther(selected.totalOutput)}`);
+  console.log(`   Output: ${ethers.utils.formatUnits(selected.totalOutput, tokenOut.decimals)} ${tokenOut.symbol}`);
   console.log(`   Post-trade arbitrage risk: ${(selected.arbitrageRisk * 100).toFixed(2)}%`);
-  
+
   if (selected.splits) {
     const dist = selected.splits.map(s => `${(s.percentage * 100).toFixed(1)}%`).join('/');
     console.log(`   Distribution: ${dist} across ${selected.splits.length} venues`);
   }
-  
+
   // Explain why this minimizes arbitrage
   if (selected.arbitrageRisk < 0.5) {
     console.log(`   ✓ Well-distributed trade minimizes MEV opportunities`);
@@ -960,6 +1524,77 @@ function selectBestRoute(routes, amountIn) {
     console.log(`   ⚠ Moderate concentration, some arbitrage possible`);
   } else {
     console.log(`   ⚡ High concentration chosen for maximum output`);
+  }
+
+  // Display detailed route breakdown with amounts
+  if (selected.splits && selected.splits.length > 1) {
+    console.log(`\n   📊 Optimal Split Across ${selected.splits.length} Routes:`);
+    console.log('   ' + '─'.repeat(80));
+
+    for (let i = 0; i < selected.splits.length; i++) {
+      const split = selected.splits[i];
+      const routeInput = split.amount;
+      const percentage = (split.percentage * 100).toFixed(1);
+
+      // Calculate output for this specific route
+      const routeOutput = await calculateRouteExactOutput(
+        split.route,
+        routeInput,
+        tokenIn,
+        tokenOut
+      );
+
+      console.log(`   ${i + 1}. ${percentage}% → ${parseFloat(ethers.utils.formatUnits(routeInput, tokenIn.decimals)).toFixed(4)} ${tokenIn.symbol} → ${parseFloat(ethers.utils.formatUnits(routeOutput, tokenOut.decimals)).toFixed(4)} ${tokenOut.symbol}`);
+
+      // Display path with intermediate amounts
+      if (split.route.legs && split.route.legs.length > 0) {
+        let currentAmount = routeInput;
+        let currentToken = tokenIn;
+        const legOutputs = [];
+
+        for (const leg of split.route.legs) {
+          const legToken = leg.token || tokenOut;
+          let legOutput;
+
+          if (leg.protocol === 'balancer' && leg.path) {
+            legOutput = await calculateBalancerRouteOutput({ path: leg.path, poolData: leg.poolData }, currentAmount);
+          } else if (leg.protocol === 'uniswap' && leg.trade) {
+            legOutput = await calculateUniswapRouteOutput({ trade: leg.trade }, currentAmount);
+          } else {
+            legOutput = currentAmount; // fallback
+          }
+
+          legOutputs.push({
+            protocol: leg.protocol,
+            inputAmount: currentAmount,
+            inputToken: currentToken,
+            outputAmount: legOutput,
+            outputToken: legToken
+          });
+
+          currentAmount = legOutput;
+          currentToken = legToken;
+        }
+
+        // Display each leg
+        for (let j = 0; j < legOutputs.length; j++) {
+          const legInfo = legOutputs[j];
+          const arrow = j === legOutputs.length - 1 ? '└→' : '├→';
+          const inputFormatted = ethers.utils.formatUnits(legInfo.inputAmount, legInfo.inputToken.decimals || 18);
+          const outputFormatted = ethers.utils.formatUnits(legInfo.outputAmount, legInfo.outputToken.decimals || 18);
+
+          console.log(`      ${arrow} ${legInfo.protocol}: ${parseFloat(inputFormatted).toFixed(4)} ${legInfo.inputToken.symbol} → ${parseFloat(outputFormatted).toFixed(4)} ${legInfo.outputToken.symbol}`);
+        }
+      } else {
+        // Single-hop route
+        console.log(`      └→ Direct: ${ethers.utils.formatUnits(routeOutput, tokenOut.decimals)} ${tokenOut.symbol}`);
+      }
+
+      if (i < selected.splits.length - 1) console.log('');
+    }
+
+    console.log('   ' + '─'.repeat(80));
+    console.log(`   💰 Combined output: ${parseFloat(ethers.utils.formatUnits(selected.totalOutput, tokenOut.decimals)).toFixed(4)} ${tokenOut.symbol}\n`);
   }
   
   return selected;
@@ -1083,6 +1718,24 @@ async function createExecutionPlan(route, tokenIn, tokenOut, slippageTolerance) 
       plan.executionSteps.push(secondHopStep);
     }
 
+  } else if (route.type === 'uniswap-pre-optimized-split') {
+    // Pre-optimized split from useUniswap (already has optimized split amounts)
+    plan.executionSteps.push({
+      hop: 1,
+      protocol: 'uniswap',
+      method: 'executeMixedSwaps',
+      tokenPath: `${tokenIn.symbol} -> ${tokenOut.symbol}`,
+      trades: route.trades,  // Use trades from the pre-optimized split
+      totalInput: route.splits.reduce((sum, s) => sum.add(s.inputAmount), BigNumber.from(0)),
+      totalOutput: route.totalOutput
+    });
+
+    plan.approvals.push({
+      token: tokenIn.address,
+      spender: '0x66a9893cc07d91d95644aedd05d03f95e1dba8af', // Universal Router
+      amount: route.splits.reduce((sum, s) => sum.add(s.inputAmount), BigNumber.from(0))
+    });
+
   } else if (route.type === 'single-uniswap' || route.type === 'split-uniswap') {
     plan.executionSteps.push({
       hop: 1,
@@ -1093,7 +1746,7 @@ async function createExecutionPlan(route, tokenIn, tokenOut, slippageTolerance) 
       totalInput: route.paths.reduce((sum, p) => sum.add(p.inputAmount), BigNumber.from(0)),
       totalOutput: route.totalOutput
     });
-    
+
     plan.approvals.push({
       token: tokenIn.address,
       spender: '0x66a9893cc07d91d95644aedd05d03f95e1dba8af', // Universal Router

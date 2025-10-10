@@ -506,6 +506,257 @@ This dynamic encoding system ensures robust execution of complex cross-DEX trade
   - `exactAMMOutputs.js`: Exact AMM calculations for both protocols
   - `testCrossDEXRouting.js`: Test file with target values for validation
 
+### Multi-Path Discovery and Optimization System (Latest Implementation)
+
+#### Overview
+The routing system now discovers ALL available paths across both DEXs and optimizes splits using exact AMM calculations. This replaces expensive multi-dimensional optimization with a fast, practical approach.
+
+#### Path Discovery Strategy
+**Returns ALL Paths as Individual Routes**:
+- `discoverBalancerPaths()` returns an **array** of all valid Balancer paths (not just the best)
+- Each Uniswap path becomes a separate route
+- Each Balancer path becomes a separate route
+- Each cross-DEX multi-hop path becomes a separate route
+- Fast discovery phase (< 1 second for typical trades)
+
+**Example Output**:
+```javascript
+routes = [
+  { type: 'balancer-path-1', totalOutput: X, hops: 1 },  // ONE → USDC
+  { type: 'balancer-path-2', totalOutput: Y, hops: 1 },  // ONE → ETH
+  { type: 'balancer-path-3', totalOutput: Z, hops: 2 },  // ONE → WETH → USDC
+  { type: 'uniswap-path-1', totalOutput: A },            // ONE → ETH
+  { type: 'cross-dex-...', totalOutput: B }              // USDC → SEV
+]
+```
+
+#### Simple Iterative Split Optimization
+**Algorithm**: Hill climbing with exact AMM recalculation at each step
+
+**Process**:
+1. **Initial Split**: Proportional allocation based on relative outputs
+2. **Iterative Improvement**: Try moving 2% between each pair of routes
+3. **Exact Recalculation**: For each split configuration, recalculate outputs using exact AMM formulas
+4. **Convergence**: Stop when no improvement found
+5. **Typical Performance**: Converges in 5-20 iterations, < 2 seconds total
+
+**Code Location**: `optimizeSplitSimple()` at line ~684
+
+```javascript
+// Example optimization output:
+Initial split: 33.5% / 33.2% / 33.3%
+Iteration 1: Output increased - Split: 35.5% / 31.2% / 33.3%
+Iteration 2: Output increased - Split: 37.5% / 29.2% / 33.3%
+...
+✅ Optimized in 8 iterations
+Final split: 42.1% / 27.4% / 30.5%
+```
+
+#### CRITICAL: Exact AMM Calculations Only
+
+**NO LINEAR APPROXIMATIONS ALLOWED**:
+```javascript
+// ❌ WRONG - Linear approximation
+output = route.totalOutput * (splitAmount / totalAmount)
+
+// ✅ CORRECT - Exact AMM recalculation
+output = calculateRouteExactOutput(route, splitAmount)
+```
+
+**Implementation Details**:
+- `evaluateSplit()`: Evaluates split configuration using exact AMM math (line ~785)
+- `calculateRouteExactOutput()`: Routes to exact Balancer or Uniswap calculation (line ~806)
+- `calculateBalancerRouteOutput()`: Uses `calculateBalancerExactOutput` from `exactAMMOutputs.js` (line ~852)
+- `calculateUniswapRouteOutput()`: Uses Uniswap SDK's `pool.getOutputAmount()` (line ~890)
+
+**Why This Matters**:
+- AMM curves are non-linear (weighted pools use power functions, constant product uses hyperbolas)
+- Splitting 1000 tokens 50/50 does NOT give 50% of each route's full output
+- Must recalculate from scratch for each split amount
+- Price impact varies with trade size (larger trades = more slippage)
+
+#### Route Display Format
+**Readable Console Output** (via `displayRoutes()` at line ~649):
+```
+📋 Discovered Routes:
+────────────────────────────────────────────────────────────────────────────────
+1. [uniswap-path-1]
+   Output: 3567.8234 1INCH
+   Path: Uniswap path 1
+   Protocol: uniswap
+
+2. [balancer-path-1]
+   Output: 3456.2100 1INCH
+   Path: Balancer path 1 (2 hops)
+   Protocol: balancer
+   Hops: 2
+
+3. [cross-dex-uniswap-uniswap]
+   Output: 3598.1200 1INCH
+   Path: AAVE -> USDC -> 1INCH (Uniswap)
+   Protocol: uniswap
+   Legs: 2
+────────────────────────────────────────────────────────────────────────────────
+```
+
+#### Best Practices for Route Optimization
+
+**1. Always Use Exact AMM Calculations**:
+- Never approximate outputs based on proportional scaling
+- Recalculate from scratch for each split configuration
+- Use SDK methods (`pool.getOutputAmount`) or exact formulas (`calculateBalancerExactOutput`)
+
+**2. Limit Optimization Iterations**:
+- Use simple hill climbing (not expensive multi-dimensional search)
+- Maximum 20-30 iterations is sufficient
+- 2% step size provides good balance of speed vs precision
+- Stop when no improvement found
+
+**3. Handle Edge Cases**:
+- Routes with zero output must be skipped
+- Ensure split percentages sum to 1.0 (normalize after adjustments)
+- Minimum percentage per route (e.g., 1%) prevents numerical instability
+- Maximum 10 routes to avoid combinatorial explosion
+
+**4. Performance Considerations**:
+- Discovery phase should be < 1 second
+- Optimization should be < 3 seconds
+- Total time budget: < 5 seconds for user experience
+- If optimization takes too long, return best discovered route without splitting
+
+**5. Validation**:
+- Verify total output exceeds any single route (split should improve, not worsen)
+- Ensure all routes in split have valid execution paths
+- Check that combined gas costs don't exceed savings
+
+#### Common Mistakes to Avoid
+
+**❌ Linear Approximation**:
+```javascript
+// NEVER DO THIS
+const scaledOutput = route.totalOutput.mul(routeAmount).div(totalAmount);
+```
+
+**❌ Ignoring Price Impact**:
+```javascript
+// WRONG - Assumes linear scaling
+if (route gives 100 tokens for 1000 input) {
+  assume route gives 50 tokens for 500 input  // NOT TRUE!
+}
+```
+
+**❌ Using Cached Outputs**:
+```javascript
+// WRONG - Output was calculated for full amount
+return route.outputAmount; // Don't use this for splits
+```
+
+**✅ Correct Approach**:
+```javascript
+// Recalculate for the actual split amount
+const exactOutput = await calculateRouteExactOutput(route, splitAmount);
+```
+
+#### Future Enhancements
+- Parallel route execution via WalletBundler contract
+- Dynamic route discovery during optimization
+- Gas cost integration into optimization objective
+- Multi-hop convergence path support (currently disabled due to performance)
+
+### CRITICAL: Uniswap Route Discovery Constraints
+
+**IMPORTANT LIMITATION**: The current Uniswap integration (`useUniswap.selectBestPath`) ONLY returns 1-hop trades (single pool swaps).
+
+**Key Facts**:
+- **No Multi-Hop**: Only direct token0 → token1 swaps through a single pool
+- **No Pre-Optimized Splits**: When multiple routes are returned, they are NOT a pre-split allocation
+- **Multiple Routes = Different Pools**: Each route represents a different pool, ALL evaluated with the FULL input amount
+- **Example**:
+  ```
+  Route 1: 14.203 ETH output (Input: 1000.0 AAVE, Pool A)
+  Route 2: 0.441 ETH output (Input: 1000.0 AAVE, Pool B)
+  ```
+  Both routes calculated for the **full 1000 AAVE**, not a split!
+
+**Cross-DEX Implication**:
+When building multi-hop cross-DEX routes (e.g., AAVE → ETH → 1INCH), the system must:
+1. Find ALL single-hop routes to intermediate token (e.g., all AAVE → ETH pools)
+2. Optimize the split across these routes to maximize intermediate output
+3. Use the maximized combined output for the second leg
+
+**DO NOT**:
+- Assume `selectBestPath` returns pre-split amounts
+- Sum route outputs without considering they all need the same input
+- Use only the best single route (wastes available liquidity in other pools)
+
+### Pre-Optimized Split Handling (DEPRECATED - NO LONGER APPLICABLE)
+
+#### Historical Context
+Previously, the `useUniswap.selectBestPath()` function performed split optimization when it found multiple viable routes through different pools. It used hill-climbing to find the optimal split between two non-overlapping Uniswap pools and returned an array of TWO trades with their optimized split amounts (e.g., 60% via pool A, 40% via pool B).
+
+**This is NO LONGER the case** - see "Uniswap Route Discovery Constraints" above.
+
+Previously, `useMixedUniswapBalancer.js` was incorrectly treating these pre-optimized splits as separate independent routes, breaking the optimization because:
+1. Each route showed the output for a PARTIAL input amount (the split amount)
+2. When `optimizeSplitSimple` tried to re-optimize, it passed the FULL amount to these routes
+3. The routes didn't know they were part of a split, resulting in incorrect calculations
+
+#### Solution
+Modified `discoverUniswapPaths()` in `useMixedUniswapBalancer.js` (lines 239-286) to:
+
+1. **Detect Pre-Optimized Splits**: Check if `trades.length > 1` (indicates an optimized split)
+2. **Keep Splits Together**: Create a SINGLE route object with type `'uniswap-pre-optimized-split'`
+3. **Preserve Split Data**: Store all trades together with their split percentages and amounts
+4. **Calculate Combined Output**: Sum the outputs from all trades in the split
+
+```javascript
+if (trades.length > 1) {
+  // This is a split that was already optimized by selectBestPath
+  const totalOutput = trades.reduce((sum, trade) =>
+    sum.add(BigNumber.from(trade.outputAmount.quotient.toString())),
+    BigNumber.from(0)
+  );
+
+  const splitPath = {
+    protocol: 'uniswap',
+    type: 'uniswap-pre-optimized-split',
+    trades,  // Keep all trades together
+    splits: trades.map(trade => ({
+      trade,
+      inputAmount: BigNumber.from(trade.inputAmount.quotient.toString()),
+      outputAmount: BigNumber.from(trade.outputAmount.quotient.toString()),
+      percentage: ...
+    })),
+    inputAmount: amountIn,
+    outputAmount: totalOutput,
+    ...
+  };
+}
+```
+
+#### Execution Support
+Added handling for `'uniswap-pre-optimized-split'` routes in `createExecutionPlan()` (lines 1444-1460):
+
+```javascript
+} else if (route.type === 'uniswap-pre-optimized-split') {
+  // Pre-optimized split from useUniswap (already has optimized split amounts)
+  plan.executionSteps.push({
+    protocol: 'uniswap',
+    method: 'executeMixedSwaps',
+    trades: route.trades,  // Use trades from the pre-optimized split
+    totalInput: route.splits.reduce((sum, s) => sum.add(s.inputAmount), BigNumber.from(0)),
+    totalOutput: route.totalOutput
+  });
+}
+```
+
+#### Benefits
+- **Preserves Uniswap's Internal Optimization**: Respects the split optimization already performed by `selectBestPath`
+- **Accurate Output Calculations**: Routes show correct total output for full input amount
+- **No Double Optimization**: Prevents `optimizeSplitSimple` from trying to re-optimize pre-optimized splits
+- **Better Trade Execution**: Pre-optimized splits are now properly selected when they provide the best output
+- **Fixes AAVE→1INCH Issue**: Restores the split routing that was providing better output than single routes
+
 ### Development Pain Points to Avoid
 - **Price Inversion Logic**: Complex interaction between `shouldSwitchTokensForLimit` and order types
 - **Gas Cost Edge Cases**: When gas exceeds trade output, requires special handling

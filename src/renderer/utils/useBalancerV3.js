@@ -92,7 +92,7 @@ async function loadPoolCache() {
       if (fs.existsSync(nodeTestCachePath)) {
         const data = fs.readFileSync(nodeTestCachePath, 'utf8');
         const cache = JSON.parse(data);
-        console.log(`📦 Loaded ${Object.keys(cache.pools || {}).length} pools from Node.js cache`);
+        // console.log(`📦 Loaded ${Object.keys(cache.pools || {}).length} pools from Node.js cache`);
         return cache;
       }
     } catch (error) {
@@ -106,7 +106,7 @@ async function loadPoolCache() {
     try {
       const result = await window.electronAPI.loadPoolCache();
       if (result.success && result.cache) {
-        console.log(`📦 Loaded ${Object.keys(result.cache.pools || {}).length} pools from Electron cache`);
+        // console.log(`📦 Loaded ${Object.keys(result.cache.pools || {}).length} pools from Electron cache`);
         return result.cache;
       }
     } catch (error) {
@@ -301,7 +301,7 @@ export async function useBalancerV3({ tokenInAddress, tokenOutAddress, amountIn,
       amountIn,
       enrichedPools,
       provider,
-      3
+      1
     );
     
     if (paths.length === 0) {

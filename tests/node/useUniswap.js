@@ -336,50 +336,49 @@ export function useUniswapV4() {
       if (!pools.length) return []
       
       console.log(`[selectBestPath] Finding trades for ${tokenA.symbol} → ${tokenB.symbol} with ${pools.length} pools`);
-      trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 8 });
+      trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 1, maxNumResults: 8 });
       console.log(`[selectBestPath] Found ${trades ? trades.length : 0} trades`);
 
-      if (trades.length < 2)
-        return [trades[0]];
+      // Sort trades by output amount (descending) to get best routes first
+      trades.sort((a, b) => {
+        const aOut = JSBI.BigInt(a.outputAmount.quotient.toString());
+        const bOut = JSBI.BigInt(b.outputAmount.quotient.toString());
+        return JSBI.greaterThan(bOut, aOut) ? 1 : JSBI.lessThan(bOut, aOut) ? -1 : 0;
+      });
 
+      // Return ALL non-conflicting trades for multi-route optimization
+      // Don't pre-optimize here - let useMixedUniswapBalancer handle it
       const knownPools = {};
-      const bestTwoTradesWithoutPoolConflict = [];
+      const nonConflictingTrades = [];
       for (const trade of trades) {
-        if (bestTwoTradesWithoutPoolConflict.length === 2) break;
+        // Allow up to 4 non-conflicting routes for better splitting
+        if (nonConflictingTrades.length >= 4) break;
+
         let canAddTrade = true;
         for (const pool of trade.swaps[0].route.pools) {
-          if (knownPools[pool.poolId]) canAddTrade = false;
+          if (knownPools[pool.poolId]) {
+            canAddTrade = false;
+            break;
+          }
         }
+
         if (canAddTrade) {
           for (const pool of trade.swaps[0].route.pools) {
             knownPools[pool.poolId] = true;
           }
-          bestTwoTradesWithoutPoolConflict.push(trade);
+          nonConflictingTrades.push(trade);
         }
       }
 
-      if (bestTwoTradesWithoutPoolConflict.length < 2)
-        return [trades[0]];
+      console.log(`[selectBestPath] Returning ${nonConflictingTrades.length} non-conflicting routes for optimization`);
 
-      const bestSplit = await findBestSplitHillClimb(
-        bestTwoTradesWithoutPoolConflict[0].swaps[0].route.pools,
-        bestTwoTradesWithoutPoolConflict[1].swaps[0].route.pools,
-        rawIn,
-        tokenA,
-        tokenB
-      );
-
-      if (!bestSplit.fraction || bestSplit.fraction > .951) 
-        return [trades[0]];
-
-      const splitOutRaw = bestSplit.output.toString();
-
-      const singleOutRaw = trades[0]
-        ? BigNumber.from(trades[0].outputAmount.quotient.toString()).toString()
-        : '0';
-      if (BigNumber.from(splitOutRaw).gt(BigNumber.from(singleOutRaw))) {
-        return bestSplit.trades;
+      // Return all non-conflicting trades for multi-route optimization
+      if (nonConflictingTrades.length > 1) {
+        return nonConflictingTrades;
       }
+
+      // Only single best route found
+      return [trades[0]];
 
     } catch (err) {
       /* The only error the SDK throws here is the dreaded "Invariant failed".
