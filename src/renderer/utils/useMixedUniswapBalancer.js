@@ -987,8 +987,8 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
   // Iterative improvement (hill climbing with adaptive step size)
   const maxIterations = 200; // Increased to allow more aggressive reallocation
   const initialStepSize = 0.02; // Start with 2% adjustment
-  const minStepSize = 0.0001; // Minimum 0.01% adjustment for fine-tuning
-  const stepReduction = 0.7; // Reduce step by 30% when no improvement found
+  const minStepSize = 0.00005; // Minimum 0.005% adjustment for fine-tuning
+  const stepReduction = 0.8; // Reduce step by 20% when no improvement found
   let stepSize = initialStepSize;
   let iteration = 0;
 
@@ -1085,7 +1085,7 @@ async function evaluateSplit(splitPercentages, routes, totalAmount, tokenIn, tok
 
   for (let i = 0; i < routes.length; i++) {
     const route = routes[i];
-    const routeAmount = totalAmount.mul(Math.floor(splitPercentages[i] * 1000000)).div(1000000);
+    const routeAmount = totalAmount.mul(Math.floor(splitPercentages[i] * 100000000)).div(100000000);
 
     if (routeAmount.lte(0)) continue;
 
