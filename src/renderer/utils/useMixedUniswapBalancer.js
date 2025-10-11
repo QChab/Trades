@@ -1150,7 +1150,6 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
     const optimizedSplit = await optimizeSplitSimple(routes, amountIn, tokenIn, tokenOut);
     if (optimizedSplit) {
       routes.push(optimizedSplit);
-      console.log(`\n✅ Added optimized multi-route split`);
     }
   }
 
@@ -3295,16 +3294,6 @@ async function selectBestRoute(routes, amountIn, tokenIn, tokenOut) {
   });
   
   const selected = routesWithMetrics[0];
-  
-  // Log selection reasoning
-  console.log(`\n✅ Route selected: ${selected.type}`);
-  console.log(`   Output: ${ethers.utils.formatUnits(selected.totalOutput, tokenOut.decimals)} ${tokenOut.symbol}`);
-  console.log(`   Post-trade arbitrage risk: ${(selected.arbitrageRisk * 100).toFixed(2)}%`);
-
-  if (selected.splits) {
-    const dist = selected.splits.map(s => `${(s.percentage * 100).toFixed(1)}%`).join('/');
-    console.log(`   Distribution: ${dist} across ${selected.splits.length} venues`);
-  }
 
   // Explain why this minimizes arbitrage
   if (selected.arbitrageRisk < 0.5) {

@@ -50,13 +50,13 @@ async function testCrossDEXRouting() {
     decimals: 18
   };
 
-  const rawAmountIn = '10'
+  const rawAmountIn = '1000'
   const amountIn = ethers.utils.parseUnits(rawAmountIn, 18);
 
 
   const tokensTraded = {
-    tokenInObject: ONE,
-    tokenOutObject: SEV,
+    tokenInObject: AAVE,
+    tokenOutObject: INCH,
   }
   console.log(`=== Testing Cross-DEX Routing (${tokensTraded.tokenInObject.symbol} -> ${tokensTraded.tokenOutObject.symbol}- ===\n`);
   console.log(`Input: ${rawAmountIn} ${tokensTraded.tokenInObject.symbol}`);
