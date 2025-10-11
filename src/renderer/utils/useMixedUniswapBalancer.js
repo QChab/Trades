@@ -771,13 +771,20 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
   // Single pool case - 100% allocation
   if (numPools === 1) {
     const allocations = new Map();
+    const poolInputs = new Map();
+    const poolOutputs = new Map();
+
     allocations.set(pools[0].poolAddress, 1.0);
+    poolInputs.set(pools[0].poolAddress, groupInputAmount);
 
     // Calculate output for this single pool
     const output = await calculatePoolExactOutput(pools[0], groupInputAmount, tokenIn, tokenOut);
+    poolOutputs.set(pools[0].poolAddress, output);
 
     return {
       poolAllocations: allocations,
+      poolInputs: poolInputs,
+      poolOutputs: poolOutputs,
       totalOutput: output,
       iterations: 0
     };
@@ -884,16 +891,89 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
     }
   }
 
-  // Convert to Map
+  // FILTER: Remove pools with allocation < 0.01% and re-optimize
+  const ALLOCATION_THRESHOLD = 0.0001; // 0.01%
+  let filteredIndices = [];
+  let filteredPools = [];
+  let sumFilteredAllocation = 0; // Track total allocation that was filtered out
+
+  console.log(`      🔍 Checking allocations against ${(ALLOCATION_THRESHOLD * 100).toFixed(2)}% threshold:`);
+  for (let idx = 0; idx < pools.length; idx++) {
+    const allocationPct = bestSplit[idx] * 100;
+    console.log(`         Pool ${idx}: ${allocationPct.toFixed(4)}% (${bestSplit[idx] >= ALLOCATION_THRESHOLD ? 'KEEP' : 'FILTER'})`);
+
+    if (bestSplit[idx] >= ALLOCATION_THRESHOLD) {
+      filteredIndices.push(idx);
+      filteredPools.push(pools[idx]);
+    } else {
+      console.log(`      ⚠️  Filtering out pool ${pools[idx].poolAddress?.slice(0, 10)}... with ${allocationPct.toFixed(4)}% allocation (< 0.01% threshold)`);
+      sumFilteredAllocation += bestSplit[idx]; // Accumulate filtered allocation
+    }
+  }
+
+  // If we filtered out any pools, handle redistribution
+  if (filteredPools.length < pools.length && filteredPools.length > 0) {
+    console.log(`      🔄 Filtered ${pools.length - filteredPools.length} pool(s) with total ${(sumFilteredAllocation * 100).toFixed(4)}% allocation`);
+
+    // If only ONE pool remains, give it 100% and stop optimization
+    if (filteredPools.length === 1) {
+      console.log(`      ✓ Only 1 pool remaining - allocating 100%`);
+
+      const allocations = new Map();
+      const poolInputs = new Map();
+      const poolOutputs = new Map();
+
+      allocations.set(filteredPools[0].poolAddress, 1.0);
+      poolInputs.set(filteredPools[0].poolAddress, groupInputAmount);
+
+      // Calculate output for this single pool
+      const output = await calculatePoolExactOutput(filteredPools[0], groupInputAmount, tokenIn, tokenOut);
+      poolOutputs.set(filteredPools[0].poolAddress, output);
+
+      return {
+        poolAllocations: allocations,
+        poolInputs: poolInputs,
+        poolOutputs: poolOutputs,
+        totalOutput: output,
+        iterations: iteration
+      };
+    }
+
+    // Multiple pools remain - re-optimize with filtered pools
+    console.log(`      🔄 Re-optimizing with ${filteredPools.length} remaining pools...`);
+
+    // Create a new group object with filtered pools for recursive call
+    const filteredGroup = {
+      ...group,
+      pools: filteredPools
+    };
+
+    // Recursive call with filtered group
+    return await optimizeTokenPairGroup(filteredGroup, groupInputAmount, tokenIn, tokenOut, poolInitialAllocations);
+  }
+
+  // Convert to Map and calculate exact amounts for each pool
   const allocations = new Map();
-  pools.forEach((pool, idx) => {
-    allocations.set(pool.poolAddress, bestSplit[idx]);
-  });
+  const poolInputs = new Map();
+  const poolOutputs = new Map();
+
+  for (let idx = 0; idx < pools.length; idx++) {
+    const pool = pools[idx];
+    const percentage = bestSplit[idx];
+    const poolInput = groupInputAmount.mul(Math.floor(percentage * 1000000)).div(1000000);
+    const poolOutput = await calculatePoolExactOutput(pool, poolInput, tokenIn, tokenOut);
+
+    allocations.set(pool.poolAddress, percentage);
+    poolInputs.set(pool.poolAddress, poolInput);
+    poolOutputs.set(pool.poolAddress, poolOutput);
+  }
 
   console.log(`      ✓ Optimized in ${iteration} iterations: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
 
   return {
     poolAllocations: allocations,
+    poolInputs: poolInputs,           // NEW: Exact input amount per pool
+    poolOutputs: poolOutputs,         // NEW: Exact output amount per pool
     totalOutput: bestOutput,
     iterations: iteration
   };
@@ -973,7 +1053,7 @@ async function calculatePoolExactOutput(pool, amount, tokenIn, tokenOut) {
  * Now handles unified ETH/WETH liquidity across protocols
  */
 async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, amountIn, tokenIn, tokenOut) {
-  const routes = [];
+  let routes = [];
 
   // Add ALL Uniswap paths as individual routes
   if (uniswapPaths && uniswapPaths.length > 0) {
@@ -1037,6 +1117,29 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
   }
 
   console.log(`\n📊 Total routes discovered: ${routes.length}`);
+
+  // Filter out routes with terrible outputs (< 1/1000000 of best)
+  if (routes.length > 0) {
+    const bestOutput = routes.reduce((max, route) =>
+      route.totalOutput.gt(max) ? route.totalOutput : max
+    , BigNumber.from(0));
+
+    const threshold = bestOutput.div(1000000); // 1 millionth of best
+    const beforeFilter = routes.length;
+
+    routes = routes.filter(route => {
+      if (route.totalOutput.lt(threshold)) {
+        console.log(`   ❌ Filtered out route with output ${ethers.utils.formatUnits(route.totalOutput, tokenOut.decimals)} ${tokenOut.symbol} (< 1/1000000 of best)`);
+        return false;
+      }
+      return true;
+    });
+
+    if (routes.length < beforeFilter) {
+      console.log(`   ✓ Filtered ${beforeFilter - routes.length} routes with terrible outputs`);
+      console.log(`   ✓ Remaining routes: ${routes.length}`);
+    }
+  }
 
   // Display routes in readable format
   displayRoutes(routes, tokenOut);
@@ -2046,6 +2149,82 @@ function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
     assignedThisLevel.forEach(g => remaining.delete(g));
   }
 
+  // CRITICAL FIX: Detect and resolve circular token flows at the same level
+  // Use leg indices from routes to determine correct execution order
+  const maxAssignedLevel = Math.max(...groupsWithLevels.map(g => g.level));
+
+  for (let level = 0; level <= maxAssignedLevel; level++) {
+    const groupsAtLevel = groupsWithLevels.filter(g => g.level === level);
+
+    // Check for circular token flows
+    for (let i = 0; i < groupsAtLevel.length; i++) {
+      for (let j = i + 1; j < groupsAtLevel.length; j++) {
+        const groupA = groupsAtLevel[i];
+        const groupB = groupsAtLevel[j];
+
+        // Detect circular flow: A→B and B→A
+        if (groupA.inputToken === groupB.outputToken &&
+            groupA.outputToken === groupB.inputToken) {
+          console.log(`   ⚠️  Circular token flow detected at Level ${level}:`);
+          console.log(`       ${groupA.tokenPairKey} ⇄ ${groupB.tokenPairKey}`);
+
+          // Use leg indices to determine which should execute first
+          // Find routes where BOTH token-pairs appear together
+          const routeIndicesA = new Set(groupA.pools.flatMap(p => p.routeIndices || []));
+          const routeIndicesB = new Set(groupB.pools.flatMap(p => p.routeIndices || []));
+          const sharedRoutes = [...routeIndicesA].filter(r => routeIndicesB.has(r));
+
+          console.log(`       Shared routes: [${sharedRoutes.join(', ')}]`);
+
+          if (sharedRoutes.length > 0) {
+            // Check which one appears earlier in shared routes
+            let sumLegA = 0;
+            let sumLegB = 0;
+
+            for (const routeIdx of sharedRoutes) {
+              // Find leg index for groupA in this route
+              for (const pool of groupA.pools) {
+                const idx = pool.routeIndices.indexOf(routeIdx);
+                if (idx !== -1) {
+                  sumLegA += pool.legIndices[idx];
+                  break;
+                }
+              }
+
+              // Find leg index for groupB in this route
+              for (const pool of groupB.pools) {
+                const idx = pool.routeIndices.indexOf(routeIdx);
+                if (idx !== -1) {
+                  sumLegB += pool.legIndices[idx];
+                  break;
+                }
+              }
+            }
+
+            const avgLegA = sumLegA / sharedRoutes.length;
+            const avgLegB = sumLegB / sharedRoutes.length;
+
+            console.log(`       ${groupA.tokenPairKey} avg leg: ${avgLegA.toFixed(1)}`);
+            console.log(`       ${groupB.tokenPairKey} avg leg: ${avgLegB.toFixed(1)}`);
+
+            // The one with higher average leg index executes AFTER, so push to next level
+            if (avgLegA > avgLegB) {
+              groupA.level = level + 1;
+              console.log(`       → Moved ${groupA.tokenPairKey} to Level ${level + 1} (appears later in routes)`);
+            } else if (avgLegB > avgLegA) {
+              groupB.level = level + 1;
+              console.log(`       → Moved ${groupB.tokenPairKey} to Level ${level + 1} (appears later in routes)`);
+            } else {
+              console.log(`       ⚠️  Same average - keeping both at Level ${level}`);
+            }
+          } else {
+            console.log(`       ⚠️  No shared routes - keeping both at Level ${level}`);
+          }
+        }
+      }
+    }
+  }
+
   return groupsWithLevels;
 }
 
@@ -2265,6 +2444,11 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
     for (const pool of group.pools) {
       const poolPercentage = optimization.poolAllocations.get(pool.poolAddress);
 
+      // Skip pools that were filtered out during optimization (undefined allocation)
+      if (poolPercentage === undefined) {
+        continue;
+      }
+
       // Distribute this pool's percentage to all routes that use it
       for (const routeIdx of pool.routeIndices) {
         bestSplit[routeIdx] += poolPercentage / pool.routeIndices.length;
@@ -2345,13 +2529,25 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
       const groupPercentageOfLevel = optimization?.inputPercentage || 1.0;
       const percentageOfLevelInput = poolPercentageWithinGroup * groupPercentageOfLevel;
 
+      // FILTER: Skip pools with allocation < 0.01% (0.0001) to save gas
+      if (percentageOfLevelInput < 0.0001) {
+        console.log(`      ⚠️  Skipping pool ${pool.poolAddress?.slice(0, 10)}... at Level ${level}: ${(percentageOfLevelInput * 100).toFixed(4)}% (< 0.01% threshold)`);
+        continue; // Skip this pool
+      }
+
+      // Get exact input and output amounts from optimization
+      const poolInput = optimization?.poolInputs?.get(pool.poolAddress || pool.poolId);
+      const poolOutput = optimization?.poolOutputs?.get(pool.poolAddress || pool.poolId);
+
       const poolInfo = {
         poolAddress: pool.poolAddress || pool.poolId,
         poolKey: poolKey,
         protocol: pool.protocol,
         inputToken: pool.inputToken,
         outputToken: pool.outputToken,
-        percentage: percentageOfLevelInput, // Now shows percentage of level input, not group input
+        percentage: percentageOfLevelInput, // Percentage of level input
+        inputAmount: poolInput,              // NEW: Exact input amount in wei
+        expectedOutput: poolOutput,          // NEW: Expected output amount in wei
         routeIndices: pool.routeIndices,
         legIndices: pool.legIndices,
         trade: pool.trade,
@@ -3119,115 +3315,6 @@ async function selectBestRoute(routes, amountIn, tokenIn, tokenOut) {
     console.log(`   ⚡ High concentration chosen for maximum output`);
   }
 
-  // Display detailed route breakdown with amounts
-  if (selected.splits && selected.splits.length > 1) {
-    console.log(`\n   📊 Optimal Split Across ${selected.splits.length} Routes:`);
-    console.log('   ' + '─'.repeat(80));
-
-    for (let i = 0; i < selected.splits.length; i++) {
-      const split = selected.splits[i];
-      const routeInput = split.amount;
-      const percentage = (split.percentage * 100).toFixed(1);
-
-      // Calculate output for this specific route
-      const routeOutput = await calculateRouteExactOutput(
-        split.route,
-        routeInput,
-        tokenIn,
-        tokenOut
-      );
-
-      console.log(`   ${i + 1}. ${percentage}% → ${parseFloat(ethers.utils.formatUnits(routeInput, tokenIn.decimals)).toFixed(4)} ${tokenIn.symbol} → ${parseFloat(ethers.utils.formatUnits(routeOutput, tokenOut.decimals)).toFixed(4)} ${tokenOut.symbol}`);
-
-      // Display path with intermediate amounts
-      if (split.route.legs && split.route.legs.length > 0) {
-        let currentAmount = routeInput;
-        let currentToken = tokenIn;
-        const legOutputs = [];
-
-        for (let i = 0; i < split.route.legs.length; i++) {
-          const leg = split.route.legs[i];
-          const legToken = leg.token || tokenOut;
-          let legOutput;
-
-          if (leg.protocol === 'balancer' && leg.path) {
-            legOutput = await calculateBalancerRouteOutput({ path: leg.path, poolData: leg.poolData }, currentAmount);
-
-            legOutputs.push({
-              protocol: leg.protocol,
-              inputAmount: currentAmount,
-              inputToken: currentToken,
-              outputAmount: legOutput,
-              outputToken: legToken
-            });
-
-            // IMPORTANT: If route needs WETH→ETH unwrap, show it
-            if (split.route.needsWETHToETHConversion && i === 0) {
-              // Add unwrap step (1:1 conversion)
-              legOutputs.push({
-                protocol: 'unwrap',
-                inputAmount: legOutput,
-                inputToken: { symbol: 'WETH', decimals: 18 },
-                outputAmount: legOutput, // 1:1 conversion
-                outputToken: { symbol: 'ETH', decimals: 18 }
-              });
-              currentToken = { symbol: 'ETH', decimals: 18 };
-            } else {
-              currentToken = legToken;
-            }
-
-            currentAmount = legOutput;
-
-          } else if (leg.protocol === 'uniswap' && leg.trade) {
-            legOutput = await calculateUniswapRouteOutput({ trade: leg.trade }, currentAmount);
-
-            legOutputs.push({
-              protocol: leg.protocol,
-              inputAmount: currentAmount,
-              inputToken: currentToken,
-              outputAmount: legOutput,
-              outputToken: legToken
-            });
-
-            currentAmount = legOutput;
-            currentToken = legToken;
-          } else {
-            legOutput = currentAmount; // fallback
-
-            legOutputs.push({
-              protocol: leg.protocol,
-              inputAmount: currentAmount,
-              inputToken: currentToken,
-              outputAmount: legOutput,
-              outputToken: legToken
-            });
-
-            currentAmount = legOutput;
-            currentToken = legToken;
-          }
-        }
-
-        // Display each leg
-        for (let j = 0; j < legOutputs.length; j++) {
-          const legInfo = legOutputs[j];
-          const arrow = j === legOutputs.length - 1 ? '└→' : '├→';
-          const inputFormatted = ethers.utils.formatUnits(legInfo.inputAmount, legInfo.inputToken.decimals || 18);
-          const outputFormatted = ethers.utils.formatUnits(legInfo.outputAmount, legInfo.outputToken.decimals || 18);
-
-          console.log(`      ${arrow} ${legInfo.protocol}: ${parseFloat(inputFormatted).toFixed(4)} ${legInfo.inputToken.symbol} → ${parseFloat(outputFormatted).toFixed(4)} ${legInfo.outputToken.symbol}`);
-        }
-      } else {
-        // Single-hop route
-        console.log(`      └→ Direct: ${ethers.utils.formatUnits(routeOutput, tokenOut.decimals)} ${tokenOut.symbol}`);
-      }
-
-      if (i < selected.splits.length - 1) console.log('');
-    }
-
-    console.log('   ' + '─'.repeat(80));
-    console.log(`   💰 Combined output: ${parseFloat(ethers.utils.formatUnits(selected.totalOutput, tokenOut.decimals)).toFixed(4)} ${tokenOut.symbol}\n`);
-  }
-  
   return selected;
 }
 

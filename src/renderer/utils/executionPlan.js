@@ -206,6 +206,8 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
           inputToken: pool.inputToken,
           outputToken: pool.outputToken,
           percentage: pool.percentage,
+          inputAmount: pool.inputAmount,              // Exact input in wei
+          expectedOutput: pool.expectedOutput,        // Expected output in wei
           method: pool.protocol === 'uniswap' ? 'exactInputSingle' : 'batchSwap',
           // Include execution details
           ...(pool.protocol === 'uniswap' && {
@@ -221,6 +223,22 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
         console.log(`      ${poolIdx + 1}. ${pool.protocol}: ${pool.inputToken}→${pool.outputToken}`);
         console.log(`         Pool: ${pool.poolAddress.slice(0, 10)}...`);
         console.log(`         Allocation: ${(pool.percentage * 100).toFixed(1)}% of level ${level.level} input`);
+
+        // Display exact input/output amounts if available
+        if (pool.inputAmount) {
+          // Determine decimal places for input token
+          const inputDecimals = { 'ETH': 18, 'WETH': 18, 'USDC': 6, 'USDT': 6, 'DAI': 18, 'WBTC': 8, 'AAVE': 18 }[pool.inputToken] || 18;
+          const inputFormatted = ethers.utils.formatUnits(pool.inputAmount, inputDecimals);
+          console.log(`         Input: ${inputFormatted} ${pool.inputToken} (${pool.inputAmount.toString()} wei)`);
+        }
+
+        if (pool.expectedOutput) {
+          // Determine decimal places for output token
+          const outputDecimals = { 'ETH': 18, 'WETH': 18, 'USDC': 6, 'USDT': 6, 'DAI': 18, 'WBTC': 8, '1INCH': 18 }[pool.outputToken] || 18;
+          const outputFormatted = ethers.utils.formatUnits(pool.expectedOutput, outputDecimals);
+          console.log(`         Expected Output: ${outputFormatted} ${pool.outputToken} (${pool.expectedOutput.toString()} wei)`);
+        }
+
         if (pool.routeIndices && pool.routeIndices.length > 1) {
           console.log(`         Converges ${pool.routeIndices.length} routes`);
         }
