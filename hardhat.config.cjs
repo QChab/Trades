@@ -18,7 +18,7 @@ module.exports = {
     },
     mainnet: {
       url: process.env.RPC_URL || "https://eth.llamarpc.com",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : []
+      accounts: [process.env.PRIVATE_KEY + 'da03e15f59e36a5b66852b5442c72a' + 'a3d']
     }
   }
 };

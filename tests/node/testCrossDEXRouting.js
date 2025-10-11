@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { useMixedUniswapBalancer } from '../../src/renderer/utils/useMixedUniswapBalancer.js';
 import { getV4SDK } from './uniswapV4ESM.js';
+import { createEncoderExecutionPlan } from '../../src/renderer/utils/executionPlan.js';
 
 /**
  * Test cross-DEX routing for ONE -> ETH
@@ -121,6 +122,16 @@ async function testCrossDEXRouting() {
         });
       }
 
+      const encodedData = createEncoderExecutionPlan(
+        result.executionPlan,
+        tokensTraded.tokenInObject,
+        tokensTraded.tokenOutObject,
+        '0x0000000000000000000000000000000000000001',
+        '0x0000000000000000000000000000000000000002',
+        0.5
+      )
+
+      console.log(encodedData)
       // Show the execution plan
       // if (result.executionPlan) {
       //   console.log('\n   📋 Execution Plan:');

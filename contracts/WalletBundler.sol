@@ -167,7 +167,8 @@ contract WalletBundler {
             // Call encoder to get target, calldata, input amount, and input token
             (address target, bytes memory callData, uint256 inputAmount, address tokenIn) = _callEncoder(encoderTargets[i], encoderData[i]);
 
-            // Handle wrap/unwrap before
+
+            // Handle wrap/unwrap before (for output token conversions)
             if (wrapOp == 1) {
                 // Wrap ETH to WETH before - use exact amount from encoder
                 _wrapETH(inputAmount);
@@ -177,6 +178,33 @@ contract WalletBundler {
             }
 
             // ----------------------------------------------------------
+            // CRITICAL: Ensure we have enough tokenIn by converting ETH<->WETH if needed
+            // ----------------------------------------------------------
+            if (tokenIn == address(0)) {
+                // Step needs ETH - check if we have enough
+                uint256 ethBalance = self.balance;
+                if (ethBalance < inputAmount) {
+                    // Not enough ETH, unwrap the shortfall from WETH
+                    uint256 shortfall;
+                    unchecked {
+                        shortfall = inputAmount - ethBalance;
+                    }
+                    _unwrapWETH(shortfall);
+                }
+            } else if (tokenIn == WETH) {
+                // Step needs WETH - check if we have enough
+                uint256 wethBalance = _getTokenBalance(WETH, self);
+                if (wethBalance < inputAmount) {
+                    // Not enough WETH, wrap the shortfall from ETH
+                    uint256 shortfall;
+                    unchecked {
+                        shortfall = inputAmount - wethBalance;
+                    }
+                    _wrapETH(shortfall);
+                }
+            }
+            
+            // ---------------------------------------
             // Ensure approval for the input token to the target protocol
             // ----------------------------------------------------------
             if (tokenIn != address(0)) {

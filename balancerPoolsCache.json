@@ -786,8 +786,62 @@
       "totalLiquidity": 8750000.1,
       "swapFee": "0.0025",
       "queriedAt": "2025-10-10T19:14:16.095Z"
+    },
+    "0x5c80e9e0725e4a0156a210d71bf34b3bbb630fb9": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x5c80e9e0725e4a0156a210d71bf34b3bbb630fb9",
+      "id": "0x5c80e9e0725e4a0156a210d71bf34b3bbb630fb9",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.001682294317660572",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "17.464808477015233809",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 17.466490771332893,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-11T15:05:42.024Z"
+    },
+    "0x6106fe7697160a3d891ab7f22b3440aefa4c10e0": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x6106fe7697160a3d891ab7f22b3440aefa4c10e0",
+      "id": "0x6106fe7697160a3d891ab7f22b3440aefa4c10e0",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000317818951816798",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "19.650788312762997984",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 19.651106131714815,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-11T22:35:47.423Z"
     }
   },
-  "lastUpdated": "2025-10-10T19:14:16.099Z",
+  "lastUpdated": "2025-10-11T22:35:47.433Z",
   "version": "1.0.0"
 }

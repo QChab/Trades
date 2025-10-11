@@ -2,9 +2,8 @@ import { ethers, BigNumber } from 'ethers';
 import { CurrencyAmount } from '@uniswap/sdk-core';
 import { useUniswapV4 } from '../../../tests/node/useUniswap.js';
 // import { useUniswapV4 } from '../composables/useUniswap.js';
-import { useBalancerV3, getCacheStats, fetchAllBalancerPools, findOptimalPaths } from './useBalancerV3.js';
+import { getCacheStats, fetchAllBalancerPools, findOptimalPaths } from './useBalancerV3.js';
 import {
-  calculateUniswapExactOutput,
   calculateBalancerExactOutput
 } from './exactAMMOutputs.js'
 
@@ -1001,7 +1000,6 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
   let filteredPools = [];
   let sumFilteredAllocation = 0; // Track total allocation that was filtered out
 
-  console.log(`      🔍 Checking allocations against ${(ALLOCATION_THRESHOLD * 100).toFixed(2)}% threshold:`);
   for (let idx = 0; idx < pools.length; idx++) {
     const allocationPct = bestSplit[idx] * 100;
     console.log(`         Pool ${idx}: ${allocationPct.toFixed(4)}% (${bestSplit[idx] >= ALLOCATION_THRESHOLD ? 'KEEP' : 'FILTER'})`);
@@ -1072,7 +1070,7 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
     poolOutputs.set(pool.poolAddress, poolOutput);
   }
 
-  console.log(`      ✓ Optimized in ${iteration} iterations: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+  console.log(`      ✓ Optimized in ${iteration} iterations: ${bestSplit.map(x => (x * 100).toFixed(3) + '%').join(' / ')}`);
 
   return {
     poolAllocations: allocations,
@@ -2076,7 +2074,7 @@ async function optimizeInterGroupSplit(
     }
   }
 
-  console.log(`      ✓ Optimized inter-group split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+  console.log(`      ✓ Optimized inter-group split: ${bestSplit.map(x => (x * 100).toFixed(3) + '%').join(' / ')}`);
 
   // Now optimize each group with its allocated input
   const groupOptimizations = [];
@@ -2653,21 +2651,34 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
       const actualInput = (pool.protocol === 'balancer' && pool.inputToken === 'ETH') ? 'WETH' : pool.inputToken;
       const actualOutput = (pool.protocol === 'balancer' && pool.outputToken === 'ETH') ? 'WETH' : pool.outputToken;
 
-      // Check if output conversion is needed for next level
-      // Only add wrap operations at the OUTPUT of current level pools
-      // The next level will automatically use the correct token (no input conversion needed)
-      const nextLevel = tokenPairGroups.find(g => g.level === level + 1);
-      if (nextLevel && isETHOrWETH(pool.outputToken)) {
-        const nextLevelNeedsWETH = nextLevel.pools.some(p => p.protocol === 'balancer' && isETHOrWETH(p.inputToken));
-        const nextLevelNeedsETH = nextLevel.pools.some(p => p.protocol === 'uniswap' && isETHOrWETH(p.inputToken));
+      // Check if output conversion is needed for consuming level
+      // Find which level actually consumes this pool's output token
+      if (isETHOrWETH(pool.outputToken)) {
+        // Find all future levels that consume ETH/WETH
+        const consumingLevels = tokenPairGroups.filter(g =>
+          g.level > level &&
+          g.pools.some(p => isETHOrWETH(p.inputToken))
+        );
 
-        // If this pool outputs WETH (Balancer) but next level needs ETH (Uniswap)
-        if (pool.protocol === 'balancer' && nextLevelNeedsETH) {
-          wrapOperation = 4; // Unwrap WETH to ETH after call
-        }
-        // If this pool outputs ETH (Uniswap) but next level needs WETH (Balancer)
-        else if (pool.protocol === 'uniswap' && nextLevelNeedsWETH) {
-          wrapOperation = 2; // Wrap ETH to WETH after call
+        // Check the nearest consuming level
+        if (consumingLevels.length > 0) {
+          const nearestConsumingLevel = consumingLevels[0]; // Already sorted by level
+          const needsWETH = nearestConsumingLevel.pools.some(p => p.protocol === 'balancer' && isETHOrWETH(p.inputToken));
+          const needsETH = nearestConsumingLevel.pools.some(p => p.protocol === 'uniswap' && isETHOrWETH(p.inputToken));
+
+          // MIXED CONSUMPTION: If consuming level needs BOTH WETH and ETH, don't convert at output
+          // Instead, individual consuming pools will handle conversion via "before" operations
+          if (needsWETH && needsETH) {
+            // Keep output in its native form, let consumers convert
+            wrapOperation = 0;
+          }
+          // SINGLE TYPE CONSUMPTION: Convert at output if all consumers need the same form
+          else if (pool.protocol === 'balancer' && needsETH && !needsWETH) {
+            wrapOperation = 4; // Unwrap WETH to ETH after call (all consumers need ETH)
+          }
+          else if (pool.protocol === 'uniswap' && needsWETH && !needsETH) {
+            wrapOperation = 2; // Wrap ETH to WETH after call (all consumers need WETH)
+          }
         }
       }
 
@@ -2695,11 +2706,50 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
 
   // Convert to levels array sorted by level number
   const levels = Array.from(levelMap.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([levelNum, pools]) => ({
-      level: levelNum,
-      pools: pools
-    }));
+    .sort((a, b) => a[0] - b[0])  // Sort levels by number (unchanged)
+    .map(([levelNum, pools]) => {
+      // Group pools by input token within this level
+      const inputTokenGroups = new Map();
+
+      pools.forEach(pool => {
+        const inputToken = pool.inputToken;
+        if (!inputTokenGroups.has(inputToken)) {
+          inputTokenGroups.set(inputToken, []);
+        }
+        inputTokenGroups.get(inputToken).push(pool);
+      });
+
+      // Sort each input token group by percentage (lowest to highest)
+      // Mark the highest allocation for each input token as shouldUseAllBalance
+      const sortedPools = [];
+
+      inputTokenGroups.forEach((poolGroup, inputToken) => {
+        // Sort by percentage: lowest to highest
+        poolGroup.sort((a, b) => {
+          if (a.percentage !== b.percentage) {
+            return a.percentage - b.percentage; // Ascending
+          }
+          // Fallback: compare inputAmount
+          const aAmount = a.inputAmount || ethers.BigNumber.from(0);
+          const bAmount = b.inputAmount || ethers.BigNumber.from(0);
+          if (aAmount.lt(bAmount)) return -1;
+          if (aAmount.gt(bAmount)) return 1;
+          return 0;
+        });
+
+        // Mark the last one (highest percentage) as shouldUseAllBalance
+        if (poolGroup.length > 0) {
+          poolGroup[poolGroup.length - 1].shouldUseAllBalance = true;
+        }
+
+        sortedPools.push(...poolGroup);
+      });
+
+      return {
+        level: levelNum,
+        pools: sortedPools
+      };
+    });
 
   return {
     levels,
