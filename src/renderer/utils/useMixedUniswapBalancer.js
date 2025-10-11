@@ -1631,10 +1631,17 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
       }
 
       // Normalize to percentages
+      const rawPercentages = [];
       for (const group of competingGroups) {
         const importance = importanceByGroup.get(group.tokenPairKey);
         const percentage = importance.mul(100000).div(totalImportance).toNumber() / 100000;
-        groupInitialAllocations.set(group.tokenPairKey, Math.max(0.01, percentage)); // Minimum 1%
+        rawPercentages.push({ group, percentage: Math.max(0.01, percentage) }); // Apply minimum
+      }
+
+      // Re-normalize after applying minimum to ensure sum = 1.0
+      const sum = rawPercentages.reduce((acc, item) => acc + item.percentage, 0);
+      for (const item of rawPercentages) {
+        groupInitialAllocations.set(item.group.tokenPairKey, item.percentage / sum);
       }
 
       console.log(`      ${key} competing groups initialized:`);
