@@ -222,7 +222,7 @@ export function useUniswapV4() {
                 { token1_in: ${JSON.stringify(allTokens)}, liquidity_not: "0" }
               ]
             },
-            first: 200
+            first: 1000
           ) {
             id
             feeTier
@@ -319,7 +319,7 @@ export function useUniswapV4() {
             ],
             liquidity_not:"0",
           },
-          first: 100
+          first: 200
         ) {
           id feeTier sqrtPrice hooks tick tickSpacing liquidity totalValueLockedUSD
           token0 { id decimals symbol } token1 { id decimals symbol }
@@ -342,7 +342,7 @@ export function useUniswapV4() {
             token1_in: [$a, $b],
             liquidity_not:"0",
           },
-          first: 100
+          first: 200
         ) {
           id feeTier sqrtPrice hooks tick tickSpacing liquidity totalValueLockedUSD
           token0 { id decimals symbol } token1 { id decimals symbol }
@@ -354,23 +354,33 @@ export function useUniswapV4() {
     `;
 
     const poolsInBetweenQuery = gql`
-      query{
+      query($a: String!, $b: String!) {
         poolsInBetween: pools(
-          where:{
-            token0_in: [
-              "0x0000000000000000000000000000000000000000",
-              "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-              "0xdac17f958d2ee523a2206206994597c13d831ec7",
-              "0x6b175474e89094c44da98b954eedeac495271d0f"
-            ],
-            token1_in: [
-              "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-              "0xdac17f958d2ee523a2206206994597c13d831ec7",
-              "0x6b175474e89094c44da98b954eedeac495271d0f"
-            ],
-            liquidity_not:"0",
+          where: {
+            or: [
+              {
+                token0_in: [
+                  $a,
+                  $b,
+                  "0x0000000000000000000000000000000000000000",
+                  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                  "0xdac17f958d2ee523a2206206994597c13d831ec7",
+                  "0x6b175474e89094c44da98b954eedeac495271d0f"
+                ],
+                liquidity_not: "0"
+              }, {
+                token1_in: [
+                  $a,
+                  $b,
+                  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                  "0xdac17f958d2ee523a2206206994597c13d831ec7",
+                  "0x6b175474e89094c44da98b954eedeac495271d0f"
+                ],
+                liquidity_not: "0"
+              }
+            ]
           },
-          first: 100
+          first: 1000
         ) {
           id feeTier sqrtPrice hooks tick tickSpacing liquidity totalValueLockedUSD
           token0 { id decimals symbol } token1 { id decimals symbol }
@@ -384,7 +394,7 @@ export function useUniswapV4() {
     const [{ poolsDirect }, {poolsOut}, {poolsInBetween}] = await Promise.all([
       request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut }),
       request(SUBGRAPH_URL, poolsOutQuery, { a: tokenIn, b: tokenOut }),
-      request(SUBGRAPH_URL, poolsInBetweenQuery, {})
+      request(SUBGRAPH_URL, poolsInBetweenQuery, { a: tokenIn, b: tokenOut })
     ])
   
       // --- 3) Combine and dedupe ---

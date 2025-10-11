@@ -3,7 +3,6 @@ import { CurrencyAmount } from '@uniswap/sdk-core';
 import { useUniswapV4 } from '../../../tests/node/useUniswap.js';
 // import { useUniswapV4 } from '../composables/useUniswap.js';
 import { useBalancerV3, getCacheStats, fetchAllBalancerPools, findOptimalPaths } from './useBalancerV3.js';
-import { fetchAllUniswapPools } from '../composables/useUniswap.js';
 import {
   calculateUniswapExactOutput,
   calculateBalancerExactOutput
@@ -92,7 +91,8 @@ export async function useMixedUniswapBalancer({
       // Fetch bulk pools AND specific pair in parallel
       const [balancerBulk, uniswapBulk, specificPools] = await Promise.all([
         useBalancer ? fetchAllBalancerPools(allTokens, provider) : Promise.resolve([]),
-        useUniswap ? uniswap.fetchAllUniswapPools(allTokens) : Promise.resolve([]),
+        // useUniswap ? uniswap.fetchAllUniswapPools(allTokens) : Promise.resolve([]),
+        Promise.resolve([]),
         // Fetch specific pools for the direct tokenIn → tokenOut pair
         useUniswap ? uniswap.findPossiblePools(tokenInObject, tokenOutObject).catch(err => {
           console.log(`   No specific pools for ${tokenInObject.symbol}→${tokenOutObject.symbol}: ${err.message}`);
