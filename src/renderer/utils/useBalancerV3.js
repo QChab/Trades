@@ -282,11 +282,91 @@ const POOL_ABI = [
   'function name() external view returns (string)'
 ];
 
+/**
+ * Bulk fetch all Balancer pools for multiple tokens at once
+ * This is much more efficient than querying for each token pair individually
+ * @param {Array<string>} tokenAddresses - Array of token addresses to fetch pools for
+ * @param {ethers.providers.Provider} provider - Ethereum provider
+ * @returns {Promise<Array>} Array of enriched pool objects
+ */
+export async function fetchAllBalancerPools(tokenAddresses, provider) {
+  try {
+    console.log(`🔍 Bulk fetching Balancer pools for ${tokenAddresses.length} tokens...`);
+
+    // Normalize addresses
+    const normalizedTokens = tokenAddresses.map(addr => addr.toLowerCase());
+
+    // Add intermediates for better routing
+    const weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'.toLowerCase();
+    const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'.toLowerCase();
+    const usdt = '0xdAC17F958D2ee523a2206206994597C13D831ec7'.toLowerCase();
+    const dai = '0x6B175474E89094C44Da98b954EedeAC495271d0F'.toLowerCase();
+    const wbtc = '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'.toLowerCase();
+
+    const allTokens = [...new Set([...normalizedTokens, weth, usdc, usdt, dai, wbtc])];
+
+    const query = `
+      {
+        pools(
+          first: 200,
+          where: {
+            isInitialized: true,
+            isPaused: false,
+            isInRecoveryMode: false,
+            tokens_: {
+              address_in: ${JSON.stringify(allTokens)}
+            }
+          }
+        ) {
+          id
+          address
+          name
+          symbol
+          swapFee
+          tokens {
+            address
+            balance
+            decimals
+            symbol
+          }
+        }
+      }
+    `;
+
+    const response = await axios.post(BALANCER_V3_SUBGRAPH, { query });
+
+    if (!response.data || !response.data.data) {
+      console.log('❌ No data from Balancer V3 subgraph');
+      return [];
+    }
+
+    const allPools = response.data.data.pools || [];
+
+    // Filter by liquidity
+    const validPools = allPools.filter(pool => {
+      const totalBalance = pool.tokens.reduce((sum, token) => {
+        return sum + parseFloat(token.balance || '0');
+      }, 0);
+      return totalBalance >= 1;
+    });
+
+    console.log(`✅ Found ${validPools.length} Balancer pools with sufficient liquidity`);
+
+    // Enrich with on-chain data (cached)
+    const enrichedPools = await enrichPoolData(validPools, provider);
+
+    return enrichedPools;
+  } catch (error) {
+    console.error('❌ Error bulk fetching Balancer pools:', error);
+    return [];
+  }
+}
+
 export async function useBalancerV3({ tokenInAddress, tokenOutAddress, amountIn, slippageTolerance = 0.5, provider }) {
   try {
     console.log('🔍 Discovering Balancer V3 pools for tokens:', tokenInAddress, tokenOutAddress);
     console.log('   Input amount:', ethers.utils.formatEther(amountIn), 'tokens');
-    
+
     const pools = await discoverV3Pools(tokenInAddress, tokenOutAddress, provider);
     console.log(`Found ${pools.length} V3 pools containing one or both tokens`);
     
@@ -595,8 +675,10 @@ async function detectPoolType(poolAddress, provider) {
  *
  * Future enhancement: Return multiple paths to allow splitting across
  * different Balancer routes in addition to Uniswap routes.
+ *
+ * Exported for use by refactored discovery functions
  */
-async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, maxHops = 3) {
+export async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, maxHops = 3) {
   const paths = [];
   const visited = new Set();
   

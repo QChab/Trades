@@ -155,6 +155,148 @@ export function useUniswapV4() {
 
     return {tokenA, tokenB}
   }
+
+  /**
+   * Static version of sanitiseTicks for use outside of useUniswapV4 composable
+   */
+  function sanitiseTicksStatic(raw, spacing) {
+    const seen = new Set();
+    const ticks = [];
+
+    for (const t of raw) {
+      const idx = Number(t.tickIdx);
+
+      if (idx % spacing !== 0) continue;
+      if (idx < TickMath.MIN_TICK || idx > TickMath.MAX_TICK) continue;
+
+      if (!seen.has(idx)) {
+        ticks.push({
+          index: idx,
+          liquidityNet: JSBI.BigInt(t.liquidityNet),
+          liquidityGross: JSBI.BigInt(t.liquidityGross)
+        });
+        seen.add(idx);
+      }
+    }
+
+    return ticks.sort((a, b) => a.index - b.index);
+  }
+
+  /**
+   * Bulk fetch all Uniswap V4 pools for multiple tokens at once
+   * This is much more efficient than querying for each token pair individually
+   * @param {Array<string>} tokenAddresses - Array of token addresses to fetch pools for
+   * @returns {Promise<Array>} Array of Pool instances from @uniswap/v4-sdk
+   */
+  async function fetchAllUniswapPools(tokenAddresses) {
+    try {
+      // CRITICAL: Ensure V4 SDK is loaded before using Pool
+      await ensureV4SDKLoaded();
+
+      console.log(`🔍 Bulk fetching Uniswap pools for ${tokenAddresses.length} tokens...`);
+
+      // Normalize addresses
+      const normalizedTokens = tokenAddresses.map(addr =>
+        addr.toLowerCase() === '0x0000000000000000000000000000000000000000'
+          ? '0x0000000000000000000000000000000000000000'
+          : addr.toLowerCase()
+      );
+
+      // Add common intermediates for better routing
+      const intermediates = [
+        '0x0000000000000000000000000000000000000000', // ETH
+        '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // USDC
+        '0xdac17f958d2ee523a2206206994597c13d831ec7', // USDT
+        '0x6b175474e89094c44da98b954eedeac495271d0f', // DAI
+      ];
+
+      const allTokens = [...new Set([...normalizedTokens, ...intermediates])];
+
+      // Query for all pools containing any of these tokens
+      const query = gql`
+        query {
+          pools(
+            where: {
+              or: [
+                { token0_in: ${JSON.stringify(allTokens)}, liquidity_not: "0" },
+                { token1_in: ${JSON.stringify(allTokens)}, liquidity_not: "0" }
+              ]
+            },
+            first: 200
+          ) {
+            id
+            feeTier
+            sqrtPrice
+            hooks
+            tick
+            tickSpacing
+            liquidity
+            totalValueLockedUSD
+            token0 { id decimals symbol }
+            token1 { id decimals symbol }
+            ticks(where: { liquidityGross_not: "0" }, first: 1000) {
+              tickIdx
+              liquidityNet
+              liquidityGross
+            }
+          }
+        }
+      `;
+
+      const response = await request(SUBGRAPH_URL, query);
+      const rawPools = response.pools || [];
+
+      // Filter by liquidity and hooks
+      const candidatePools = rawPools.filter(pool =>
+        pool.hooks === '0x0000000000000000000000000000000000000000' &&
+        pool.liquidity > 100000
+      );
+
+      console.log(`✅ Found ${candidatePools.length} Uniswap pools with sufficient liquidity`);
+
+      // Instantiate Pool objects
+      const pools = [];
+      for (const pool of candidatePools) {
+        try {
+          const token0 = pool.token0.id === '0x0000000000000000000000000000000000000000'
+            ? Ether.onChain(chainId)
+            : new Token(chainId, pool.token0.id, Number(pool.token0.decimals), pool.token0.symbol);
+
+          const token1 = pool.token1.id === '0x0000000000000000000000000000000000000000'
+            ? Ether.onChain(chainId)
+            : new Token(chainId, pool.token1.id, Number(pool.token1.decimals), pool.token1.symbol);
+
+          if (token0.isNative) token0.address = '0x0000000000000000000000000000000000000000';
+          if (token1.isNative) token1.address = '0x0000000000000000000000000000000000000000';
+
+          const cleanedTicks = sanitiseTicksStatic(pool.ticks, Number(pool.tickSpacing));
+          const tickProvider = new TickListDataProvider(cleanedTicks, Number(pool.tickSpacing));
+
+          const poolInstance = new Pool(
+            token0,
+            token1,
+            Number(pool.feeTier),
+            Number(pool.tickSpacing),
+            pool.hooks,
+            pool.sqrtPrice,
+            JSBI.BigInt(pool.liquidity),
+            Number(pool.tick),
+            tickProvider
+          );
+
+          pools.push(poolInstance);
+        } catch (error) {
+          console.error(`Failed to instantiate pool ${pool.id}:`, error.message);
+        }
+      }
+
+      return pools;
+    } catch (error) {
+      console.error('❌ Error bulk fetching Uniswap pools:', error);
+      return [];
+    }
+  }
+
   // --- Path finding ---
   async function findPossiblePools(tokenInObject, tokenOutObject) {
     const tokenIn = tokenInObject.address.toLowerCase();
@@ -326,7 +468,10 @@ export function useUniswapV4() {
     if (pools.length === 0) {
       throw new Error('No swap path found for this');
     }
-    
+
+    // CRITICAL: Ensure V4 SDK is loaded before using Trade
+    await ensureV4SDKLoaded();
+
     let trades;
 
     const {tokenA, tokenB } = instantiateTokens(tokenInObject, tokenOutObject);
@@ -334,7 +479,7 @@ export function useUniswapV4() {
 
     try {
       if (!pools.length) return []
-      
+
       console.log(`[selectBestPath] Finding trades for ${tokenA.symbol} → ${tokenB.symbol} with ${pools.length} pools`);
       trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 1, maxNumResults: 8 });
       console.log(`[selectBestPath] Found ${trades ? trades.length : 0} trades`);
@@ -417,6 +562,9 @@ export function useUniswapV4() {
     pools0, pools1, rawIn, tokenA, tokenB,
     { initialFrac = 0.8, initialStep = 0.1, minStep = 0.0001 } = {}
   ) {
+    // CRITICAL: Ensure V4 SDK is loaded before using Trade
+    await ensureV4SDKLoaded();
+
     let frac   = initialFrac;
     let step   = initialStep;
 
@@ -659,5 +807,6 @@ export function useUniswapV4() {
     findAndSelectBestPath,
     findBestSplitHillClimb,
     executeMixedSwaps,
+    fetchAllUniswapPools,
   };
 }

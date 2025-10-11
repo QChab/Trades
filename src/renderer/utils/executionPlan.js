@@ -208,6 +208,7 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
           percentage: pool.percentage,
           inputAmount: pool.inputAmount,              // Exact input in wei
           expectedOutput: pool.expectedOutput,        // Expected output in wei
+          wrapOperation: pool.wrapOperation || 0,      // Wrap/unwrap operation code
           method: pool.protocol === 'uniswap' ? 'exactInputSingle' : 'batchSwap',
           // Include execution details
           ...(pool.protocol === 'uniswap' && {
@@ -223,6 +224,17 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
         console.log(`      ${poolIdx + 1}. ${pool.protocol}: ${pool.inputToken}→${pool.outputToken}`);
         console.log(`         Pool: ${pool.poolAddress.slice(0, 10)}...`);
         console.log(`         Allocation: ${(pool.percentage * 100).toFixed(1)}% of level ${level.level} input`);
+
+        // Display wrap/unwrap operation if applicable
+        if (pool.wrapOperation && pool.wrapOperation !== 0) {
+          const wrapOperationNames = {
+            1: 'Wrap ETH→WETH before swap',
+            2: 'Wrap ETH→WETH after swap',
+            3: 'Unwrap WETH→ETH before swap',
+            4: 'Unwrap WETH→ETH after swap'
+          };
+          console.log(`         Conversion: ${wrapOperationNames[pool.wrapOperation]} (code ${pool.wrapOperation})`);
+        }
 
         // Display exact input/output amounts if available
         if (pool.inputAmount) {

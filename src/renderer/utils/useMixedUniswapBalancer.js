@@ -2,7 +2,8 @@ import { ethers, BigNumber } from 'ethers';
 import { CurrencyAmount } from '@uniswap/sdk-core';
 import { useUniswapV4 } from '../../../tests/node/useUniswap.js';
 // import { useUniswapV4 } from '../composables/useUniswap.js';
-import { useBalancerV3, getCacheStats } from './useBalancerV3.js';
+import { useBalancerV3, getCacheStats, fetchAllBalancerPools, findOptimalPaths } from './useBalancerV3.js';
+import { fetchAllUniswapPools } from '../composables/useUniswap.js';
 import {
   calculateUniswapExactOutput,
   calculateBalancerExactOutput
@@ -56,9 +57,78 @@ export async function useMixedUniswapBalancer({
 
   try {
     // Convert amountIn to BigNumber if needed
-    const amountInBN = BigNumber.isBigNumber(amountIn) 
-      ? amountIn 
+    const amountInBN = BigNumber.isBigNumber(amountIn)
+      ? amountIn
       : ethers.utils.parseUnits(amountIn.toString(), tokenInObject.decimals);
+
+    // ========================================
+    // BULK POOL FETCHING (NEW OPTIMIZATION)
+    // ========================================
+    // Collect all tokens that might be used in routing
+    const intermediates = [
+      WETH_ADDRESS,
+      ETH_ADDRESS,
+      '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+      '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
+      '0x6B175474E89094C44Da98b954EedeAC495271d0F', // DAI
+      '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'  // WBTC
+    ];
+
+    const allTokens = [
+      tokenInObject.address,
+      tokenOutObject.address,
+      ...intermediates
+    ];
+
+    // Bulk fetch all pools once at the start
+    let allBalancerPools = [];
+    let allUniswapPools = [];
+
+    const uniswap = useUniswapV4();
+
+    if (useBalancer || useUniswap) {
+      console.log('📦 Bulk fetching pools for all tokens...');
+
+      // Fetch bulk pools AND specific pair in parallel
+      const [balancerBulk, uniswapBulk, specificPools] = await Promise.all([
+        useBalancer ? fetchAllBalancerPools(allTokens, provider) : Promise.resolve([]),
+        useUniswap ? uniswap.fetchAllUniswapPools(allTokens) : Promise.resolve([]),
+        // Fetch specific pools for the direct tokenIn → tokenOut pair
+        useUniswap ? uniswap.findPossiblePools(tokenInObject, tokenOutObject).catch(err => {
+          console.log(`   No specific pools for ${tokenInObject.symbol}→${tokenOutObject.symbol}: ${err.message}`);
+          return [];
+        }) : Promise.resolve([])
+      ]);
+
+      allBalancerPools = balancerBulk;
+
+      // Merge and deduplicate Uniswap pools
+      if (useUniswap) {
+        const poolMap = new Map();
+
+        // Add bulk-fetched pools first
+        for (const pool of uniswapBulk) {
+          const poolId = pool.poolId || pool.id;
+          if (poolId) {
+            poolMap.set(poolId, pool);
+          }
+        }
+
+        // Add specific pools (deduplicates automatically)
+        for (const pool of specificPools) {
+          const poolId = pool.poolId || pool.id;
+          if (poolId && !poolMap.has(poolId)) {
+            poolMap.set(poolId, pool);
+          }
+        }
+
+        allUniswapPools = Array.from(poolMap.values());
+        const addedSpecific = allUniswapPools.length - uniswapBulk.length;
+        console.log(`✅ Fetched ${allBalancerPools.length} Balancer pools and ${allUniswapPools.length} Uniswap pools (${uniswapBulk.length} bulk + ${addedSpecific} specific)`);
+      } else {
+        console.log(`✅ Fetched ${allBalancerPools.length} Balancer pools`);
+      }
+    }
 
     // Discover paths based on enabled DEXs
     let uniswapRoutes = [];
@@ -67,15 +137,15 @@ export async function useMixedUniswapBalancer({
     if (useUniswap && useBalancer) {
       // Parallel discovery when both enabled
       [uniswapRoutes, balancerRoutes] = await Promise.all([
-        discoverUniswapPaths(tokenInObject, tokenOutObject, amountInBN),
-        discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider)
+        discoverUniswapPaths(tokenInObject, tokenOutObject, amountInBN, allUniswapPools),
+        discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider, allBalancerPools)
       ]);
     } else if (useUniswap) {
       // Only Uniswap
-      uniswapRoutes = await discoverUniswapPaths(tokenInObject, tokenOutObject, amountInBN);
+      uniswapRoutes = await discoverUniswapPaths(tokenInObject, tokenOutObject, amountInBN, allUniswapPools);
     } else if (useBalancer) {
       // Only Balancer
-      balancerRoutes = await discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider);
+      balancerRoutes = await discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider, allBalancerPools);
     }
 
     results.uniswapPaths = uniswapRoutes || [];
@@ -90,7 +160,9 @@ export async function useMixedUniswapBalancer({
         tokenInObject,
         tokenOutObject,
         amountInBN,
-        provider
+        provider,
+        allUniswapPools,
+        allBalancerPools
       );
       console.log(`🔀 Found ${crossDEXPaths.length} cross-DEX multi-hop paths`);
     }
@@ -119,27 +191,6 @@ export async function useMixedUniswapBalancer({
         tokenOutObject,
         slippageTolerance
       );
-
-      // // Calculate output for each split for better display
-      // const splitsWithOutputs = bestRoute.splits ? await Promise.all(
-      //   bestRoute.splits.map(async (s) => {
-      //     const output = await calculateRouteExactOutput(s.route, s.amount, tokenInObject, tokenOutObject);
-      //     return {
-      //       protocol: s.route?.protocol || 'unknown',
-      //       percentage: `${(s.percentage * 100).toFixed(1)}%`,
-      //       input: ethers.utils.formatUnits(s.amount, tokenInObject.decimals),
-      //       output: ethers.utils.formatUnits(output, tokenOutObject.decimals),
-      //       description: s.description
-      //     };
-      //   })
-      // ) : undefined;
-
-      // console.log('✅ Best route found:', {
-      //   type: bestRoute.type,
-      //   totalOutput: ethers.utils.formatUnits(bestRoute.totalOutput, tokenOutObject.decimals),
-      //   splits: splitsWithOutputs,
-      //   gasCost: bestRoute.estimatedGas
-      // });
     }
 
     return results;
@@ -178,8 +229,9 @@ function isWETHToETHConversion(original, normalized) {
 
 /**
  * Discover Uniswap V4 paths with ETH/WETH unification
+ * Now uses pre-fetched pools instead of querying
  */
-async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn) {
+async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn, prefetchedPools = []) {
   try {
     // Validate: prevent same-token swaps
     const normalizeAddress = (addr) => addr === ETH_ADDRESS ? WETH_ADDRESS : addr.toLowerCase();
@@ -241,8 +293,11 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn) {
     
     for (const variant of pathVariants) {
       console.log(`[selectBestPath] Finding trades for ${variant.tokenIn.symbol} → ${variant.tokenOut.symbol} with ${variant.tokenIn.address.slice(0,10)} -> ${variant.tokenOut.address.slice(0,10)}`);
-      const pools = await uniswap.findPossiblePools(variant.tokenIn, variant.tokenOut);
-      
+
+      // Use pre-fetched pools (already includes bulk + specific pairs)
+      const pools = prefetchedPools;
+      console.log(`   Using ${pools.length} pre-fetched pools for routing`);
+
       if (pools.length > 0) {
         const trades = await uniswap.selectBestPath(variant.tokenIn, variant.tokenOut, pools, amountIn);
 
@@ -351,8 +406,9 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn) {
 
 /**
  * Discover Balancer V3 paths
+ * Now uses pre-fetched pools instead of querying
  */
-async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, provider) {
+async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, provider, prefetchedPools = []) {
   try {
     // Balancer uses WETH, not ETH - normalize addresses
     const normalizedTokenIn = tokenInObject.address === ETH_ADDRESS ?
@@ -371,13 +427,60 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
     console.log(`   Querying Balancer for ${normalizedTokenIn.symbol} -> ${normalizedTokenOut.symbol}`);
     console.log(`   Amount: ${ethers.utils.formatUnits(amountIn, normalizedTokenIn.decimals || 18)} ${normalizedTokenIn.symbol}`);
 
-    const result = await useBalancerV3({
-      tokenInAddress: normalizedTokenIn.address,
-      tokenOutAddress: normalizedTokenOut.address,
-      amountIn: amountIn.toString(),
-      provider,
-      slippageTolerance: 0.5
+    // Filter pre-fetched pools for relevant tokens
+    const tokenInAddr = normalizedTokenIn.address.toLowerCase();
+    const tokenOutAddr = normalizedTokenOut.address.toLowerCase();
+
+    // Include intermediates for multi-hop routing
+    const intermediates = [
+      WETH_ADDRESS,
+      '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
+      '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
+      '0x6B175474E89094C44Da98b954EedeAC495271d0F', // DAI
+      '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'  // WBTC
+    ].map(addr => addr.toLowerCase());
+
+    const relevantTokens = [tokenInAddr, tokenOutAddr, ...intermediates];
+
+    const filteredPools = prefetchedPools.filter(pool => {
+      if (!pool.tokens || pool.tokens.length === 0) return false;
+      const poolTokens = pool.tokens.map(t => t.address.toLowerCase());
+      // Pool must contain at least one of our relevant tokens
+      return poolTokens.some(addr => relevantTokens.includes(addr));
     });
+
+    console.log(`   Found ${filteredPools.length} relevant pools from pre-fetched data`);
+
+    // Use findOptimalPaths directly with filtered pools
+    const paths = await findOptimalPaths(
+      normalizedTokenIn.address,
+      normalizedTokenOut.address,
+      amountIn.toString(),
+      filteredPools,
+      provider,
+      1  // maxHops
+    );
+
+    if (paths.length === 0) {
+      console.log('No Balancer paths found');
+      return null;
+    }
+
+    // Limit to top 5 paths
+    const topPaths = paths.slice(0, 5);
+    const result = {
+      allPaths: topPaths.map(path => ({
+        amountOut: path.amountOut.toString(),
+        minAmountOut: path.amountOut.mul(995).div(1000).toString(), // 0.5% slippage
+        path: path,
+        priceImpact: path.priceImpact || '0',
+        fees: path.totalFees || '0',
+        poolAddresses: path.hops.map(h => h.poolAddress),
+        poolTypes: path.hops.map(h => h.poolType),
+        weights: path.hops.map(h => h.weights),
+        poolData: path.hops.length > 0 ? path.hops[0].poolData : null
+      }))
+    };
 
     if (!result) {
       console.log('No Balancer paths found');
@@ -471,8 +574,9 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
 /**
  * Discover cross-DEX multi-hop paths
  * E.g., ONE -> WETH on Balancer, then ETH -> SEV on Uniswap (with WETH->ETH conversion)
+ * Now uses pre-fetched pools instead of querying
  */
-async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
+async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, prefetchedUniswapPools = [], prefetchedBalancerPools = []) {
   const paths = [];
   
   // Common intermediate tokens for bridging between DEXs
@@ -522,8 +626,8 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
         : intermediate;
         
       const [balancerLeg1, uniswapLeg1] = await Promise.all([
-        discoverBalancerPaths(tokenIn, intermediate, amountIn, provider),
-        discoverUniswapPaths(tokenIn, intermediateForUniswap, amountIn)
+        discoverBalancerPaths(tokenIn, intermediate, amountIn, provider, prefetchedBalancerPools),
+        discoverUniswapPaths(tokenIn, intermediateForUniswap, amountIn, prefetchedUniswapPools)
       ]);
       
       // REMOVED: cross-dex-splittable route creation
@@ -549,8 +653,8 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
 
         // Second leg: intermediate -> tokenOut using Balancer output
         const [balancerLeg2, uniswapLeg2] = await Promise.all([
-          discoverBalancerPaths(intermediate, tokenOut, balancerLeg1[0].outputAmount, provider),
-          discoverUniswapPaths(intermediateForUniswap, tokenOut, balancerLeg1[0].outputAmount)
+          discoverBalancerPaths(intermediate, tokenOut, balancerLeg1[0].outputAmount, provider, prefetchedBalancerPools),
+          discoverUniswapPaths(intermediateForUniswap, tokenOut, balancerLeg1[0].outputAmount, prefetchedUniswapPools)
         ]);
         
         // Create cross-DEX paths
@@ -621,8 +725,8 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
 
           // Second leg with estimated output from first leg
           const [balancerLeg2, uniswapLeg2] = await Promise.all([
-            discoverBalancerPaths(intermediateForBalancer, tokenOut, estimatedMaxOutput, provider),
-            discoverUniswapPaths(intermediate, tokenOut, estimatedMaxOutput)
+            discoverBalancerPaths(intermediateForBalancer, tokenOut, estimatedMaxOutput, provider, prefetchedBalancerPools),
+            discoverUniswapPaths(intermediate, tokenOut, estimatedMaxOutput, prefetchedUniswapPools)
           ]);
         
         if (balancerLeg2 && balancerLeg2.outputAmount) {
@@ -652,7 +756,7 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
             const firstLegOutput = firstLegRoute.outputAmount;
 
             // Query second leg with THIS specific first leg's output
-            const secondLegForThisRoute = await discoverUniswapPaths(intermediate, tokenOut, firstLegOutput);
+            const secondLegForThisRoute = await discoverUniswapPaths(intermediate, tokenOut, firstLegOutput, prefetchedUniswapPools);
 
             if (!secondLegForThisRoute || secondLegForThisRoute.length === 0) {
               console.log(`   ⚠️  No second leg found for pool ${i + 1} output: ${ethers.utils.formatUnits(firstLegOutput, intermediate.decimals)} ${intermediate.symbol}`);
@@ -687,13 +791,13 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
           const ethIntermediate = { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 };
 
           // Second leg: USDC → ETH
-          const uniswapLeg2ToETH = await discoverUniswapPaths(intermediate, ethIntermediate, estimatedMaxOutput);
+          const uniswapLeg2ToETH = await discoverUniswapPaths(intermediate, ethIntermediate, estimatedMaxOutput, prefetchedUniswapPools);
 
           if (uniswapLeg2ToETH && uniswapLeg2ToETH.length > 0) {
             const bestLeg2 = selectBestVariant(uniswapLeg2ToETH);
 
             // Third leg: ETH → tokenOut
-            const uniswapLeg3 = await discoverUniswapPaths(ethIntermediate, tokenOut, bestLeg2.outputAmount);
+            const uniswapLeg3 = await discoverUniswapPaths(ethIntermediate, tokenOut, bestLeg2.outputAmount, prefetchedUniswapPools);
 
             if (uniswapLeg3 && uniswapLeg3.length > 0) {
               // IMPORTANT: Calculate output for EACH first-leg pool's specific output chain
@@ -702,7 +806,7 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
                 const firstLegOutput = firstLegRoute.outputAmount;
 
                 // Query second leg with THIS specific first leg's output
-                const leg2ForThisRoute = await discoverUniswapPaths(intermediate, ethIntermediate, firstLegOutput);
+                const leg2ForThisRoute = await discoverUniswapPaths(intermediate, ethIntermediate, firstLegOutput, prefetchedUniswapPools);
 
                 if (!leg2ForThisRoute || leg2ForThisRoute.length === 0) {
                   console.log(`   ⚠️  No second leg found for 3-hop pool ${i + 1}`);
@@ -713,7 +817,7 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider) {
                 const secondLegOutput = bestLeg2ForThisRoute.outputAmount;
 
                 // Query third leg with second leg's output
-                const leg3ForThisRoute = await discoverUniswapPaths(ethIntermediate, tokenOut, secondLegOutput);
+                const leg3ForThisRoute = await discoverUniswapPaths(ethIntermediate, tokenOut, secondLegOutput, prefetchedUniswapPools);
 
                 if (!leg3ForThisRoute || leg3ForThisRoute.length === 0) {
                   console.log(`   ⚠️  No third leg found for 3-hop pool ${i + 1}`);
@@ -2538,6 +2642,35 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
       const poolInput = optimization?.poolInputs?.get(pool.poolAddress || pool.poolId);
       const poolOutput = optimization?.poolOutputs?.get(pool.poolAddress || pool.poolId);
 
+      // Determine wrap/unwrap operation needed
+      // Balancer uses WETH, Uniswap uses ETH
+      // Operation codes: 0=none, 1=wrap before, 2=wrap after, 3=unwrap before, 4=unwrap after
+      let wrapOperation = 0;
+
+      const isETHOrWETH = (token) => token === 'ETH' || token === 'WETH';
+
+      // Determine actual tokens used by this protocol
+      const actualInput = (pool.protocol === 'balancer' && pool.inputToken === 'ETH') ? 'WETH' : pool.inputToken;
+      const actualOutput = (pool.protocol === 'balancer' && pool.outputToken === 'ETH') ? 'WETH' : pool.outputToken;
+
+      // Check if output conversion is needed for next level
+      // Only add wrap operations at the OUTPUT of current level pools
+      // The next level will automatically use the correct token (no input conversion needed)
+      const nextLevel = tokenPairGroups.find(g => g.level === level + 1);
+      if (nextLevel && isETHOrWETH(pool.outputToken)) {
+        const nextLevelNeedsWETH = nextLevel.pools.some(p => p.protocol === 'balancer' && isETHOrWETH(p.inputToken));
+        const nextLevelNeedsETH = nextLevel.pools.some(p => p.protocol === 'uniswap' && isETHOrWETH(p.inputToken));
+
+        // If this pool outputs WETH (Balancer) but next level needs ETH (Uniswap)
+        if (pool.protocol === 'balancer' && nextLevelNeedsETH) {
+          wrapOperation = 4; // Unwrap WETH to ETH after call
+        }
+        // If this pool outputs ETH (Uniswap) but next level needs WETH (Balancer)
+        else if (pool.protocol === 'uniswap' && nextLevelNeedsWETH) {
+          wrapOperation = 2; // Wrap ETH to WETH after call
+        }
+      }
+
       const poolInfo = {
         poolAddress: pool.poolAddress || pool.poolId,
         poolKey: poolKey,
@@ -2547,6 +2680,7 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
         percentage: percentageOfLevelInput, // Percentage of level input
         inputAmount: poolInput,              // NEW: Exact input amount in wei
         expectedOutput: poolOutput,          // NEW: Expected output amount in wei
+        wrapOperation: wrapOperation,        // NEW: Wrap/unwrap operation code
         routeIndices: pool.routeIndices,
         legIndices: pool.legIndices,
         trade: pool.trade,
