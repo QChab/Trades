@@ -602,6 +602,147 @@ The cross-DEX routing system has been significantly enhanced with the following 
 - Multi-hop convergence path support (currently disabled due to performance)
 - Hierarchical optimization to properly handle pool convergence
 
+### Pool-Based Execution Architecture (CRITICAL)
+
+**IMPORTANT**: After optimization, the system transitions from route-based thinking to pool-based execution. This is a fundamental architectural principle.
+
+#### Optimization Phase Flow
+```
+1. Route Discovery
+   ├─ Discovers multi-leg routes (e.g., AAVE → ETH → 1INCH)
+   ├─ Each route has legs through specific pools
+   └─ Multiple routes may use the same pools
+
+2. Pool Convergence Detection
+   ├─ Identifies pools used by multiple routes
+   ├─ Detects execution dependencies (which pools must execute first)
+   └─ Groups pools by convergence points
+
+3. Pool Flattening & Sorting
+   ├─ Flattens all routes into individual pools
+   ├─ Analyzes token dependencies (inputToken → outputToken)
+   ├─ Uses topological sort to determine execution levels
+   └─ Computes percentage allocation per pool (not per route)
+
+4. Output Structure
+   └─ poolExecutionStructure: {
+       levels: [
+         { level: 0, pools: [{poolAddress, percentage, inputToken, outputToken}] },
+         { level: 1, pools: [...] }
+       ]
+     }
+```
+
+#### Execution Plan Phase
+```
+Input: poolExecutionStructure from optimizer
+Process:
+├─ DOES NOT recalculate intermediate amounts
+├─ DOES NOT re-detect convergence
+├─ Simply converts pools to execution steps
+└─ Executes level-by-level in correct order
+```
+
+#### Key Principles
+
+**1. Pools Are the Only Entity**
+- After optimization, routes and legs are discarded
+- Only pools exist, each with:
+  - Pool address/ID
+  - Execution level (0, 1, 2...)
+  - Percentage of input at that level
+  - Input/output token pair
+  - Protocol (uniswap/balancer)
+
+**2. Execution Order Matters**
+- Pools are sorted by level based on token dependencies
+- Example: If pool B needs ETH and pool A produces ETH, then:
+  - Level 0: Pool A executes
+  - Level 1: Pool B executes (using output from A)
+
+**3. Compound Input Calculation**
+- At each level, compute input based on previous level outputs
+- When multiple routes converge on a pool:
+  - Sum the outputs from all feeding pools
+  - This is the compound input for the converging pool
+  - No pre-calculation needed - happens during execution
+
+**4. No Redundant Calculations**
+- Optimizer already computed optimal percentages
+- Execution plan does NOT recalculate flows
+- Intermediate amounts are determined at execution time
+
+#### Example: AAVE → 1INCH with Multiple Paths
+
+**Before Optimization (Routes)**:
+```
+Route 1: AAVE →[Pool A]→ ETH →[Pool C]→ 1INCH (30%)
+Route 2: AAVE →[Pool B]→ ETH →[Pool C]→ 1INCH (70%)
+```
+
+**After Optimization (Pools)**:
+```
+Level 0:
+  - Pool A (AAVE→ETH): 30% of initial input
+  - Pool B (AAVE→ETH): 70% of initial input
+
+Level 1:
+  - Pool C (ETH→1INCH): 100% (receives compound output from A+B)
+```
+
+**Execution**:
+```
+1. Execute Pool A with 300 AAVE → get X ETH
+2. Execute Pool B with 700 AAVE → get Y ETH
+3. Execute Pool C with (X+Y) ETH → get final 1INCH
+```
+
+#### Implementation Files
+
+**Optimizer** (`useMixedUniswapBalancer.js`):
+- `buildPoolExecutionStructure()`: Flattens routes into pool structure (line ~1017)
+- `optimizeSplitSimple()`: Builds and attaches pool structure to result (line ~1362)
+
+**Execution Plan** (`executionPlan.js`):
+- Receives `route.poolExecutionStructure` (line ~186)
+- Converts pool levels to execution steps (line ~196)
+- NO intermediate flow calculation
+- NO convergence re-detection
+
+#### Common Mistakes to Avoid
+
+**❌ Thinking in Routes/Legs**:
+```javascript
+// WRONG - Execution plan should not iterate over route.splits[i].route.legs
+for (const split of route.splits) {
+  for (const leg of split.route.legs) {
+    // This is route-based thinking
+  }
+}
+```
+
+**✅ Thinking in Pools**:
+```javascript
+// CORRECT - Iterate over pool execution levels
+for (const level of route.poolExecutionStructure.levels) {
+  for (const pool of level.pools) {
+    // Execute this pool with its percentage
+  }
+}
+```
+
+**❌ Recalculating Intermediate Amounts**:
+```javascript
+// WRONG - Don't calculate flows in execution plan
+const flow = await calculateBalancerRouteOutput(leg, amount);
+```
+
+**✅ Using Optimizer's Percentages**:
+```javascript
+// CORRECT - Use pre-computed percentages
+const poolInput = totalInput * pool.percentage;
+```
+
 ### CRITICAL: Uniswap Route Discovery Constraints
 
 **IMPORTANT LIMITATION**: The current Uniswap integration (`useUniswap.selectBestPath`) ONLY returns 1-hop trades (single pool swaps).

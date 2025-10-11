@@ -1,3 +1,4 @@
+import { ethers } from 'ethers';
 import {
   encodeBalancerBatchSwap,
   encodeBalancerSingleSwap,
@@ -5,9 +6,14 @@ import {
   encodeUniswapTrades
 } from './encoders.js'
 
+// Constants
+const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
+const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+const { BigNumber } = ethers;
 
 /**
  * Create execution plan for the selected route
+ * Now async to support intermediate amount calculations
  */
 export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTolerance) {
   const plan = {
@@ -17,7 +23,7 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
     estimatedGas: route.estimatedGas,
     slippageTolerance
   };
-  
+
   // Build execution steps based on route type
   if (route.type === 'cross-dex-optimized-exact' || route.type === 'cross-dex-optimized-direct') {
     // Step 1: First hop - split across DEXs
@@ -175,6 +181,76 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
       amount: route.paths[0].inputAmount || tokenIn
     });
     
+  } else if (route.type === 'optimized-multi-route-split') {
+    // Use pool-based execution structure from optimizer
+    if (!route.poolExecutionStructure) {
+      throw new Error('Pool execution structure missing from optimized route');
+    }
+
+    const poolStructure = route.poolExecutionStructure;
+
+    console.log('\n📊 Pool-Based Execution Plan:');
+    console.log(`   Total Execution Levels: ${poolStructure.levels.length}`);
+    console.log(`   Total Unique Pools: ${poolStructure.poolMap.size}`);
+
+    // Build execution steps from pool structure
+    poolStructure.levels.forEach((level, levelIdx) => {
+      console.log(`\n   Level ${level.level}:`);
+
+      level.pools.forEach((pool, poolIdx) => {
+        const step = {
+          level: level.level,
+          poolAddress: pool.poolAddress,
+          poolId: pool.poolId,
+          protocol: pool.protocol,
+          inputToken: pool.inputToken,
+          outputToken: pool.outputToken,
+          percentage: pool.percentage,
+          method: pool.protocol === 'uniswap' ? 'exactInputSingle' : 'batchSwap',
+          // Include execution details
+          ...(pool.protocol === 'uniswap' && {
+            trade: pool.trade
+          }),
+          ...(pool.protocol === 'balancer' && {
+            path: pool.path
+          })
+        };
+
+        plan.executionSteps.push(step);
+
+        console.log(`      ${poolIdx + 1}. ${pool.protocol}: ${pool.inputToken}→${pool.outputToken}`);
+        console.log(`         Pool: ${pool.poolAddress.slice(0, 10)}...`);
+        console.log(`         Allocation: ${(pool.percentage * 100).toFixed(1)}% of level ${level.level} input`);
+        if (pool.routeIndices && pool.routeIndices.length > 1) {
+          console.log(`         Converges ${pool.routeIndices.length} routes`);
+        }
+      });
+    });
+    console.log('');
+
+    // Add approvals for all protocols used
+    const protocolsUsed = new Set(plan.executionSteps.map(s => s.protocol));
+
+    if (protocolsUsed.has('uniswap')) {
+      plan.approvals.push({
+        token: tokenIn.address,
+        spender: '0x66a9893cc07d91d95644aedd05d03f95e1dba8af', // Universal Router
+        amount: route.splits
+          .filter(s => s.route.protocol === 'uniswap' || s.route.legs?.some(l => l.protocol === 'uniswap'))
+          .reduce((sum, s) => sum.add(s.amount), ethers.BigNumber.from(0))
+      });
+    }
+
+    if (protocolsUsed.has('balancer')) {
+      plan.approvals.push({
+        token: tokenIn.address,
+        spender: '0xBA12222222228d8Ba445958a75a0704d566BF2C8', // Balancer Vault
+        amount: route.splits
+          .filter(s => s.route.protocol === 'balancer' || s.route.legs?.some(l => l.protocol === 'balancer'))
+          .reduce((sum, s) => sum.add(s.amount), ethers.BigNumber.from(0))
+      });
+    }
+
   } else if (route.type === 'mixed-optimal' || route.type === 'advanced-split') {
     // Mixed execution requires multiple steps
     for (const split of route.splits) {
@@ -245,6 +321,186 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
   }
 
   return plan;
+}
+
+/**
+ * Build sequential execution steps with convergence handling
+ * CRITICAL: Uses pre-computed convergence information from optimizer
+ * @param {Object} route - The optimized multi-route split with convergence info
+ * @param {Array} convergingPools - Pre-computed convergence information from optimizer (REQUIRED)
+ * @param {Array} poolGroups - Pre-computed pool groups from optimizer (REQUIRED)
+ * @returns {Object} { steps: [...], convergenceInfo: {...} }
+ */
+async function buildSequentialExecutionSteps(route, convergingPools, poolGroups) {
+  if (!convergingPools || !poolGroups) {
+    throw new Error('buildSequentialExecutionSteps requires pre-computed convergence info from optimizer');
+  }
+
+  console.log('   ✅ Using pre-computed convergence info from optimizer');
+  console.log(`   📊 ${convergingPools.length} convergence points, ${poolGroups.length} pool groups`);
+
+  const steps = [];
+  const convergenceInfo = {
+    totalRoutes: route.splits.length,
+    uniquePools: 0,
+    convergencePoints: []
+  };
+
+  // Step 1: Extract input amounts for each route based on percentage splits
+  // No need to calculate intermediate flows - just use the split percentages
+  const routeInputs = new Map(); // routeIndex -> initial input amount
+
+  route.splits.forEach((split, routeIndex) => {
+    routeInputs.set(routeIndex, split.amount);
+  });
+
+  // Step 2: Use pre-computed convergence information
+  // Build convergence points for display from pre-computed data
+  convergingPools.forEach(convergence => {
+    const legIndex = parseInt(convergence.legPosition.replace('leg', ''));
+    const displayPoolKey = convergence.poolKey.split('@')[0]; // Remove address suffix for display
+
+    convergenceInfo.convergencePoints.push({
+      legIndex,
+      poolKey: displayPoolKey,
+      routeCount: convergence.count,
+      routeIndices: convergence.routes.map(r => r.index)
+    });
+  });
+
+  // Step 3: Build sequential execution steps using pre-computed pool groups and actual flow amounts
+  // Group pool groups by leg index for sequential execution
+  const stepsByLeg = new Map();
+
+  poolGroups.forEach(group => {
+    if (group.legIndex === null) return; // Skip independent routes without specific leg
+
+    if (!stepsByLeg.has(group.legIndex)) {
+      stepsByLeg.set(group.legIndex, []);
+    }
+
+    // Count this as a unique pool interaction
+    convergenceInfo.uniquePools++;
+
+    // Get route information from the first route in the group
+    const firstRouteIndex = group.routes[0];
+    const firstSplit = route.splits[firstRouteIndex];
+    const firstRoute = firstSplit.route;
+
+    if (!firstRoute.legs || group.legIndex >= firstRoute.legs.length) return;
+
+    const leg = firstRoute.legs[group.legIndex];
+    const displayPoolKey = group.poolKey ? group.poolKey.split('@')[0] : 'unknown';
+
+    // Extract token information from leg
+    let inputToken = 'UNKNOWN';
+    let outputToken = 'UNKNOWN';
+    let protocol = leg.protocol;
+    let poolAddress = null;
+    let poolId = null;
+
+    if (leg.protocol === 'uniswap' && leg.trade) {
+      const tradeRoute = leg.trade.route || leg.trade.swaps?.[0]?.route;
+      if (tradeRoute && tradeRoute.pools && tradeRoute.pools.length > 0) {
+        const pool = tradeRoute.pools[0];
+        const path = tradeRoute.currencyPath || tradeRoute.path;
+        if (path && path.length >= 2) {
+          inputToken = path[path.length - 2].symbol.replace(/WETH/g, 'ETH');
+          outputToken = path[path.length - 1].symbol.replace(/WETH/g, 'ETH');
+          poolAddress = pool.address || pool.id;
+        }
+      }
+    } else if (leg.protocol === 'balancer' && leg.path) {
+      const hops = leg.path.hops || [];
+      if (hops.length > 0) {
+        const firstHop = hops[0];
+        const lastHop = hops[hops.length - 1];
+
+        if (firstHop.poolData && firstHop.poolData.tokens) {
+          const tokenInObj = firstHop.poolData.tokens.find(
+            t => t.address.toLowerCase() === firstHop.tokenIn.toLowerCase()
+          );
+          if (tokenInObj && tokenInObj.symbol) {
+            inputToken = tokenInObj.symbol.replace(/WETH/g, 'ETH');
+          }
+        }
+
+        if (lastHop.poolData && lastHop.poolData.tokens) {
+          const tokenOutObj = lastHop.poolData.tokens.find(
+            t => t.address.toLowerCase() === lastHop.tokenOut.toLowerCase()
+          );
+          if (tokenOutObj && tokenOutObj.symbol) {
+            outputToken = tokenOutObj.symbol.replace(/WETH/g, 'ETH');
+          }
+        }
+
+        poolAddress = firstHop.poolAddress;
+        poolId = firstHop.poolId;
+      }
+    }
+
+    // Calculate combined input/output using actual flow amounts
+    const combinedInput = group.routes.reduce((sum, routeIndex) => {
+      const flow = routeFlows.get(routeIndex)?.get(group.legIndex);
+      return sum.add(flow?.input || ethers.BigNumber.from(0));
+    }, ethers.BigNumber.from(0));
+
+    const combinedOutput = group.routes.reduce((sum, routeIndex) => {
+      const flow = routeFlows.get(routeIndex)?.get(group.legIndex);
+      return sum.add(flow?.output || ethers.BigNumber.from(0));
+    }, ethers.BigNumber.from(0));
+
+    // Create execution step
+    const step = {
+      legIndex: group.legIndex,
+      poolKey: displayPoolKey,
+      protocol,
+      method: protocol === 'uniswap' ? 'exactInputSingle' : 'batchSwap',
+      inputToken,
+      outputToken,
+      input: combinedInput,
+      expectedOutput: combinedOutput,
+      convergent: group.isConvergent,
+      routeCount: group.routes.length,
+      routeIndices: group.routes,
+      // Include pool/path info for execution
+      ...(protocol === 'uniswap' && {
+        trade: leg.trade,
+        poolAddress
+      }),
+      ...(protocol === 'balancer' && {
+        path: leg.path,
+        poolId
+      })
+    };
+
+    stepsByLeg.get(group.legIndex).push(step);
+  });
+
+  // Flatten steps by leg index (sorted)
+  const legIndices = Array.from(stepsByLeg.keys()).sort((a, b) => a - b);
+  legIndices.forEach(legIndex => {
+    steps.push(...stepsByLeg.get(legIndex));
+  });
+
+  // Step 4: Sort steps to ensure proper execution order
+  steps.sort((a, b) => {
+    if (a.legIndex !== b.legIndex) {
+      return a.legIndex - b.legIndex;
+    }
+    // Within same leg, convergent pools first (since they consume more input)
+    if (a.convergent && !b.convergent) return -1;
+    if (!a.convergent && b.convergent) return 1;
+    return 0;
+  });
+
+  // Step 5: Add hop numbers for clarity
+  steps.forEach((step, index) => {
+    step.hop = step.legIndex + 1; // hop 1 = leg 0, hop 2 = leg 1, etc.
+    step.stepNumber = index + 1;
+  });
+
+  return { steps, convergenceInfo };
 }
 
 /**

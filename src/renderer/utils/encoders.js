@@ -1,7 +1,7 @@
 /**
  * Helper function to encode Uniswap trades
  */
-function encodeUniswapTrades(trades, recipient, slippagePercent = 0.5) {
+export function encodeUniswapTrades(trades, recipient, slippagePercent = 0.5) {
   // This would use the Uniswap SDK to properly encode the trades
   // For now, returning a placeholder
   // In production, this would call the appropriate encoding function from the SDK
@@ -20,7 +20,7 @@ function encodeUniswapTrades(trades, recipient, slippagePercent = 0.5) {
 /**
  * Helper function to encode Uniswap exact input
  */
-function encodeUniswapExactInput(step, recipient, slippagePercent = 0.5) {
+export function encodeUniswapExactInput(step, recipient, slippagePercent = 0.5) {
   const iface = new ethers.utils.Interface([
     'function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) returns (uint256 amountOut)'
   ]);
@@ -42,7 +42,7 @@ function encodeUniswapExactInput(step, recipient, slippagePercent = 0.5) {
 /**
  * Helper function to encode Balancer batch swap
  */
-function encodeBalancerBatchSwap(step, recipient, slippagePercent = 0.5) {
+export function encodeBalancerBatchSwap(step, recipient, slippagePercent = 0.5) {
   const iface = new ethers.utils.Interface([
     'function batchSwap(uint8 kind, tuple(bytes32 poolId, uint256 assetInIndex, uint256 assetOutIndex, uint256 amount, bytes userData)[] swaps, address[] assets, tuple(address sender, bool fromInternalBalance, address recipient, bool toInternalBalance) funds, int256[] limits, uint256 deadline) returns (int256[] assetDeltas)'
   ]);
@@ -88,7 +88,7 @@ function encodeBalancerBatchSwap(step, recipient, slippagePercent = 0.5) {
 /**
  * Helper function to encode Balancer single swap
  */
-function encodeBalancerSingleSwap(step, recipient, slippagePercent = 0.5) {
+export function encodeBalancerSingleSwap(step, recipient, slippagePercent = 0.5) {
   const iface = new ethers.utils.Interface([
     'function swap(tuple(bytes32 poolId, uint8 kind, address assetIn, address assetOut, uint256 amount, bytes userData) singleSwap, tuple(address sender, bool fromInternalBalance, address recipient, bool toInternalBalance) funds, uint256 limit, uint256 deadline) returns (uint256 amountCalculated)'
   ]);
@@ -113,11 +113,4 @@ function encodeBalancerSingleSwap(step, recipient, slippagePercent = 0.5) {
   const deadline = Math.floor(Date.now() / 1000) + 1200;
 
   return iface.encodeFunctionData('swap', [singleSwap, funds, limit, deadline]);
-}
-
-module.exports = {
-    encodeUniswapTrades,
-    encodeUniswapExactInput,
-    encodeBalancerBatchSwap,
-    encodeBalancerSingleSwap,
 }
