@@ -28,14 +28,6 @@ contract BalancerEncoder {
         bool toInternalBalance;
     }
 
-    struct BatchSwapStep {
-        bytes32 poolId;
-        uint256 assetInIndex;
-        uint256 assetOutIndex;
-        uint256 amount;
-        bytes userData;
-    }
-
     /**
      * @notice Encode a single swap for Balancer
      * @param poolId The pool to swap through
@@ -82,76 +74,6 @@ contract BalancerEncoder {
         );
 
         return (VAULT, callData, amountIn, tokenIn);
-    }
-
-    /**
-     * @notice Encode a batch swap for multiple pools
-     * @param poolIds Array of pool IDs to route through
-     * @param assets Array of token addresses involved in the swap
-     * @param amountIn Amount of first asset to swap
-     * @param minAmountOut Minimum acceptable output of last asset
-     * @return target The Vault contract address
-     * @return callData The encoded batchSwap call
-     */
-    function encodeBatchSwap(
-        bytes32[] calldata poolIds,
-        address[] calldata assets,
-        uint256 amountIn,
-        uint256 minAmountOut
-    ) external view returns (address target, bytes memory callData) {
-        require(poolIds.length > 0 && poolIds.length == assets.length - 1, "Invalid path");
-
-        // Build swap steps
-        BatchSwapStep[] memory swaps = new BatchSwapStep[](poolIds.length);
-
-        // First swap uses the actual input amount
-        swaps[0] = BatchSwapStep({
-            poolId: poolIds[0],
-            assetInIndex: 0,
-            assetOutIndex: 1,
-            amount: amountIn,
-            userData: ""
-        });
-
-        // Subsequent swaps use 0 amount (use all received from previous)
-        for (uint256 i = 1; i < poolIds.length; i++) {
-            swaps[i] = BatchSwapStep({
-                poolId: poolIds[i],
-                assetInIndex: i,
-                assetOutIndex: i + 1,
-                amount: 0, // 0 means use all balance from previous swap
-                userData: ""
-            });
-        }
-
-        // Set limits for each asset
-        int256[] memory limits = new int256[](assets.length);
-        limits[0] = int256(amountIn); // Maximum we'll send
-        for (uint256 i = 1; i < assets.length - 1; i++) {
-            limits[i] = type(int256).max; // No limit on intermediate tokens
-        }
-        limits[assets.length - 1] = -int256(minAmountOut); // Minimum we'll receive (negative)
-
-        FundManagement memory funds = FundManagement({
-            sender: msg.sender,  // Always the calling WalletBundler
-            fromInternalBalance: false,
-            recipient: payable(msg.sender),  // Always the calling WalletBundler
-            toInternalBalance: false
-        });
-
-        uint256 deadline = block.timestamp + 1200;
-
-        callData = abi.encodeWithSignature(
-            "batchSwap(uint8,(bytes32,uint256,uint256,uint256,bytes)[],address[],(address,bool,address,bool),int256[],uint256)",
-            SwapKind.GIVEN_IN,
-            swaps,
-            assets,
-            funds,
-            limits,
-            deadline
-        );
-
-        return (VAULT, callData);
     }
 
     /**

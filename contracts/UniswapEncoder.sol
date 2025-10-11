@@ -9,6 +9,7 @@ pragma solidity ^0.8.19;
 contract UniswapEncoder {
     // Uniswap Universal Router address
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
+    uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
 
     // Command code for Universal Router V4 swaps
     uint8 private constant V4_SWAP = 0x10;
@@ -64,7 +65,7 @@ contract UniswapEncoder {
         bytes[] memory inputs = new bytes[](1);
         inputs[0] = abi.encode(params);
 
-        uint256 deadline = block.timestamp + 1200;
+        uint256 deadline = EXPIRATION_OFFSET;
 
         callData = abi.encodeWithSignature(
             "execute(bytes,bytes[],uint256)",
@@ -75,44 +76,6 @@ contract UniswapEncoder {
 
         return (UNIVERSAL_ROUTER, callData, amountIn, tokenIn);
     }
-
-    /**
-     * @notice Encode a multi-hop swap path
-     * @param path Encoded path (token0, fee0, token1, fee1, token2...)
-     * @param amountIn Amount of first token to swap
-     * @param minAmountOut Minimum acceptable output of last token
-     * @return target The Universal Router address
-     * @return callData The encoded swap call
-     */
-    function encodeMultiHopSwap(
-        bytes calldata path,
-        uint256 amountIn,
-        uint256 minAmountOut
-    ) external view returns (address target, bytes memory callData) {
-        bytes memory commands = abi.encodePacked(V4_SWAP);
-
-        ExactInputParams memory params = ExactInputParams({
-            path: path,
-            recipient: msg.sender,  // Always the calling WalletBundler
-            amountIn: amountIn,
-            amountOutMinimum: minAmountOut
-        });
-
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(params);
-
-        uint256 deadline = block.timestamp + 1200;
-
-        callData = abi.encodeWithSignature(
-            "execute(bytes,bytes[],uint256)",
-            commands,
-            inputs,
-            deadline
-        );
-
-        return (UNIVERSAL_ROUTER, callData);
-    }
-
 
     /**
      * @notice Encode a swap using all available balance
@@ -157,7 +120,7 @@ contract UniswapEncoder {
         bytes[] memory inputs = new bytes[](1);
         inputs[0] = abi.encode(params);
 
-        uint256 deadline = block.timestamp + 1200;
+        uint256 deadline = EXPIRATION_OFFSET;
 
         callData = abi.encodeWithSignature(
             "execute(bytes,bytes[],uint256)",
@@ -167,25 +130,6 @@ contract UniswapEncoder {
         );
 
         return (UNIVERSAL_ROUTER, callData, actualBalance, tokenIn);
-    }
-
-    /**
-     * @notice Build a path for multi-hop swaps
-     * @param tokens Array of token addresses
-     * @param fees Array of pool fees (length = tokens.length - 1)
-     * @return path The encoded path for exactInput
-     */
-    function buildPath(
-        address[] calldata tokens,
-        uint24[] calldata fees
-    ) external pure returns (bytes memory path) {
-        require(tokens.length >= 2, "Invalid path");
-        require(fees.length == tokens.length - 1, "Invalid fees");
-
-        path = abi.encodePacked(tokens[0]);
-        for (uint256 i = 0; i < fees.length; i++) {
-            path = abi.encodePacked(path, fees[i], tokens[i + 1]);
-        }
     }
 
     /**

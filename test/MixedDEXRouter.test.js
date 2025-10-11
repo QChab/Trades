@@ -154,19 +154,6 @@ describe("Mixed DEX Router Integration Test", function () {
       expect(result[3]).to.equal(WETH); // tokenIn
       console.log("✓ Balancer encoder working");
     });
-
-    it("Should build Uniswap multi-hop path correctly", async function () {
-      const tokens = [WETH, USDC, ONE];
-      const fees = [3000, 10000]; // 0.3% and 1%
-
-      const path = await uniswapEncoder.buildPath(tokens, fees);
-
-      expect(path).to.not.equal("0x");
-      // Path should be: token0 + fee0 + token1 + fee1 + token2
-      // = 20 bytes + 3 bytes + 20 bytes + 3 bytes + 20 bytes = 66 bytes
-      expect(path.length).to.equal(2 + 66 * 2); // "0x" + hex string
-      console.log("✓ Uniswap path builder working");
-    });
   });
 
   describe("Registry Integration", function () {

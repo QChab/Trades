@@ -24,164 +24,7 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
     slippageTolerance
   };
 
-  // Build execution steps based on route type
-  if (route.type === 'cross-dex-optimized-exact' || route.type === 'cross-dex-optimized-direct') {
-    // Step 1: First hop - split across DEXs
-    const firstHopOutputs = [];
-    let needsConversion = false;
-
-    for (const split of route.splits) {
-      const stepData = {
-        hop: 1,
-        protocol: split.protocol,
-        percentage: split.percentage,
-        input: split.input,
-        expectedOutput: split.output
-      };
-
-      if (split.protocol === 'balancer') {
-        stepData.method = 'swap';
-        stepData.tokenPath = `${tokenIn.symbol} -> WETH`;
-        stepData.outputToken = 'WETH';
-
-        // Balancer outputs WETH, but we need ETH for the next hop
-        if (route.path && route.path.includes('ETH') && route.path.includes('SEV')) {
-          stepData.unwrapAfter = true;
-          needsConversion = true;
-        }
-
-        // Track WETH output
-        firstHopOutputs.push({
-          token: stepData.unwrapAfter ? 'ETH' : 'WETH',
-          amount: split.output,
-          protocol: 'balancer',
-          requiresUnwrap: stepData.unwrapAfter
-        });
-
-        // Add Balancer approval
-        if (!plan.approvals.find(a => a.spender === '0xBA12222222228d8Ba445958a75a0704d566BF2C8')) {
-          plan.approvals.push({
-            token: tokenIn.address,
-            spender: '0xBA12222222228d8Ba445958a75a0704d566BF2C8', // Balancer Vault
-            amount: split.input
-          });
-        }
-      } else if (split.protocol === 'uniswap') {
-        stepData.method = 'exactInputSingle';
-        stepData.tokenPath = `${tokenIn.symbol} -> ETH`;
-        stepData.outputToken = 'ETH';
-
-        // Check if Uniswap needs WETH instead of ETH (rare case)
-        if (split.requiresWrap) {
-          stepData.wrapAfter = true;
-        }
-
-        // Track ETH output
-        firstHopOutputs.push({
-          token: stepData.wrapAfter ? 'WETH' : 'ETH',
-          amount: split.output,
-          protocol: 'uniswap',
-          requiresWrap: stepData.wrapAfter
-        });
-
-        // Add Uniswap approval
-        if (!plan.approvals.find(a => a.spender === '0x66a9893cc07d91d95644aedd05d03f95e1dba8af')) {
-          plan.approvals.push({
-            token: tokenIn.address,
-            spender: '0x66a9893cc07d91d95644aedd05d03f95e1dba8af', // Universal Router
-            amount: split.input
-          });
-        }
-      }
-
-      plan.executionSteps.push(stepData);
-    }
-
-    // Step 2: Second hop - combined amount to final token
-    if (route.secondHop || (route.path && route.path.includes('->') && route.path.includes(tokenOut.symbol))) {
-      const totalFirstHopOutput = firstHopOutputs.reduce((sum, o) => sum.add(o.amount), BigNumber.from(0));
-
-      // Determine input token for second hop
-      const secondHopInputToken = firstHopOutputs[0].token; // They should all be the same after conversion
-
-      const secondHopStep = {
-        hop: 2,
-        protocol: route.secondHop?.protocol || 'uniswap',
-        method: 'exactInputSingle',
-        tokenPath: `${secondHopInputToken} -> ${tokenOut.symbol}`,
-        input: totalFirstHopOutput,
-        expectedOutput: route.totalOutput,
-        inputToken: secondHopInputToken,
-        outputToken: tokenOut.symbol,
-        pools: route.secondHop?.pools,
-        gasEstimate: 150000
-      };
-
-      // Check if we need to wrap ETH to WETH for the second hop (e.g., for Balancer)
-      if (secondHopInputToken === 'ETH' && route.secondHop?.protocol === 'balancer') {
-        secondHopStep.wrapBefore = true;
-      }
-
-      // Check if output needs unwrapping (e.g., WETH to ETH)
-      if (tokenOut.symbol === 'ETH' && route.secondHop?.outputToken === 'WETH') {
-        secondHopStep.unwrapAfter = true;
-      }
-
-      plan.executionSteps.push(secondHopStep);
-    }
-
-  } else if (route.type === 'uniswap-pre-optimized-split') {
-    // Pre-optimized split from useUniswap (already has optimized split amounts)
-    plan.executionSteps.push({
-      hop: 1,
-      protocol: 'uniswap',
-      method: 'executeMixedSwaps',
-      tokenPath: `${tokenIn.symbol} -> ${tokenOut.symbol}`,
-      trades: route.trades,  // Use trades from the pre-optimized split
-      totalInput: route.splits.reduce((sum, s) => sum.add(s.inputAmount), BigNumber.from(0)),
-      totalOutput: route.totalOutput
-    });
-
-    plan.approvals.push({
-      token: tokenIn.address,
-      spender: '0x66a9893cc07d91d95644aedd05d03f95e1dba8af', // Universal Router
-      amount: route.splits.reduce((sum, s) => sum.add(s.inputAmount), BigNumber.from(0))
-    });
-
-  } else if (route.type === 'single-uniswap' || route.type === 'split-uniswap') {
-    plan.executionSteps.push({
-      hop: 1,
-      protocol: 'uniswap',
-      method: 'executeMixedSwaps',
-      tokenPath: `${tokenIn.symbol} -> ${tokenOut.symbol}`,
-      trades: route.paths.map(p => p.trade),
-      totalInput: route.paths.reduce((sum, p) => sum.add(p.inputAmount), BigNumber.from(0)),
-      totalOutput: route.totalOutput
-    });
-
-    plan.approvals.push({
-      token: tokenIn.address,
-      spender: '0x66a9893cc07d91d95644aedd05d03f95e1dba8af', // Universal Router
-      amount: route.paths.reduce((sum, p) => sum.add(p.inputAmount), BigNumber.from(0))
-    });
-    
-  } else if (route.type === 'single-balancer') {
-    plan.executionSteps.push({
-      protocol: 'balancer',
-      method: 'batchSwap',
-      path: route.paths[0].path,
-      pools: route.paths[0].pools,
-      totalInput: route.paths[0].inputAmount || tokenIn,
-      totalOutput: route.totalOutput
-    });
-    
-    plan.approvals.push({
-      token: tokenIn.address,
-      spender: '0xBA12222222228d8Ba445958a75a0704d566BF2C8', // Balancer Vault
-      amount: route.paths[0].inputAmount || tokenIn
-    });
-    
-  } else if (route.type === 'optimized-multi-route-split') {
+  if (route.type === 'optimized-multi-route-split') {
     // Use pool-based execution structure from optimizer
     if (!route.poolExecutionStructure) {
       throw new Error('Pool execution structure missing from optimized route');
@@ -210,7 +53,7 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
           expectedOutput: pool.expectedOutput,        // Expected output in wei
           wrapOperation: pool.wrapOperation || 0,      // Wrap/unwrap operation code
           useAllBalance: pool.shouldUseAllBalance || false,  // Mark if should use all balance
-          method: pool.protocol === 'uniswap' ? 'exactInputSingle' : 'batchSwap',
+          method: pool.protocol === 'uniswap' ? 'exactInputSingle' : 'singleSwap',
           // Include execution details
           ...(pool.protocol === 'uniswap' && {
             trade: pool.trade
@@ -281,58 +124,10 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
           .reduce((sum, s) => sum.add(s.amount), ethers.BigNumber.from(0))
       });
     }
-
-  } else if (route.type === 'mixed-optimal' || route.type === 'advanced-split') {
-    // Mixed execution requires multiple steps
-    for (const split of route.splits) {
-      if (split.protocol === 'uniswap') {
-        const uniPath = route.paths.find(p => p.protocol === 'uniswap' && p.inputAmount.eq(split.input));
-        if (uniPath) {
-          plan.executionSteps.push({
-            protocol: 'uniswap',
-            method: 'executeMixedSwaps',
-            trades: [uniPath.trade],
-            input: split.input,
-            expectedOutput: split.output
-          });
-        }
-      } else if (split.protocol === 'balancer') {
-        const balPath = route.paths.find(p => p.protocol === 'balancer');
-        if (balPath) {
-          plan.executionSteps.push({
-            protocol: 'balancer',
-            method: 'batchSwap',
-            path: balPath.path,
-            pools: balPath.pools,
-            input: split.input,
-            expectedOutput: split.output
-          });
-        }
-      }
-    }
-    
-    // Approvals for both protocols if mixed
-    if (route.splits.some(s => s.protocol === 'uniswap')) {
-      plan.approvals.push({
-        token: tokenIn.address,
-        spender: '0x66a9893cc07d91d95644aedd05d03f95e1dba8af',
-        amount: route.splits
-          .filter(s => s.protocol === 'uniswap')
-          .reduce((sum, s) => sum.add(s.input), BigNumber.from(0))
-      });
-    }
-    
-    if (route.splits.some(s => s.protocol === 'balancer')) {
-      plan.approvals.push({
-        token: tokenIn.address,
-        spender: '0xBA12222222228d8Ba445958a75a0704d566BF2C8',
-        amount: route.splits
-          .filter(s => s.protocol === 'balancer')
-          .reduce((sum, s) => sum.add(s.input), BigNumber.from(0))
-      });
-    }
+  } else {
+    throw new Error('Unknown route type, cannot create execution plan')
   }
-  
+
   // Calculate minimum output with slippage
   const minOutput = route.totalOutput
     .mul(Math.floor((100 - slippageTolerance) * 100))
