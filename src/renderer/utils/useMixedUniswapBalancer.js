@@ -120,26 +120,26 @@ export async function useMixedUniswapBalancer({
         slippageTolerance
       );
 
-      // Calculate output for each split for better display
-      const splitsWithOutputs = bestRoute.splits ? await Promise.all(
-        bestRoute.splits.map(async (s) => {
-          const output = await calculateRouteExactOutput(s.route, s.amount, tokenInObject, tokenOutObject);
-          return {
-            protocol: s.route?.protocol || 'unknown',
-            percentage: `${(s.percentage * 100).toFixed(1)}%`,
-            input: ethers.utils.formatUnits(s.amount, tokenInObject.decimals),
-            output: ethers.utils.formatUnits(output, tokenOutObject.decimals),
-            description: s.description
-          };
-        })
-      ) : undefined;
+      // // Calculate output for each split for better display
+      // const splitsWithOutputs = bestRoute.splits ? await Promise.all(
+      //   bestRoute.splits.map(async (s) => {
+      //     const output = await calculateRouteExactOutput(s.route, s.amount, tokenInObject, tokenOutObject);
+      //     return {
+      //       protocol: s.route?.protocol || 'unknown',
+      //       percentage: `${(s.percentage * 100).toFixed(1)}%`,
+      //       input: ethers.utils.formatUnits(s.amount, tokenInObject.decimals),
+      //       output: ethers.utils.formatUnits(output, tokenOutObject.decimals),
+      //       description: s.description
+      //     };
+      //   })
+      // ) : undefined;
 
-      console.log('✅ Best route found:', {
-        type: bestRoute.type,
-        totalOutput: ethers.utils.formatUnits(bestRoute.totalOutput, tokenOutObject.decimals),
-        splits: splitsWithOutputs,
-        gasCost: bestRoute.estimatedGas
-      });
+      // console.log('✅ Best route found:', {
+      //   type: bestRoute.type,
+      //   totalOutput: ethers.utils.formatUnits(bestRoute.totalOutput, tokenOutObject.decimals),
+      //   splits: splitsWithOutputs,
+      //   gasCost: bestRoute.estimatedGas
+      // });
     }
 
     return results;
@@ -935,7 +935,9 @@ async function calculatePoolExactOutput(pool, amount, tokenIn, tokenOut) {
       );
       const result = await poolObj.getOutputAmount(inputAmount);
       const outputAmount = result[0];
-      return BigNumber.from(outputAmount.quotient.toString());
+      const output = BigNumber.from(outputAmount.quotient.toString());
+
+      return output;
     }
   } else if (pool.protocol === 'balancer' && pool.path) {
     // Use Balancer exact calculation
@@ -953,7 +955,9 @@ async function calculatePoolExactOutput(pool, amount, tokenIn, tokenOut) {
       const tokenOutIndex = poolData.tokens.findIndex(t => t.address.toLowerCase() === tokenOutAddr);
 
       if (tokenInIndex >= 0 && tokenOutIndex >= 0) {
-        return calculateBalancerExactOutput(amount, poolData, tokenInIndex, tokenOutIndex);
+        const output = calculateBalancerExactOutput(amount, poolData, tokenInIndex, tokenOutIndex);
+
+        return output;
       }
     }
 
@@ -1175,9 +1179,14 @@ function buildTokenPairGroups(routes) {
           const pool = tradeRoute.pools[0];
           const path = tradeRoute.currencyPath || tradeRoute.path;
           if (path && path.length >= 2) {
-            const inputToken = path[path.length - 2].symbol.replace(/WETH/g, 'ETH');
-            const outputToken = path[path.length - 1].symbol.replace(/WETH/g, 'ETH');
-            const poolAddress = pool.address || pool.id;
+            let inputToken = path[path.length - 2].symbol.replace(/WETH/g, 'ETH');
+            let outputToken = path[path.length - 1].symbol.replace(/WETH/g, 'ETH');
+            const poolAddress = pool.address || pool.id || pool.poolId || 'unknown';
+
+            // If leg has a token property, use that as the output (more reliable for cross-DEX routes)
+            if (leg.token && leg.token.symbol) {
+              outputToken = leg.token.symbol.replace(/WETH/g, 'ETH');
+            }
 
             poolInfo = {
               poolAddress,
@@ -1214,6 +1223,11 @@ function buildTokenPairGroups(routes) {
               t => t.address.toLowerCase() === lastHop.tokenOut.toLowerCase()
             );
             outputToken = tokenOutObj?.symbol?.replace(/WETH/g, 'ETH') || 'UNKNOWN';
+          }
+
+          // If leg has a token property, use that as the output (more reliable for cross-DEX routes)
+          if (leg.token && leg.token.symbol) {
+            outputToken = leg.token.symbol.replace(/WETH/g, 'ETH');
           }
 
           const poolAddress = firstHop.poolAddress;
@@ -1527,11 +1541,14 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
   // Step 1: Map each route's legs to pools
   const routePoolMapping = new Map(); // routeIndex -> array of {poolKey, groupKey, inputToken, outputToken}
 
+  console.log(`      Mapping ${routes.length} routes to pools...`);
   for (let routeIdx = 0; routeIdx < routes.length; routeIdx++) {
     const route = routes[routeIdx];
     const poolsUsed = [];
+    const routeDesc = route.description || route.path || `Route ${routeIdx + 1}`;
 
     if (route.legs && route.legs.length > 0) {
+      console.log(`         Route ${routeIdx + 1} (${routeDesc}): ${route.legs.length} legs`);
       for (const leg of route.legs) {
         // Extract pool identification info
         let poolAddress = null;
@@ -1544,9 +1561,14 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
             const pool = tradeRoute.pools[0];
             const path = tradeRoute.currencyPath || tradeRoute.path;
             if (path && path.length >= 2) {
-              poolAddress = pool.address || pool.id;
+              poolAddress = pool.address || pool.id || pool.poolId || 'unknown';
               inputToken = path[path.length - 2].symbol.replace(/WETH/g, 'ETH');
               outputToken = path[path.length - 1].symbol.replace(/WETH/g, 'ETH');
+
+              // If leg has a token property, use that as the output (more reliable for cross-DEX routes)
+              if (leg.token && leg.token.symbol) {
+                outputToken = leg.token.symbol.replace(/WETH/g, 'ETH');
+              }
             }
           }
         } else if (leg.protocol === 'balancer' && leg.path) {
@@ -1564,12 +1586,19 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
               inputToken = tokenInObj?.symbol?.replace(/WETH/g, 'ETH') || 'UNKNOWN';
               outputToken = tokenOutObj?.symbol?.replace(/WETH/g, 'ETH') || 'UNKNOWN';
             }
+
+            // If leg has a token property, use that as the output (more reliable for cross-DEX routes)
+            if (leg.token && leg.token.symbol) {
+              outputToken = leg.token.symbol.replace(/WETH/g, 'ETH');
+            }
           }
         }
 
         if (poolAddress && inputToken && outputToken) {
           const poolKey = `${poolAddress}@${inputToken}-${outputToken}`;
           const groupKey = `${inputToken}->${outputToken}`;
+
+          console.log(`            └─ Extracted: ${groupKey} (${leg.protocol})`);
 
           poolsUsed.push({
             poolKey,
@@ -1578,10 +1607,13 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
             outputToken,
             poolAddress
           });
+        } else {
+          console.log(`            └─ Skipped leg (${leg.protocol}): poolAddr=${!!poolAddress}, in=${inputToken}, out=${outputToken}`);
         }
       }
     }
 
+    console.log(`         Route ${routeIdx + 1} mapped to ${poolsUsed.length} pools`);
     routePoolMapping.set(routeIdx, poolsUsed);
   }
 
@@ -1615,6 +1647,12 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
   const competingGroupSets = groupByInputTokenAndLevel(groupsWithLevels);
   const groupInitialAllocations = new Map(); // tokenPairKey -> percentage
 
+  // DEBUG: Log all group importances
+  console.log(`      Group importances calculated:`);
+  for (const [key, value] of groupImportance.entries()) {
+    console.log(`         ${key}: ${ethers.utils.formatUnits(value, 18)} (raw)`);
+  }
+
   for (const [key, competingGroups] of competingGroupSets) {
     if (competingGroups.length === 1) {
       // Sequential group - gets 100%
@@ -1624,10 +1662,18 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
       let totalImportance = BigNumber.from(0);
       const importanceByGroup = new Map();
 
+      console.log(`      Looking up competing groups for ${key}:`);
       for (const group of competingGroups) {
-        const importance = groupImportance.get(group.tokenPairKey) || BigNumber.from(1); // Minimum 1 to avoid division by zero
-        importanceByGroup.set(group.tokenPairKey, importance);
-        totalImportance = totalImportance.add(importance);
+        const importance = groupImportance.get(group.tokenPairKey);
+
+        if (!importance) {
+          console.warn(`         ⚠️  No importance found for ${group.tokenPairKey}! Using minimum.`);
+          console.warn(`         Available keys: ${Array.from(groupImportance.keys()).join(', ')}`);
+        }
+
+        const finalImportance = importance || BigNumber.from(1);
+        importanceByGroup.set(group.tokenPairKey, finalImportance);
+        totalImportance = totalImportance.add(finalImportance);
       }
 
       // Normalize to percentages
@@ -1635,10 +1681,10 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
       for (const group of competingGroups) {
         const importance = importanceByGroup.get(group.tokenPairKey);
         const percentage = importance.mul(100000).div(totalImportance).toNumber() / 100000;
-        rawPercentages.push({ group, percentage: Math.max(0.01, percentage) }); // Apply minimum
+        rawPercentages.push({ group, percentage }); // Allow any percentage including 0%
       }
 
-      // Re-normalize after applying minimum to ensure sum = 1.0
+      // Normalize to ensure sum = 1.0
       const sum = rawPercentages.reduce((acc, item) => acc + item.percentage, 0);
       for (const item of rawPercentages) {
         groupInitialAllocations.set(item.group.tokenPairKey, item.percentage / sum);
@@ -1706,13 +1752,25 @@ async function optimizeInterGroupSplit(
   groupInitialAllocations,
   poolInitialAllocations
 ) {
+  // CRITICAL: Define token decimals lookup for intermediate tokens
+  const tokenDecimalsLookup = {
+    [tokenIn.symbol]: tokenIn.decimals,
+    [tokenOut.symbol]: tokenOut.decimals,
+    'ETH': 18,
+    'WETH': 18,
+    'USDC': 6,
+    'USDT': 6,
+    'DAI': 18,
+    'WBTC': 8
+  };
+
   const numGroups = competingGroups.length;
   console.log(`      Inter-group optimization: ${numGroups} groups competing for input`);
 
   // Initialize split from route-based analysis
   let currentSplit = competingGroups.map(group => {
     const initialPct = groupInitialAllocations.get(group.tokenPairKey) || (1.0 / numGroups);
-    return Math.max(0.01, initialPct); // Minimum 1%
+    return initialPct; // Allow any percentage including 0%
   });
 
   // Normalize to ensure sum is exactly 1.0
@@ -1737,9 +1795,9 @@ async function optimizeInterGroupSplit(
   console.log(`      Initial end-to-end output: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol}`);
 
   // Hill climbing
-  const maxIterations = 30;
+  const maxIterations = 100;
   const initialStepSize = 0.05; // 5%
-  const minStepSize = 0.005; // 0.5%
+  const minStepSize = 0.00005; // 0.5%
   const stepReduction = 0.7;
   let stepSize = initialStepSize;
   let iteration = 0;
@@ -1752,7 +1810,7 @@ async function optimizeInterGroupSplit(
     for (let i = 0; i < numGroups - 1; i++) {
       for (let j = i + 1; j < numGroups; j++) {
         // Try moving from i to j
-        if (currentSplit[i] >= stepSize + 0.01) { // Keep min 1%
+        if (currentSplit[i] >= stepSize) { // Allow 0% minimum
           const testSplit = [...currentSplit];
           testSplit[i] -= stepSize;
           testSplit[j] += stepSize;
@@ -1779,7 +1837,7 @@ async function optimizeInterGroupSplit(
         }
 
         // Try moving from j to i
-        if (currentSplit[j] >= stepSize + 0.01) {
+        if (currentSplit[j] >= stepSize) {
           const testSplit = [...currentSplit];
           testSplit[j] -= stepSize;
           testSplit[i] += stepSize;
@@ -1823,8 +1881,8 @@ async function optimizeInterGroupSplit(
     const groupInput = totalInput.mul(Math.floor(bestSplit[i] * 1000000)).div(1000000);
     groupInputs.push(groupInput);
 
-    const groupTokenIn = { symbol: group.inputToken, decimals: tokenIn.decimals, address: tokenIn.address };
-    const groupTokenOut = { symbol: group.outputToken, decimals: tokenOut.decimals, address: tokenOut.address };
+    const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
+    const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
     const result = await optimizeTokenPairGroup(group, groupInput, groupTokenIn, groupTokenOut, poolInitialAllocations);
     result.inputPercentage = bestSplit[i];
     groupOptimizations.push(result);
@@ -1852,6 +1910,18 @@ async function evaluateInterGroupSplit(
   previousOptimizations,
   poolInitialAllocations
 ) {
+  // CRITICAL: Define token decimals lookup for intermediate tokens
+  const tokenDecimalsLookup = {
+    [tokenIn.symbol]: tokenIn.decimals,
+    [tokenOut.symbol]: tokenOut.decimals,
+    'ETH': 18,
+    'WETH': 18,
+    'USDC': 6,
+    'USDT': 6,
+    'DAI': 18,
+    'WBTC': 8
+  };
+
   // Calculate outputs for each competing group with its split
   const groupOutputs = new Map(); // tokenPairKey -> output amount
 
@@ -1859,8 +1929,8 @@ async function evaluateInterGroupSplit(
     const group = competingGroups[i];
     const groupInput = totalInput.mul(Math.floor(split[i] * 1000000)).div(1000000);
 
-    const groupTokenIn = { symbol: group.inputToken, decimals: tokenIn.decimals, address: tokenIn.address };
-    const groupTokenOut = { symbol: group.outputToken, decimals: tokenOut.decimals, address: tokenOut.address };
+    const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
+    const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
     const result = await optimizeTokenPairGroup(group, groupInput, groupTokenIn, groupTokenOut, poolInitialAllocations);
 
     groupOutputs.set(group.tokenPairKey, result.totalOutput);
@@ -1899,8 +1969,8 @@ async function evaluateInterGroupSplit(
       }
 
       if (inputAmount.gt(0)) {
-        const groupTokenIn = { symbol: group.inputToken, decimals: tokenIn.decimals, address: tokenIn.address };
-        const groupTokenOut = { symbol: group.outputToken, decimals: tokenOut.decimals, address: tokenOut.address };
+        const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
+        const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
         const result = await optimizeTokenPairGroup(group, inputAmount, groupTokenIn, groupTokenOut, poolInitialAllocations);
 
         groupOutputs.set(group.tokenPairKey, result.totalOutput);
@@ -2062,6 +2132,18 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
       .filter(([key]) => key.endsWith(`@${level}`))
       .map(([, groups]) => groups);
 
+    // CRITICAL: Define token decimals lookup OUTSIDE conditionals so it's available for all paths
+    const tokenDecimalsLookup = {
+      [tokenIn.symbol]: tokenIn.decimals,
+      [tokenOut.symbol]: tokenOut.decimals,
+      'ETH': 18,
+      'WETH': 18,
+      'USDC': 6,
+      'USDT': 6,
+      'DAI': 18,
+      'WBTC': 8
+    };
+
     for (const competingGroups of competingAtLevel) {
       if (competingGroups.length === 1) {
         // Sequential group - no inter-group optimization needed
@@ -2085,9 +2167,8 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
 
         groupInputAmounts.set(group.tokenPairKey, inputAmount);
 
-        // Phase 2 only: Optimize pool splits within group
-        const groupTokenIn = { symbol: group.inputToken, decimals: tokenIn.decimals, address: tokenIn.address };
-        const groupTokenOut = { symbol: group.outputToken, decimals: tokenOut.decimals, address: tokenOut.address };
+        const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
+        const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
         const result = await optimizeTokenPairGroup(group, inputAmount, groupTokenIn, groupTokenOut, poolInitialAllocations);
 
         result.inputPercentage = 1.0; // Gets 100% of input
@@ -2139,13 +2220,26 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
   let totalOptimizedOutput = BigNumber.from(0);
   const finalGroups = groupsWithLevels.filter(g => g.outputToken === tokenOut.symbol);
 
+  // Build token decimals lookup for proper display formatting
+  const tokenDecimals = {
+    [tokenIn.symbol]: tokenIn.decimals,
+    [tokenOut.symbol]: tokenOut.decimals,
+    'ETH': 18,
+    'WETH': 18,
+    'USDC': 6,
+    'USDT': 6,
+    'DAI': 18,
+    'WBTC': 8
+  };
+
   console.log(`\n✅ Optimization Complete:`);
   for (const group of groupsWithLevels) {
     const opt = groupOptimizations.get(group.tokenPairKey);
     const inputAmt = groupInputAmounts.get(group.tokenPairKey);
+    const outputDecimals = tokenDecimals[group.outputToken] || 18;
     console.log(`   ${group.tokenPairKey} (Level ${group.level}):`);
     console.log(`      Input: ${ethers.utils.formatUnits(inputAmt, tokenIn.decimals)} ${group.inputToken}`);
-    console.log(`      Output: ${ethers.utils.formatUnits(opt.totalOutput, tokenOut.decimals)} ${group.outputToken}`);
+    console.log(`      Output: ${ethers.utils.formatUnits(opt.totalOutput, outputDecimals)} ${group.outputToken}`);
     if (opt.inputPercentage !== undefined) {
       console.log(`      Share: ${(opt.inputPercentage * 100).toFixed(1)}%`);
     }
@@ -2183,15 +2277,16 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
   const normalizedSplit = bestSplit.map(x => x / splitSum);
 
   // Build pool execution structure with optimized percentages
-  const poolExecutionStructure = buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizations);
+  const poolExecutionStructure = buildPoolExecutionStructureFromGroups(groupsWithLevels, groupOptimizations);
 
-  console.log(`   📊 Pool Execution Structure:`);
-  poolExecutionStructure.tokenPairGroups.forEach(groupInfo => {
-    console.log(`\n   Group: ${groupInfo.tokenPairKey}`);
-    groupInfo.pools.forEach(pool => {
+  console.log(`   📊 Pool Execution Structure (${poolExecutionStructure.levels.length} levels):`);
+  poolExecutionStructure.levels.forEach(level => {
+    console.log(`\n   Level ${level.level}:`);
+    level.pools.forEach(pool => {
       const poolAddr = pool.poolAddress || pool.poolKey || 'unknown';
       const displayAddr = poolAddr.length > 10 ? poolAddr.slice(0, 10) + '...' : poolAddr;
-      console.log(`      • ${pool.protocol} (${displayAddr}): ${(pool.percentage * 100).toFixed(1)}%`);
+      const pct = pool.percentage !== undefined ? (pool.percentage * 100).toFixed(1) + '%' : 'N/A';
+      console.log(`      • ${pool.protocol} (${displayAddr}): ${pool.inputToken}→${pool.outputToken} at ${pct}`);
     });
   });
 
@@ -2226,45 +2321,61 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
  * Build pool execution structure from token-pair groups and their optimizations
  * @param {Array} tokenPairGroups - Array of token pair groups
  * @param {Map} groupOptimizations - Map of tokenPairKey -> optimization result
- * @returns {Object} Execution structure with token pair groups and pool allocations
+ * @returns {Object} Execution structure with levels and pools
  */
 function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizations) {
-  const structure = {
-    tokenPairGroups: []
-  };
+  // Group pools by execution level
+  const levelMap = new Map(); // level number -> pools array
+  const poolMap = new Map(); // poolKey -> pool info
 
   for (const group of tokenPairGroups) {
     const optimization = groupOptimizations.get(group.tokenPairKey);
+    const level = group.level;
 
-    const groupInfo = {
-      tokenPairKey: group.tokenPairKey,
-      inputToken: group.inputToken,
-      outputToken: group.outputToken,
-      pools: []
-    };
+    if (!levelMap.has(level)) {
+      levelMap.set(level, []);
+    }
 
     for (const pool of group.pools) {
       const poolKey = pool.poolKey || `${pool.poolAddress || pool.poolId}@${pool.inputToken}-${pool.outputToken}`;
-      const percentage = optimization.poolAllocations.get(poolKey);
 
-      groupInfo.pools.push({
+      // CRITICAL: Calculate percentage of level input, not just group input
+      // percentage = group's share of level × pool's share within group
+      const poolPercentageWithinGroup = optimization?.poolAllocations?.get(pool.poolAddress || pool.poolId) || 0;
+      const groupPercentageOfLevel = optimization?.inputPercentage || 1.0;
+      const percentageOfLevelInput = poolPercentageWithinGroup * groupPercentageOfLevel;
+
+      const poolInfo = {
         poolAddress: pool.poolAddress || pool.poolId,
         poolKey: poolKey,
         protocol: pool.protocol,
         inputToken: pool.inputToken,
         outputToken: pool.outputToken,
-        percentage: percentage,
+        percentage: percentageOfLevelInput, // Now shows percentage of level input, not group input
         routeIndices: pool.routeIndices,
         legIndices: pool.legIndices,
         trade: pool.trade,
-        path: pool.path
-      });
-    }
+        path: pool.path,
+        level: level
+      };
 
-    structure.tokenPairGroups.push(groupInfo);
+      levelMap.get(level).push(poolInfo);
+      poolMap.set(poolKey, poolInfo);
+    }
   }
 
-  return structure;
+  // Convert to levels array sorted by level number
+  const levels = Array.from(levelMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([levelNum, pools]) => ({
+      level: levelNum,
+      pools: pools
+    }));
+
+  return {
+    levels,
+    poolMap
+  };
 }
 
 /**

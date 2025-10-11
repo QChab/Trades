@@ -49,18 +49,34 @@ function calculateSpotPrices(poolData) {
         const weightA = poolData.weights[i];
         const weightB = poolData.weights[j];
         
-        // Parse balances (already from GraphQL, no need for RPC)
+        // Parse balances and normalize to 18 decimals for consistent calculations
         let balanceA, balanceB;
         try {
-          // Balance from GraphQL is already a string
+          const decimalsA = tokenA.decimals || 18;
+          const decimalsB = tokenB.decimals || 18;
+
           if (tokenA.balance.includes('.')) {
-            balanceA = ethers.utils.parseUnits(tokenA.balance, tokenA.decimals || 18);
+            const rawBalance = ethers.utils.parseUnits(tokenA.balance, decimalsA);
+            if (decimalsA < 18) {
+              balanceA = rawBalance.mul(ethers.BigNumber.from(10).pow(18 - decimalsA));
+            } else if (decimalsA > 18) {
+              balanceA = rawBalance.div(ethers.BigNumber.from(10).pow(decimalsA - 18));
+            } else {
+              balanceA = rawBalance;
+            }
           } else {
             balanceA = ethers.BigNumber.from(tokenA.balance);
           }
-          
+
           if (tokenB.balance.includes('.')) {
-            balanceB = ethers.utils.parseUnits(tokenB.balance, tokenB.decimals || 18);
+            const rawBalance = ethers.utils.parseUnits(tokenB.balance, decimalsB);
+            if (decimalsB < 18) {
+              balanceB = rawBalance.mul(ethers.BigNumber.from(10).pow(18 - decimalsB));
+            } else if (decimalsB > 18) {
+              balanceB = rawBalance.div(ethers.BigNumber.from(10).pow(decimalsB - 18));
+            } else {
+              balanceB = rawBalance;
+            }
           } else {
             balanceB = ethers.BigNumber.from(tokenB.balance);
           }
@@ -620,46 +636,48 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
         }
       }
     }
-    
-    // Try 2-hop paths through each priority intermediate
-    for (const intermediate of priorityIntermediates) {
-      if (intermediate === tokenInLower || intermediate === tokenOutLower) continue;
-      
-      // Find pools: tokenIn -> intermediate
-      const firstHopPools = pools.filter(p => {
-        const addrs = p.tokens.map(t => t.address.toLowerCase());
-        return addrs.includes(tokenInLower) && addrs.includes(intermediate);
-      });
-      
-      // Find pools: intermediate -> tokenOut
-      const secondHopPools = pools.filter(p => {
-        const addrs = p.tokens.map(t => t.address.toLowerCase());
-        return addrs.includes(intermediate) && addrs.includes(tokenOutLower);
-      });
-      
-      // Try all combinations
-      for (const firstPool of firstHopPools) {
-        for (const secondPool of secondHopPools) {
-          try {
-            const hop1 = await calculateSingleHop(firstPool, tokenIn, 
-              firstPool.tokens.find(t => t.address.toLowerCase() === intermediate).address, 
-              amountIn);
-            if (!hop1) continue;
-            
-            const hop2 = await calculateSingleHop(secondPool, 
-              secondPool.tokens.find(t => t.address.toLowerCase() === intermediate).address,
-              secondPool.tokens.find(t => t.address.toLowerCase() === tokenOutLower).address,
-              hop1.amountOut);
-            if (!hop2) continue;
-            
-            paths.push({
-              hops: [hop1, hop2],
-              amountOut: hop2.amountOut,
-              totalFees: calculateTotalFees([hop1, hop2]),
-              priceImpact: calculatePriceImpact(amountIn, hop2.amountOut, [hop1, hop2])
-            });
-          } catch (e) {
-            // Skip this combination
+
+    // Try 2-hop paths through each priority intermediate (only if maxHops >= 2)
+    if (maxHops >= 2) {
+      for (const intermediate of priorityIntermediates) {
+        if (intermediate === tokenInLower || intermediate === tokenOutLower) continue;
+
+        // Find pools: tokenIn -> intermediate
+        const firstHopPools = pools.filter(p => {
+          const addrs = p.tokens.map(t => t.address.toLowerCase());
+          return addrs.includes(tokenInLower) && addrs.includes(intermediate);
+        });
+
+        // Find pools: intermediate -> tokenOut
+        const secondHopPools = pools.filter(p => {
+          const addrs = p.tokens.map(t => t.address.toLowerCase());
+          return addrs.includes(intermediate) && addrs.includes(tokenOutLower);
+        });
+
+        // Try all combinations
+        for (const firstPool of firstHopPools) {
+          for (const secondPool of secondHopPools) {
+            try {
+              const hop1 = await calculateSingleHop(firstPool, tokenIn,
+                firstPool.tokens.find(t => t.address.toLowerCase() === intermediate).address,
+                amountIn);
+              if (!hop1) continue;
+
+              const hop2 = await calculateSingleHop(secondPool,
+                secondPool.tokens.find(t => t.address.toLowerCase() === intermediate).address,
+                secondPool.tokens.find(t => t.address.toLowerCase() === tokenOutLower).address,
+                hop1.amountOut);
+              if (!hop2) continue;
+
+              paths.push({
+                hops: [hop1, hop2],
+                amountOut: hop2.amountOut,
+                totalFees: calculateTotalFees([hop1, hop2]),
+                priceImpact: calculatePriceImpact(amountIn, hop2.amountOut, [hop1, hop2])
+              });
+            } catch (e) {
+              // Skip this combination
+            }
           }
         }
       }
@@ -683,16 +701,40 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
     
     let balanceIn, balanceOut;
     try {
+      // CRITICAL: Balancer AMM math requires normalized 18-decimal format!
+      // GraphQL returns human-readable balances, so we:
+      // 1. Parse with actual decimals to get raw wei amount
+      // 2. Scale to 18-decimal normalized format
+
+      const decimalsIn = pool.tokens[tokenInIndex].decimals || 18;
+      const decimalsOut = pool.tokens[tokenOutIndex].decimals || 18;
+
       if (balanceInStr.includes('.')) {
-        const decimalsIn = pool.tokens[tokenInIndex].decimals || 18;
-        balanceIn = ethers.utils.parseUnits(balanceInStr, decimalsIn);
+        // Parse with actual decimals
+        const rawBalance = ethers.utils.parseUnits(balanceInStr, decimalsIn);
+        // Normalize to 18 decimals
+        if (decimalsIn < 18) {
+          balanceIn = rawBalance.mul(ethers.BigNumber.from(10).pow(18 - decimalsIn));
+        } else if (decimalsIn > 18) {
+          balanceIn = rawBalance.div(ethers.BigNumber.from(10).pow(decimalsIn - 18));
+        } else {
+          balanceIn = rawBalance;
+        }
       } else {
         balanceIn = ethers.BigNumber.from(balanceInStr);
       }
-      
+
       if (balanceOutStr.includes('.')) {
-        const decimalsOut = pool.tokens[tokenOutIndex].decimals || 18;
-        balanceOut = ethers.utils.parseUnits(balanceOutStr, decimalsOut);
+        // Parse with actual decimals
+        const rawBalance = ethers.utils.parseUnits(balanceOutStr, decimalsOut);
+        // Normalize to 18 decimals
+        if (decimalsOut < 18) {
+          balanceOut = rawBalance.mul(ethers.BigNumber.from(10).pow(18 - decimalsOut));
+        } else if (decimalsOut > 18) {
+          balanceOut = rawBalance.div(ethers.BigNumber.from(10).pow(decimalsOut - 18));
+        } else {
+          balanceOut = rawBalance;
+        }
       } else {
         balanceOut = ethers.BigNumber.from(balanceOutStr);
       }
@@ -700,27 +742,8 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
       return null;
     }
     
-    // Debug for WETH->USDC trades
-    const tokenInSymbol = pool.tokens[tokenInIndex].symbol;
-    const tokenOutSymbol = pool.tokens[tokenOutIndex].symbol;
-
-    if (tokenInSymbol === 'WETH' && tokenOutSymbol === 'USDC') {
-      console.log('\n   🔍 Debug WETH->USDC calculation:');
-      console.log('   Pool ID:', pool.poolAddress.slice(0, 10) + '...');
-      console.log('   Pool Type:', pool.poolType);
-      console.log('   Input amount:', ethers.utils.formatEther(amountIn), 'WETH');
-      console.log('   Balance WETH (raw):', balanceInStr);
-      console.log('   Balance WETH (parsed):', ethers.utils.formatEther(balanceIn), 'WETH');
-      console.log('   Balance USDC (raw):', balanceOutStr);
-      console.log('   Balance USDC (parsed):', ethers.utils.formatUnits(balanceOut, 6), 'USDC');
-      console.log('   Swap fee:', pool.swapFee);
-      if (pool.weights) {
-        console.log('   Weights:', pool.weights[tokenInIndex], '/', pool.weights[tokenOutIndex]);
-      }
-    }
-
-    // Calculate output for the requested amount
-    const outputAmount = calculateSwapOutput(
+    // Calculate output for the requested amount (returns normalized 18-decimal value)
+    const outputAmountNormalized = calculateSwapOutput(
       ethers.BigNumber.from(amountIn),
       balanceIn,
       balanceOut,
@@ -731,8 +754,19 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
       pool.amplificationParameter
     );
 
+    // Denormalize output to actual token decimals
+    const decimalsOut = pool.tokens[tokenOutIndex].decimals || 18;
+    let outputAmount;
+    if (decimalsOut < 18) {
+      outputAmount = outputAmountNormalized.div(ethers.BigNumber.from(10).pow(18 - decimalsOut));
+    } else if (decimalsOut > 18) {
+      outputAmount = outputAmountNormalized.mul(ethers.BigNumber.from(10).pow(decimalsOut - 18));
+    } else {
+      outputAmount = outputAmountNormalized;
+    }
+
     // Also calculate output for test amount to check pool viability
-    const testOutputAmount = calculateSwapOutput(
+    const testOutputAmountNormalized = calculateSwapOutput(
       testAmount,
       balanceIn,
       balanceOut,
@@ -742,6 +776,16 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
       pool.weights ? pool.weights[tokenOutIndex] : null,
       pool.amplificationParameter
     );
+
+    // Denormalize test output
+    let testOutputAmount;
+    if (decimalsOut < 18) {
+      testOutputAmount = testOutputAmountNormalized.div(ethers.BigNumber.from(10).pow(18 - decimalsOut));
+    } else if (decimalsOut > 18) {
+      testOutputAmount = testOutputAmountNormalized.mul(ethers.BigNumber.from(10).pow(decimalsOut - 18));
+    } else {
+      testOutputAmount = testOutputAmountNormalized;
+    }
 
     // Check if the pool can handle small trades reasonably
     // Expected rate for WETH->USDC should be around 4100
@@ -757,12 +801,6 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
       }
     }
 
-    // Debug output for WETH->USDC
-    if (tokenInSymbol === 'WETH' && tokenOutSymbol === 'USDC') {
-      console.log('   Calculated output:', ethers.utils.formatUnits(outputAmount, 6), 'USDC');
-      console.log('   Output (raw):', outputAmount.toString());
-    }
-    
     return {
       poolAddress: pool.poolAddress,
       poolType: pool.poolType,
@@ -809,20 +847,38 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
           // Handle decimal balances by converting to wei
           const balanceInStr = pool.tokens[tokenInIndex].balance;
           const balanceOutStr = pool.tokens[tokenOutIndex].balance;
-          
+
+          // Declare decimals outside try block for later use
+          const decimalsIn = pool.tokens[tokenInIndex].decimals || 18;
+          const decimalsOut = pool.tokens[tokenOutIndex].decimals || 18;
+
           let balanceIn, balanceOut;
           try {
-            // If balance is a decimal string, parse it properly
+            // CRITICAL: Balancer AMM math requires normalized 18-decimal format!
+            // Parse and normalize to 18 decimals
+
             if (balanceInStr.includes('.')) {
-              const decimalsIn = pool.tokens[tokenInIndex].decimals || 18;
-              balanceIn = ethers.utils.parseUnits(balanceInStr, decimalsIn);
+              const rawBalance = ethers.utils.parseUnits(balanceInStr, decimalsIn);
+              if (decimalsIn < 18) {
+                balanceIn = rawBalance.mul(ethers.BigNumber.from(10).pow(18 - decimalsIn));
+              } else if (decimalsIn > 18) {
+                balanceIn = rawBalance.div(ethers.BigNumber.from(10).pow(decimalsIn - 18));
+              } else {
+                balanceIn = rawBalance;
+              }
             } else {
               balanceIn = ethers.BigNumber.from(balanceInStr);
             }
-            
+
             if (balanceOutStr.includes('.')) {
-              const decimalsOut = pool.tokens[tokenOutIndex].decimals || 18;
-              balanceOut = ethers.utils.parseUnits(balanceOutStr, decimalsOut);
+              const rawBalance = ethers.utils.parseUnits(balanceOutStr, decimalsOut);
+              if (decimalsOut < 18) {
+                balanceOut = rawBalance.mul(ethers.BigNumber.from(10).pow(18 - decimalsOut));
+              } else if (decimalsOut > 18) {
+                balanceOut = rawBalance.div(ethers.BigNumber.from(10).pow(decimalsOut - 18));
+              } else {
+                balanceOut = rawBalance;
+              }
             } else {
               balanceOut = ethers.BigNumber.from(balanceOutStr);
             }
@@ -839,7 +895,8 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
             weightOut = pool.weights[tokenOutIndex];
           }
           
-          const outputAmount = calculateSwapOutput(
+          // calculateSwapOutput returns normalized 18-decimal value
+          const outputAmountNormalized = calculateSwapOutput(
             remainingAmount,
             balanceIn,
             balanceOut,
@@ -849,7 +906,17 @@ async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provider, ma
             weightOut,
             pool.amplificationParameter
           );
-          
+
+          // Denormalize output to actual token decimals
+          let outputAmount;
+          if (decimalsOut < 18) {
+            outputAmount = outputAmountNormalized.div(ethers.BigNumber.from(10).pow(18 - decimalsOut));
+          } else if (decimalsOut > 18) {
+            outputAmount = outputAmountNormalized.mul(ethers.BigNumber.from(10).pow(decimalsOut - 18));
+          } else {
+            outputAmount = outputAmountNormalized;
+          }
+
           const hop = {
             poolAddress: pool.poolAddress,
             poolType: pool.poolType,

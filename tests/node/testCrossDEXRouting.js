@@ -56,7 +56,7 @@ async function testCrossDEXRouting() {
 
   const tokensTraded = {
     tokenInObject: AAVE,
-    tokenOutObject: INCH,
+    tokenOutObject: USDC,
   }
   console.log(`=== Testing Cross-DEX Routing (${tokensTraded.tokenInObject.symbol} -> ${tokensTraded.tokenOutObject.symbol}- ===\n`);
   console.log(`Input: ${rawAmountIn} ${tokensTraded.tokenInObject.symbol}`);
@@ -68,7 +68,7 @@ async function testCrossDEXRouting() {
       amountIn,
       provider,
       slippageTolerance: 0.5,
-      maxHops: 2,
+      maxHops: 1,
       useUniswap: true,
       useBalancer: true
     });
