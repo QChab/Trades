@@ -20,7 +20,12 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
     slippageTolerance
   };
 
-  if (route.type === 'optimized-multi-route-split') {
+  // Normalize route to have poolExecutionStructure if it doesn't have one
+  if (!route.poolExecutionStructure) {
+    route = normalizeRouteToPoolStructure(route, tokenIn, tokenOut);
+  }
+
+  if (route.type === 'optimized-multi-route-split' || route.poolExecutionStructure) {
     // Use pool-based execution structure from optimizer
     if (!route.poolExecutionStructure) {
       throw new Error('Pool execution structure missing from optimized route');
@@ -97,29 +102,6 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
       });
     });
     console.log('');
-
-    // Add approvals for all protocols used
-    const protocolsUsed = new Set(plan.executionSteps.map(s => s.protocol));
-
-    if (protocolsUsed.has('uniswap')) {
-      plan.approvals.push({
-        token: tokenIn.address,
-        spender: '0x66a9893cc07d91d95644aedd05d03f95e1dba8af', // Universal Router
-        amount: route.splits
-          .filter(s => s.route.protocol === 'uniswap' || s.route.legs?.some(l => l.protocol === 'uniswap'))
-          .reduce((sum, s) => sum.add(s.amount), ethers.BigNumber.from(0))
-      });
-    }
-
-    if (protocolsUsed.has('balancer')) {
-      plan.approvals.push({
-        token: tokenIn.address,
-        spender: '0xBA12222222228d8Ba445958a75a0704d566BF2C8', // Balancer Vault
-        amount: route.splits
-          .filter(s => s.route.protocol === 'balancer' || s.route.legs?.some(l => l.protocol === 'balancer'))
-          .reduce((sum, s) => sum.add(s.amount), ethers.BigNumber.from(0))
-      });
-    }
   } else {
     throw new Error('Unknown route type, cannot create execution plan')
   }
@@ -456,4 +438,76 @@ export function shouldUseAllBalance(step, executionPlan) {
   }
 
   return false;
+}
+
+/**
+ * Normalize any route type to have a poolExecutionStructure
+ * Converts single-path routes (balancer-path-1, uniswap-path-1, etc) to pool-based structure
+ */
+function normalizeRouteToPoolStructure(route, tokenIn, tokenOut) {
+  console.log(`\n📐 Normalizing route type "${route.type}" to pool execution structure...`);
+
+  // Simple single-path routes (balancer-path-1, uniswap-path-1, etc.)
+  if (route.type && (route.type.startsWith('balancer-path-') || route.type.startsWith('uniswap-path-'))) {
+    const path = route.paths && route.paths[0];
+    if (!path) {
+      throw new Error(`Route ${route.type} missing paths array`);
+    }
+
+    const pools = [];
+
+    if (route.protocol === 'balancer') {
+      // Balancer single path - could be multi-hop
+      if (path.path && path.path.hops) {
+        path.path.hops.forEach((hop, hopIndex) => {
+          pools.push({
+            poolAddress: hop.poolData?.address || hop.poolData?.id || '',
+            poolId: hop.poolData?.id || '',
+            protocol: 'balancer',
+            inputToken: hopIndex === 0 ? tokenIn.symbol : hop.poolData?.tokens?.find(t => t.address.toLowerCase() === hop.tokenIn.toLowerCase())?.symbol || 'UNKNOWN',
+            outputToken: hopIndex === path.path.hops.length - 1 ? tokenOut.symbol : hop.poolData?.tokens?.find(t => t.address.toLowerCase() === hop.tokenOut.toLowerCase())?.symbol || 'UNKNOWN',
+            percentage: 1.0,
+            inputAmount: hopIndex === 0 ? path.inputAmount : undefined,
+            expectedOutput: hopIndex === path.path.hops.length - 1 ? path.outputAmount : undefined,
+            wrapOperation: 0,
+            shouldUseAllBalance: true,
+            path: path.path
+          });
+        });
+      }
+    } else if (route.protocol === 'uniswap') {
+      // Uniswap single path
+      pools.push({
+        poolAddress: path.trade?.route?.pools?.[0]?.address || '',
+        poolId: path.trade?.route?.pools?.[0]?.address || '',
+        protocol: 'uniswap',
+        inputToken: tokenIn.symbol,
+        outputToken: tokenOut.symbol,
+        percentage: 1.0,
+        inputAmount: path.inputAmount,
+        expectedOutput: path.outputAmount,
+        wrapOperation: 0,
+        shouldUseAllBalance: true,
+        trade: path.trade
+      });
+    }
+
+    // Create pool execution structure
+    const poolMap = new Map();
+    pools.forEach((pool, idx) => {
+      poolMap.set(`pool-${idx}`, pool);
+    });
+
+    route.poolExecutionStructure = {
+      levels: pools.map((pool, idx) => ({
+        level: idx,
+        pools: [pool]
+      })),
+      poolMap
+    };
+
+    console.log(`   ✓ Converted to ${pools.length} execution level(s)`);
+  }
+
+  return route;
 }

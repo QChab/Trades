@@ -407,10 +407,11 @@ async function runAllTests() {
     { name: 'Quote (ETH→USDC)', fn: testQuote, storeResult: true },
     { name: 'Assemble', fn: async () => {
       // Use pathId from previous test
-      if (!window.testQuoteResult?.pathId) {
+      const testResult = typeof window === 'undefined' ? global.testQuoteResult : window.testQuoteResult;
+      if (!testResult?.pathId) {
         throw new Error('Quote test must run first to get pathId');
       }
-      return testAssemble(window.testQuoteResult.pathId);
+      return testAssemble(testResult.pathId);
     } },
     { name: 'Swap (ETH→USDC)', fn: testSwap },
     { name: 'Protocols', fn: testGetProtocols },

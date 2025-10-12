@@ -1160,34 +1160,18 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
   // Add ALL Uniswap paths as individual routes
   if (uniswapPaths && uniswapPaths.length > 0) {
     uniswapPaths.forEach((uniPath, index) => {
-      // Check if this is a pre-optimized split from useUniswap
-      if (uniPath.type === 'uniswap-pre-optimized-split') {
-        // Add as complete route with splits intact
-        routes.push({
-          type: 'uniswap-pre-optimized-split',
-          protocol: 'uniswap',
-          totalOutput: uniPath.outputAmount,
-          splits: uniPath.splits,
-          trades: uniPath.trades,
-          paths: [uniPath],
-          requiresWrap: uniPath.requiresWrap,
-          requiresUnwrap: uniPath.requiresUnwrap,
-          description: `Uniswap optimized split (${uniPath.splits.length} routes)`
-        });
-      } else {
-        // Single path
-        routes.push({
-          type: `uniswap-path-${index + 1}`,
-          protocol: 'uniswap',
-          totalOutput: uniPath.outputAmount,
-          paths: [uniPath],
-          requiresWrap: uniPath.requiresWrap,
-          requiresUnwrap: uniPath.requiresUnwrap,
-          description: `Uniswap path ${index + 1}`
-        });
-      }
-    });
-    console.log(`   Added ${uniswapPaths.length} Uniswap routes`);
+      // Single path
+      routes.push({
+        type: `uniswap-path-${index + 1}`,
+        protocol: 'uniswap',
+        totalOutput: uniPath.outputAmount,
+        paths: [uniPath],
+        requiresWrap: uniPath.requiresWrap,
+        requiresUnwrap: uniPath.requiresUnwrap,
+        description: `Uniswap path ${index + 1}`
+      });
+      console.log(`   Added ${uniswapPaths.length} Uniswap routes`);
+    })
   }
 
   // Add ALL Balancer paths as individual routes
