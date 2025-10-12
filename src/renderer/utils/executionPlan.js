@@ -209,14 +209,13 @@ export function createEncoderExecutionPlan(
     let poolId, fee;
 
     if (step.protocol === 'balancer') {
-      // Extract Balancer pool ID from path
+      // Extract Balancer V3 pool address (NOT bytes32, just address)
       console.log(`   [Balancer] step.poolId: ${step.poolId || 'undefined'}`);
-      console.log(`   [Balancer] step.path?.hops?.[0]?.poolId: ${step.path?.hops?.[0]?.poolId || 'undefined'}`);
-      console.log(`   [Balancer] step.path?.hops?.[0]?.poolData?.id: ${step.path?.hops?.[0]?.poolData?.id || 'undefined'}`);
-      const rawPoolId = step.poolId || step.path?.hops?.[0]?.poolId || '0x0000000000000000000000000000000000000000000000000000000000000000';
-      // Convert address (20 bytes) to bytes32 (32 bytes) by zero-padding
-      poolId = rawPoolId.length === 42 ? ethers.utils.hexZeroPad(rawPoolId, 32) : rawPoolId;
-      console.log(`   [Balancer] Final poolId (bytes32): ${poolId}`);
+      console.log(`   [Balancer] step.poolAddress: ${step.poolAddress || 'undefined'}`);
+      console.log(`   [Balancer] step.path?.hops?.[0]?.poolAddress: ${step.path?.hops?.[0]?.poolAddress || 'undefined'}`);
+      // For V3, poolId is just a 20-byte address
+      poolId = step.poolAddress || step.poolId || step.path?.hops?.[0]?.poolAddress || '0x0000000000000000000000000000000000000000';
+      console.log(`   [Balancer V3] Final pool address: ${poolId}`);
     } else if (step.protocol === 'uniswap') {
       // Extract fee from Uniswap trade
       const tradeRoute = step.trade?.route || step.trade?.swaps?.[0]?.route;
@@ -234,9 +233,9 @@ export function createEncoderExecutionPlan(
       if (inputAmount.eq(ethers.constants.MaxUint256)) {
         // Use all balance swap - encoder will query actual balance
         const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['bytes32', 'address', 'address', 'uint256', 'uint8'],
+          ['address', 'address', 'address', 'uint256', 'uint8'],
           [
-            poolId,
+            poolId,  // V3 uses address, not bytes32
             inputTokenAddress,
             outputTokenAddress,
             minAmountOut,
@@ -244,15 +243,15 @@ export function createEncoderExecutionPlan(
           ]
         );
 
-        // Encode the function selector for encodeUseAllBalanceSwap
-        const selector = ethers.utils.id('encodeUseAllBalanceSwap(bytes32,address,address,uint256,uint8)').slice(0, 10);
+        // Encode the function selector for encodeUseAllBalanceSwap (V3 signature)
+        const selector = ethers.utils.id('encodeUseAllBalanceSwap(address,address,address,uint256,uint8)').slice(0, 10);
         encoderData.push(selector + encoderCalldata.slice(2));
       } else {
         // Regular swap with exact amount
         const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['bytes32', 'address', 'address', 'uint256', 'uint256'],
+          ['address', 'address', 'address', 'uint256', 'uint256'],
           [
-            poolId,
+            poolId,  // V3 uses address, not bytes32
             inputTokenAddress,
             outputTokenAddress,
             inputAmount,
@@ -260,8 +259,8 @@ export function createEncoderExecutionPlan(
           ]
         );
 
-        // Encode the function selector for encodeSingleSwap
-        const selector = ethers.utils.id('encodeSingleSwap(bytes32,address,address,uint256,uint256)').slice(0, 10);
+        // Encode the function selector for encodeSingleSwap (V3 signature)
+        const selector = ethers.utils.id('encodeSingleSwap(address,address,address,uint256,uint256)').slice(0, 10);
         encoderData.push(selector + encoderCalldata.slice(2));
       }
     } else if (step.protocol === 'uniswap') {

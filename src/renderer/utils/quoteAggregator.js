@@ -249,8 +249,24 @@ export function getAllowedProtocols(walletMode) {
 }
 
 /**
+ * Wraps a promise with a timeout
+ * Returns null if the promise doesn't resolve within the timeout period
+ */
+function withTimeout(promise, timeoutMs, protocolName) {
+  const timeoutPromise = new Promise((resolve) => {
+    setTimeout(() => {
+      console.warn(`⏰ ${protocolName} quote timed out after ${timeoutMs / 1000}s`);
+      resolve(null);
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]);
+}
+
+/**
  * Get quotes from all allowed protocols in parallel
  * Returns array of quote results (nulls filtered out)
+ * Each protocol has 30 seconds to respond before timing out
  */
 export async function getAllQuotes({
   fromToken,
@@ -267,47 +283,64 @@ export async function getAllQuotes({
   const allowedProtocols = getAllowedProtocols(walletMode);
   console.log(`🔍 Querying protocols: ${allowedProtocols.join(', ')}`);
 
+  const TIMEOUT_MS = 30000; // 30 seconds
   const quotePromises = [];
 
   if (allowedProtocols.includes('Uniswap') && getTradesUniswapFn) {
     quotePromises.push(
-      getQuoteUniswap({
-        fromToken,
-        toToken,
-        amount,
-        pools,
-        tokensByAddresses,
-        getTradesUniswapFn
-      })
+      withTimeout(
+        getQuoteUniswap({
+          fromToken,
+          toToken,
+          amount,
+          pools,
+          tokensByAddresses,
+          getTradesUniswapFn
+        }),
+        TIMEOUT_MS,
+        'Uniswap'
+      )
     );
   }
 
   if (allowedProtocols.includes('Balancer') && getTradesBalancerFn) {
     quotePromises.push(
-      getQuoteBalancer({
-        fromToken,
-        toToken,
-        amount,
-        senderAddress,
-        provider,
-        getTradesBalancerFn
-      })
+      withTimeout(
+        getQuoteBalancer({
+          fromToken,
+          toToken,
+          amount,
+          senderAddress,
+          provider,
+          getTradesBalancerFn
+        }),
+        TIMEOUT_MS,
+        'Balancer'
+      )
     );
   }
 
   if (allowedProtocols.includes('WalletBundler')) {
     quotePromises.push(
-      getQuoteWalletBundler({ fromToken, toToken, amount, provider })
+      withTimeout(
+        getQuoteWalletBundler({ fromToken, toToken, amount, provider }),
+        TIMEOUT_MS,
+        'WalletBundler'
+      )
     );
   }
 
   if (allowedProtocols.includes('Odos')) {
     quotePromises.push(
-      getQuoteOdos({ fromToken, toToken, amount, senderAddress })
+      withTimeout(
+        getQuoteOdos({ fromToken, toToken, amount, senderAddress }),
+        TIMEOUT_MS,
+        'Odos'
+      )
     );
   }
 
-  // Execute all queries in parallel
+  // Execute all queries in parallel with timeout protection
   const results = await Promise.allSettled(quotePromises);
 
   // Extract successful results

@@ -3,94 +3,64 @@ pragma solidity ^0.8.19;
 
 /**
  * @title BalancerEncoder
- * @notice Encodes Balancer V3 swap calls dynamically based on actual amounts
+ * @notice Encodes Balancer V3 swap calls via Router
  * @dev Stateless encoder that can be deployed once and used by all WalletBundler instances
  */
 contract BalancerEncoder {
-    // Balancer Vault address
-    address private constant VAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
-
-    enum SwapKind { GIVEN_IN, GIVEN_OUT }
-
-    struct SingleSwap {
-        bytes32 poolId;
-        SwapKind kind;
-        address assetIn;
-        address assetOut;
-        uint256 amount;
-        bytes userData;
-    }
-
-    struct FundManagement {
-        address sender;
-        bool fromInternalBalance;
-        address payable recipient;
-        bool toInternalBalance;
-    }
+    // Balancer V3 Router address (simple Router, not BatchRouter)
+    address private constant ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2;
+    uint256 private constant DEADLINE = type(uint256).max; // No deadline
 
     /**
-     * @notice Encode a single swap for Balancer
-     * @param poolId The pool to swap through
+     * @notice Encode a single swap for Balancer V3 via Router
+     * @param pool The pool address to swap through
      * @param tokenIn Address of input token
      * @param tokenOut Address of output token
-     * @param amountIn Amount of input tokens (or type(uint256).max for "use all")
+     * @param amountIn Amount of input tokens
      * @param minAmountOut Minimum acceptable output
-     * @return target The Vault contract address
+     * @return target The Router contract address
      * @return callData The encoded swap call
-     * @return inputAmount The actual amount to be used (for wrap/unwrap operations)
+     * @return inputAmount The actual amount to be used
      * @return tokenIn The tokenIn address
      */
     function encodeSingleSwap(
-        bytes32 poolId,
+        address pool,
         address tokenIn,
         address tokenOut,
         uint256 amountIn,
         uint256 minAmountOut
-    ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
-        SingleSwap memory singleSwap = SingleSwap({
-            poolId: poolId,
-            kind: SwapKind.GIVEN_IN,
-            assetIn: tokenIn,
-            assetOut: tokenOut,
-            amount: amountIn,
-            userData: ""
-        });
-
-        FundManagement memory funds = FundManagement({
-            sender: msg.sender,  // Always the calling WalletBundler
-            fromInternalBalance: false,
-            recipient: payable(msg.sender),  // Always the calling WalletBundler
-            toInternalBalance: false
-        });
-
-        uint256 deadline = block.timestamp + 1200; // 20 minutes
+    ) external pure returns (address target, bytes memory callData, uint256 inputAmount, address) {
 
         callData = abi.encodeWithSignature(
-            "swap((bytes32,uint8,address,address,uint256,bytes),(address,bool,address,bool),uint256,uint256)",
-            singleSwap,
-            funds,
+            "swapSingleTokenExactIn(address,address,address,uint256,uint256,uint256,bool,bytes)",
+            pool,
+            tokenIn,
+            tokenOut,
+            amountIn,
             minAmountOut,
-            deadline
+            DEADLINE,
+            false, // wethIsEth
+            "" // empty userData
         );
 
-        return (VAULT, callData, amountIn, tokenIn);
+        return (ROUTER, callData, amountIn, tokenIn);
     }
 
     /**
      * @notice Encode a swap using all available balance
      * @dev Special function for intermediate hops that use entire balance
-     * @param poolId The pool to swap through
+     * @param pool The pool address to swap through
      * @param tokenIn Address of input token
      * @param tokenOut Address of output token
      * @param minAmountOut Minimum acceptable output (can be 0 for intermediate)
      * @param wrapOp Wrap operation: 0=none, 1=wrap ETH before, 3=unwrap WETH before
-     * @return target The Vault contract address
+     * @return target The Router contract address
      * @return callData The encoded swap call with actual balance
      * @return inputAmount Returns the actual balance amount
      * @return tokenIn Returns the tokenIn
      */
     function encodeUseAllBalanceSwap(
-        bytes32 poolId,
+        address pool,
         address tokenIn,
         address tokenOut,
         uint256 minAmountOut,
@@ -106,38 +76,24 @@ contract BalancerEncoder {
             balanceToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // WETH
         }
 
-        // Get the actual token balance using optimized assembly
+        // Get the actual token balance
         uint256 actualBalance = balanceToken == address(0)
             ? msg.sender.balance
             : _getTokenBalance(balanceToken, msg.sender);
 
-        SingleSwap memory singleSwap = SingleSwap({
-            poolId: poolId,
-            kind: SwapKind.GIVEN_IN,
-            assetIn: tokenIn,
-            assetOut: tokenOut,
-            amount: actualBalance, // Use actual balance instead of max marker
-            userData: ""
-        });
-
-        FundManagement memory funds = FundManagement({
-            sender: msg.sender,  // Always the calling WalletBundler
-            fromInternalBalance: false,
-            recipient: payable(msg.sender),  // Always the calling WalletBundler
-            toInternalBalance: false
-        });
-
-        uint256 deadline = block.timestamp + 1200;
-
         callData = abi.encodeWithSignature(
-            "swap((bytes32,uint8,address,address,uint256,bytes),(address,bool,address,bool),uint256,uint256)",
-            singleSwap,
-            funds,
+            "swapSingleTokenExactIn(address,address,address,uint256,uint256,uint256,bool,bytes)",
+            pool,
+            tokenIn,
+            tokenOut,
+            actualBalance,
             minAmountOut,
-            deadline
+            DEADLINE,
+            false,
+            "" // empty userData
         );
 
-        return (VAULT, callData, actualBalance, tokenIn);
+        return (ROUTER, callData, actualBalance, tokenIn);
     }
 
     /**

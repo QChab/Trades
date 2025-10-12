@@ -18,7 +18,8 @@ contract WalletBundler {
     address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
-    address private constant BALANCER_VAULT = 0xBA12222222228d8Ba445958a75a0704d566BF2C8; // Balancer V3
+    address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3 Router
+    address private constant BALANCER_VAULT = 0xbA1333333333a1BA1108E8412f11850A5C319bA9; // Balancer V3 Vault
     uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
     uint256 private constant APPROVAL_THRESHOLD = 1e45; // Gas-optimized approval check threshold
 
@@ -209,8 +210,9 @@ contract WalletBundler {
             // ----------------------------------------------------------
             if (tokenIn != address(0)) {
                 if (target == UNIVERSAL_ROUTER) {
-                    // Uniswap uses Permit2: Only check Permit2→UniversalRouter (decrements)
-                    // Token→Permit2 with max uint256 never decrements, so no need to check
+                    // Uniswap V4: Uses Permit2 approval system (NOT signed permits)
+                    // Smart contracts can call approve() but cannot sign permit messages
+                    // Only check Permit2→UniversalRouter (decrements), Token→Permit2 with max uint256 never decrements
                     uint256 permit2Allowance;
                     address contractAddr = self;
                     assembly {
@@ -245,10 +247,11 @@ contract WalletBundler {
                             if iszero(success) { revert(0, 0) }
                         }
                     }
-                } else if (target == BALANCER_VAULT) {
-                    // Balancer: Check direct allowance
-                    uint256 directAllowance = _getAllowance(tokenIn, BALANCER_VAULT);
-                    if (directAllowance < APPROVAL_THRESHOLD) {
+                } else if (target == BALANCER_ROUTER) {
+                    // Balancer V3: Does NOT use Permit2 - requires direct VAULT approval
+                    // Router calls Vault.unlock() which transfers tokens directly from this contract
+                    uint256 vaultAllowance = _getAllowance(tokenIn, BALANCER_VAULT);
+                    if (vaultAllowance < APPROVAL_THRESHOLD) {
                         _approve(tokenIn, BALANCER_VAULT);
                     }
                 }
