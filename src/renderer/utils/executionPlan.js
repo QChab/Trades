@@ -1,10 +1,4 @@
 import { ethers } from 'ethers';
-import {
-  encodeBalancerBatchSwap,
-  encodeBalancerSingleSwap,
-  encodeUniswapExactInput,
-  encodeUniswapTrades
-} from './encoders.js'
 
 // Constants
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';

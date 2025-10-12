@@ -48,12 +48,24 @@
           <div class="graph-api-key-setting">
             <label>
               Graph API Key:
-              <input 
-                v-model="graphApiKey" 
-                type="text" 
+              <input
+                v-model="graphApiKey"
+                type="text"
                 class="api-key-input"
                 placeholder="Enter Graph API key"
                 @change="saveGraphApiKey"
+              >
+            </label>
+          </div>
+          <div class="oneinch-api-key-setting">
+            <label>
+              1inch API Key:
+              <input
+                v-model="oneInchApiKey"
+                type="text"
+                class="api-key-input"
+                placeholder="Enter 1inch API key"
+                @change="saveOneInchApiKey"
               >
             </label>
           </div>
@@ -294,6 +306,7 @@
       const priceThreshold = ref(1);
       const showSettings = ref(false);
       const graphApiKey = ref('d692082c59f956790647e889e75fa84d');
+      const oneInchApiKey = ref('HCUwzIf393pl8uCI5Uom89VT3Q0GxJE6');
       const privateRpc = ref('https://rpc.mevblocker.io');
 
       const maxGasPrice = ref(3);
@@ -365,7 +378,19 @@
           graphApiKey: graphApiKey.value,
         })));
       }
-      
+
+      // Save 1inch API key
+      const saveOneInchApiKey = () => {
+        currentSettings.value = ({
+          ...currentSettings.value,
+          oneInchApiKey: oneInchApiKey.value,
+        })
+        window.electronAPI.saveSettings(JSON.parse(JSON.stringify({
+          ...currentSettings.value,
+          oneInchApiKey: oneInchApiKey.value,
+        })));
+      }
+
       // Save Private RPC
       const savePrivateRpc = () => {
         currentSettings.value = ({
@@ -642,6 +667,8 @@
           priceThreshold.value = settings.priceThreshold;
         if (settings.graphApiKey)
           graphApiKey.value = settings.graphApiKey;
+        if (settings.oneInchApiKey)
+          oneInchApiKey.value = settings.oneInchApiKey;
         if (settings.privateRpc)
           privateRpc.value = settings.privateRpc;
       
@@ -748,6 +775,8 @@
         isInitialBalanceFetchDone,
         graphApiKey,
         saveGraphApiKey,
+        oneInchApiKey,
+        saveOneInchApiKey,
         privateRpc,
         savePrivateRpc,
       }
@@ -867,19 +896,22 @@
   }
   
   .graph-api-key-setting,
+  .oneinch-api-key-setting,
   .private-rpc-setting {
     margin-top: 0;
   }
-  
+
   .graph-api-key-setting label,
+  .oneinch-api-key-setting label,
   .private-rpc-setting label {
     font-size: 12px;
     display: flex;
     align-items: center;
     gap: 3px;
   }
-  
+
   .graph-api-key-setting input.api-key-input,
+  .oneinch-api-key-setting input.api-key-input,
   .private-rpc-setting input.api-key-input {
     width: 250px;
     padding: 4px 8px;

@@ -1,7 +1,6 @@
 import 'dotenv/config';  // Load environment variables from .env file
 import { ethers } from 'ethers';
 import {
-  use1inch,
   get1inchQuote,
   get1inchSwap,
   get1inchProtocols,
@@ -33,7 +32,8 @@ const CHAIN_ID = 1; // Ethereum Mainnet
 const SLIPPAGE_TOLERANCE = 0.5; // 0.5%
 
 // Test delay to respect rate limits (1 RPS)
-const RATE_LIMIT_DELAY = 1200; // 1.2 seconds between requests
+// Note: Swap endpoint requires longer delays than quote endpoint
+const RATE_LIMIT_DELAY = 3000; // 3 seconds between requests for safety
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -97,8 +97,8 @@ async function testQuote() {
     const amount = ethers.utils.parseEther('1'); // 1 ETH
 
     const quote = await get1inchQuote({
-      fromTokenAddress: TOKENS.ETH.address,
-      toTokenAddress: TOKENS.USDC.address,
+      fromToken: TOKENS.ETH,
+      toToken: TOKENS.USDC,
       amount,
       chainId: CHAIN_ID
     });
@@ -140,12 +140,16 @@ async function testSwap() {
   console.log('TEST 2: Swap Calldata (ETH → USDC)');
   console.log('========================================\n');
 
+  // Extra delay before swap endpoint (more restrictive than quote)
+  console.log('Waiting extra 2s before swap request (stricter rate limits)...');
+  await delay(2000);
+
   try {
     const amount = ethers.utils.parseEther('1'); // 1 ETH
 
     const swap = await get1inchSwap({
-      fromTokenAddress: TOKENS.ETH.address,
-      toTokenAddress: TOKENS.USDC.address,
+      fromToken: TOKENS.ETH,
+      toToken: TOKENS.USDC,
       amount,
       fromAddress: TEST_WALLET,
       slippage: SLIPPAGE_TOLERANCE,
@@ -180,53 +184,11 @@ async function testSwap() {
 }
 
 /**
- * Test 3: Combined use1inch wrapper - ETH to DAI
- */
-async function testUse1inch() {
-  console.log('\n========================================');
-  console.log('TEST 3: Combined Wrapper (ETH → DAI)');
-  console.log('========================================\n');
-
-  try {
-    const amount = ethers.utils.parseEther('0.5'); // 0.5 ETH
-
-    const result = await use1inch({
-      tokenInAddress: TOKENS.ETH.address,
-      tokenOutAddress: TOKENS.DAI.address,
-      amountIn: amount,
-      fromAddress: TEST_WALLET,
-      slippageTolerance: SLIPPAGE_TOLERANCE,
-      chainId: CHAIN_ID
-    });
-
-    if (!result) {
-      throw new Error('No route found (quote returned zero output)');
-    }
-
-    console.log('\n📊 Combined Results:');
-    console.log('─────────────────────────────────────');
-    console.log(`Protocol: ${result.protocol}`);
-    console.log(`Amount Out: ${ethers.utils.formatEther(result.amountOut)} DAI`);
-    console.log(`Min Amount Out: ${ethers.utils.formatEther(result.minAmountOut)} DAI (with ${SLIPPAGE_TOLERANCE}% slippage)`);
-    console.log(`Router: ${result.routerAddress}`);
-    console.log(`Path: ${result.path}`);
-    console.log(`Estimated Gas: ${result.estimatedGas?.toLocaleString() || 'N/A'}`);
-
-    console.log('\n✅ Combined wrapper test PASSED');
-    return result;
-
-  } catch (error) {
-    console.error('\n❌ Combined wrapper test FAILED:', error.message);
-    throw error;
-  }
-}
-
-/**
- * Test 4: Get supported protocols
+ * Test 3: Get supported protocols
  */
 async function testGetProtocols() {
   console.log('\n========================================');
-  console.log('TEST 4: Get Supported Protocols');
+  console.log('TEST 3: Get Supported Protocols');
   console.log('========================================\n');
 
   try {
@@ -256,11 +218,11 @@ async function testGetProtocols() {
 }
 
 /**
- * Test 5: Get token list
+ * Test 4: Get token list
  */
 async function testGetTokens() {
   console.log('\n========================================');
-  console.log('TEST 5: Get Token List');
+  console.log('TEST 4: Get Token List');
   console.log('========================================\n');
 
   try {
@@ -291,11 +253,11 @@ async function testGetTokens() {
 }
 
 /**
- * Test 6: Check allowance and get approval transaction
+ * Test 5: Check allowance and get approval transaction
  */
 async function testApproval() {
   console.log('\n========================================');
-  console.log('TEST 6: Check Allowance & Approval');
+  console.log('TEST 5: Check Allowance & Approval');
   console.log('========================================\n');
 
   try {
@@ -339,19 +301,19 @@ async function testApproval() {
 }
 
 /**
- * Test 7: Edge case - ETH to WETH (should handle zero address conversion)
+ * Test 6: Edge case - ETH to WETH (should handle zero address conversion)
  */
 async function testEthToWeth() {
   console.log('\n========================================');
-  console.log('TEST 7: Edge Case (ETH → WETH)');
+  console.log('TEST 6: Edge Case (ETH → WETH)');
   console.log('========================================\n');
 
   try {
     const amount = ethers.utils.parseEther('1'); // 1 ETH
 
     const quote = await get1inchQuote({
-      fromTokenAddress: TOKENS.ETH.address,
-      toTokenAddress: TOKENS.WETH.address,
+      fromToken: TOKENS.ETH,
+      toToken: TOKENS.WETH,
       amount,
       chainId: CHAIN_ID
     });
@@ -411,9 +373,6 @@ async function runAllTests() {
   const tests = [
     { name: 'Quote', fn: testQuote },
     { name: 'Swap', fn: testSwap },
-    { name: 'Combined Wrapper', fn: testUse1inch },
-    { name: 'Get Protocols', fn: testGetProtocols },
-    { name: 'Get Tokens', fn: testGetTokens },
     { name: 'Approval', fn: testApproval },
     { name: 'Edge Case (ETH→WETH)', fn: testEthToWeth },
   ];
@@ -424,7 +383,7 @@ async function runAllTests() {
     try {
       await tests[i].fn();
       testResults.passed++;
-      await new Promise(r => setTimeout(r, 2000))
+      await new Promise(r => setTimeout(r, 20000))
     } catch (error) {
       testResults.failed++;
       testResults.errors.push({

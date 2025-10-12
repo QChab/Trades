@@ -1,0 +1,34 @@
+{
+  "network": "mainnet",
+  "timestamp": "2025-10-12T00:45:00.782Z",
+  "deployer": "0x297Ed7F67f77ff6be9bf6341f8FB31cD10f4d3Ea",
+  "gasPrice": {
+    "baseFee": "0.327098773",
+    "priorityFee": "0.00000001",
+    "maxFee": "0.654197556"
+  },
+  "contracts": {
+    "BundlerRegistry": {
+      "address": "0x0e62874e8879b4762000b9F2A66aCBf23EEB2626",
+      "gasUsed": "114789",
+      "gasCost": "0.00003602018670564"
+    },
+    "UniswapEncoder": {
+      "address": "0x0C09a7a07606E1eD8FDE25c38035F886aA82e499",
+      "gasUsed": "373229",
+      "gasCost": "0.000116439781503111"
+    },
+    "BalancerEncoder": {
+      "address": "0xd9200a8aE63531C847cE18517aF98BD666A48aE1",
+      "gasUsed": "357064",
+      "gasCost": "0.000115948665023568"
+    },
+    "WalletBundler": {
+      "address": "0x987fEa58BcF4Af945836dEE2405e0Aba1814b3d0",
+      "gasUsed": "836403",
+      "gasCost": "0.000261952856506086"
+    }
+  },
+  "totalGasUsed": "1681485",
+  "totalGasCost": "0.000530361489738405"
+}

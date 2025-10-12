@@ -266,7 +266,7 @@
                 @click="deployBundler"
                 :disabled="isDeploying"
               >
-                {{ isDeploying ? 'Deploying...' : 'Deploy' }}
+                {{ isDeploying ? 'Deploying...' : `Deploy ($${deploymentCostUsd})` }}
               </button>
               <p v-else>
                 {{ contractAddress?.[senderDetails?.address] }}
@@ -728,6 +728,21 @@ export default {
 
     const computedEthPrice = computed(() => {
       return props.ethPrice || 0;
+    });
+
+    // Deployment cost calculation: 844208 gas * gasPrice * ethPrice
+    const deploymentCostUsd = computed(() => {
+      const DEPLOYMENT_GAS = 844208;
+      const gasPriceWei = props.gasPrice || 0;
+      const ethPriceUsd = props.ethPrice || 0;
+
+      // Calculate cost in ETH: (gas * gasPrice) / 1e18
+      const costInEth = (DEPLOYMENT_GAS * gasPriceWei) / 1e18;
+
+      // Calculate cost in USD
+      const costInUsd = costInEth * ethPriceUsd;
+
+      return costInUsd.toFixed(2);
     });
 
     const tokensInRow = reactive([
@@ -5029,6 +5044,7 @@ export default {
       balanceString,
       spaceThousands: spaceThousandsFn,
       effectivePrice,
+      deploymentCostUsd,
 
       // methods
       switchTokens,

@@ -26,6 +26,10 @@ import { ethers } from 'ethers';
 const ONEINCH_API_BASE_URL = 'https://api.1inch.dev/swap/v6.0';
 const DEFAULT_CHAIN_ID = 1; // Ethereum Mainnet
 
+// Global rate limiting for free tier (1 RPS across ALL endpoints)
+let lastRequestTime = 0;
+const MIN_REQUEST_INTERVAL = 1100; // 1.1 seconds between ANY requests
+
 // Special token addresses
 const ETH_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'; // 1inch uses this for ETH
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
@@ -115,6 +119,18 @@ function normalizeTokenAddress(address) {
  * Handles rate limiting and error responses
  */
 async function fetch1inchAPI(endpoint, params = {}) {
+  // Enforce global rate limit (1 RPS across ALL endpoints for free tier)
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastRequestTime;
+
+  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+    const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
+    console.log(`⏳ Rate limit: waiting ${waitTime}ms before request...`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+
+  lastRequestTime = Date.now();
+
   const apiKey = getApiKey();
 
   // Build query string
@@ -141,7 +157,21 @@ async function fetch1inchAPI(endpoint, params = {}) {
       let errorMessage;
       try {
         const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.description || errorJson.error || errorText;
+        errorMessage = errorJson.description || errorJson.error || errorJson.message || errorText;
+
+        // Log detailed error for debugging
+        console.error(`1inch API Error Details:`, {
+          status: response.status,
+          endpoint: url,
+          error: errorJson
+        });
+
+        // Check for specific 403 causes
+        if (response.status === 403) {
+          if (errorJson.description?.includes('tier') || errorJson.description?.includes('plan')) {
+            errorMessage = `${errorMessage} (API tier may not support this endpoint - upgrade at portal.1inch.dev)`;
+          }
+        }
       } catch (e) {
         errorMessage = errorText;
       }
@@ -186,8 +216,8 @@ export async function get1inchQuote({
   protocols = null,
   gasPrice = null,
   complexityLevel = 2,
-  parts = 10,
-  mainRouteParts = 10,
+  parts = 30,
+  mainRouteParts = 30,
   gasLimit = null
 }) {
   try {
@@ -206,15 +236,10 @@ export async function get1inchQuote({
       src,
       dst,
       amount: amountStr,
-      includeTokensInfo: true,
-      includeProtocols: true,
       includeGas: true
     };
 
     // Add optional parameters
-    if (protocols && protocols.length > 0) {
-      params.protocols = protocols.join(',');
-    }
     if (gasPrice) {
       params.gasPrice = gasPrice.toString();
     }
@@ -249,9 +274,7 @@ export async function get1inchQuote({
       },
       fromTokenAmount: ethers.BigNumber.from(result.fromTokenAmount || amountStr),
       toTokenAmount: ethers.BigNumber.from(result.toTokenAmount || result.dstAmount || '0'),
-      protocols: result.protocols || [],
       estimatedGas: result.gas ? parseInt(result.gas) : null,
-      // Additional metadata
       raw: result // Keep raw response for debugging
     };
 
@@ -261,7 +284,6 @@ export async function get1inchQuote({
     );
 
     console.log(`✅ 1inch quote: ${outputFormatted} ${toToken.symbol}`);
-    console.log(`   Protocols: ${quote.protocols.length} used`);
     if (quote.estimatedGas) {
       console.log(`   Estimated gas: ${quote.estimatedGas.toLocaleString()}`);
     }
@@ -310,155 +332,170 @@ export async function get1inchSwap({
   protocols = null,
   gasPrice = null,
   complexityLevel = 2,
-  parts = 10,
-  mainRouteParts = 10,
+  parts = 30,
+  mainRouteParts = 30,
   disableEstimate = false,
   allowPartialFill = false,
   receiver = null
 }) {
-  try {
-    console.log(`🔄 Requesting 1inch swap calldata: ${fromToken.symbol} -> ${toToken.symbol}`);
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY = 5000; // 2 seconds initial delay
 
-    // Normalize addresses
-    const src = normalizeTokenAddress(fromToken.address);
-    const dst = normalizeTokenAddress(toToken.address);
-
-    // Convert amount to string if it's a BigNumber
-    const amountStr = ethers.BigNumber.isBigNumber(amount) ? amount.toString() : amount;
-
-    // Validate fromAddress
-    if (!ethers.utils.isAddress(fromAddress)) {
-      throw new Error(`Invalid fromAddress: ${fromAddress}`);
-    }
-
-    const endpoint = `${ONEINCH_API_BASE_URL}/${chainId}/swap`;
-
-    const params = {
-      src,
-      dst,
-      amount: amountStr,
-      from: fromAddress,
-      slippage: slippage.toString(),
-      includeTokensInfo: true,
-      includeProtocols: true,
-      includeGas: true
-    };
-
-    // Add optional parameters
-    if (receiver) {
-      if (!ethers.utils.isAddress(receiver)) {
-        throw new Error(`Invalid receiver address: ${receiver}`);
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        console.log(`🔄 Retry attempt ${attempt + 1}/${MAX_RETRIES} for swap calldata...`);
+      } else {
+        console.log(`🔄 Requesting 1inch swap calldata: ${fromToken.symbol} -> ${toToken.symbol}`);
       }
-      params.receiver = receiver;
-    }
 
-    if (referrer) {
-      if (!ethers.utils.isAddress(referrer)) {
-        throw new Error(`Invalid referrer address: ${referrer}`);
+      // Normalize addresses
+      const src = normalizeTokenAddress(fromToken.address);
+      const dst = normalizeTokenAddress(toToken.address);
+
+      // Convert amount to string if it's a BigNumber
+      const amountStr = ethers.BigNumber.isBigNumber(amount) ? amount.toString() : amount;
+
+      // Validate fromAddress
+      if (!ethers.utils.isAddress(fromAddress)) {
+        throw new Error(`Invalid fromAddress: ${fromAddress}`);
       }
-      params.referrer = referrer;
-    }
 
-    if (fee !== null) {
-      if (fee < 0 || fee > 3) {
-        throw new Error('Fee must be between 0 and 3%');
+      const endpoint = `${ONEINCH_API_BASE_URL}/${chainId}/swap`;
+
+      const params = {
+        src,
+        dst,
+        amount: amountStr,
+        from: fromAddress,
+        slippage: slippage.toString(),
+        includeGas: true
+      };
+
+      // Add optional parameters
+      if (receiver) {
+        if (!ethers.utils.isAddress(receiver)) {
+          throw new Error(`Invalid receiver address: ${receiver}`);
+        }
+        params.receiver = receiver;
       }
-      params.fee = fee.toString();
+
+      if (referrer) {
+        if (!ethers.utils.isAddress(referrer)) {
+          throw new Error(`Invalid referrer address: ${referrer}`);
+        }
+        params.referrer = referrer;
+      }
+
+      if (fee !== null) {
+        if (fee < 0 || fee > 3) {
+          throw new Error('Fee must be between 0 and 3%');
+        }
+        params.fee = fee.toString();
+      }
+
+      if (gasPrice) {
+        params.gasPrice = gasPrice.toString();
+      }
+
+      if (complexityLevel !== undefined) {
+        params.complexityLevel = complexityLevel;
+      }
+
+      if (parts !== undefined) {
+        params.parts = parts;
+      }
+
+      if (mainRouteParts !== undefined) {
+        params.mainRouteParts = mainRouteParts;
+      }
+
+      if (disableEstimate) {
+        params.disableEstimate = 'true';
+      }
+
+      if (allowPartialFill) {
+        params.allowPartialFill = 'true';
+      }
+
+      const result = await fetch1inchAPI(endpoint, params);
+
+      // Parse and normalize the response - use provided token objects
+      const swap = {
+        fromToken: {
+          address: fromToken.address,
+          symbol: fromToken.symbol,
+          decimals: fromToken.decimals,
+          name: fromToken.name || fromToken.symbol
+        },
+        toToken: {
+          address: toToken.address,
+          symbol: toToken.symbol,
+          decimals: toToken.decimals,
+          name: toToken.name || toToken.symbol
+        },
+        fromTokenAmount: ethers.BigNumber.from(result.fromTokenAmount || amountStr),
+        toTokenAmount: ethers.BigNumber.from(result.toTokenAmount || result.dstAmount || '0'),
+
+        // Transaction data
+        tx: result.tx ? {
+          from: result.tx.from,
+          to: result.tx.to,
+          data: result.tx.data,
+          value: result.tx.value || '0',
+          gasPrice: result.tx.gasPrice,
+          gas: result.tx.gas
+        } : null,
+
+        // Router address (usually the 1inch aggregation router)
+        routerAddress: result.tx?.to,
+
+        // Calldata for execution
+        calldata: result.tx?.data,
+
+        // Value to send (for ETH swaps)
+        value: ethers.BigNumber.from(result.tx?.value || '0'),
+
+        // Gas estimation
+        estimatedGas: result.tx?.gas ? parseInt(result.tx.gas) : null,
+
+        // Additional metadata
+        raw: result // Keep raw response for debugging
+      };
+
+      const outputFormatted = ethers.utils.formatUnits(
+        swap.toTokenAmount,
+        swap.toToken.decimals
+      );
+
+      console.log(`✅ 1inch swap calldata generated`);
+      console.log(`   Expected output: ${outputFormatted} ${swap.toToken.symbol}`);
+      console.log(`   Router: ${swap.routerAddress}`);
+      if (swap.estimatedGas) {
+        console.log(`   Estimated gas: ${swap.estimatedGas.toLocaleString()}`);
+      }
+
+      return swap;
+
+    } catch (error) {
+      // Check if it's a 403 error and we have retries left
+      const is403Error = error.message.includes('403') || error.message.includes('Forbidden');
+
+      if (is403Error && attempt < MAX_RETRIES - 1) {
+        const waitTime = RETRY_DELAY * Math.pow(2, attempt); // Exponential backoff
+        console.log(`⚠️ 403 Forbidden error. Waiting ${waitTime / 1000}s before retry...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue; // Retry
+      }
+
+      // If it's the last attempt or not a 403 error, throw
+      console.error('❌ Error fetching 1inch swap:', error.message);
+      throw error;
     }
-
-    if (protocols && protocols.length > 0) {
-      params.protocols = protocols.join(',');
-    }
-
-    if (gasPrice) {
-      params.gasPrice = gasPrice.toString();
-    }
-
-    if (complexityLevel !== undefined) {
-      params.complexityLevel = complexityLevel;
-    }
-
-    if (parts !== undefined) {
-      params.parts = parts;
-    }
-
-    if (mainRouteParts !== undefined) {
-      params.mainRouteParts = mainRouteParts;
-    }
-
-    if (disableEstimate) {
-      params.disableEstimate = 'true';
-    }
-
-    if (allowPartialFill) {
-      params.allowPartialFill = 'true';
-    }
-
-    const result = await fetch1inchAPI(endpoint, params);
-
-    // Parse and normalize the response
-    const swap = {
-      fromToken: {
-        address: result.fromToken?.address || fromTokenAddress,
-        symbol: result.fromToken?.symbol || 'UNKNOWN',
-        decimals: result.fromToken?.decimals || 18,
-        name: result.fromToken?.name || 'Unknown Token'
-      },
-      toToken: {
-        address: result.toToken?.address || toTokenAddress,
-        symbol: result.toToken?.symbol || 'UNKNOWN',
-        decimals: result.toToken?.decimals || 18,
-        name: result.toToken?.name || 'Unknown Token'
-      },
-      fromTokenAmount: ethers.BigNumber.from(result.fromTokenAmount || amountStr),
-      toTokenAmount: ethers.BigNumber.from(result.toTokenAmount || result.dstAmount || '0'),
-      protocols: result.protocols || [],
-
-      // Transaction data
-      tx: result.tx ? {
-        from: result.tx.from,
-        to: result.tx.to,
-        data: result.tx.data,
-        value: result.tx.value || '0',
-        gasPrice: result.tx.gasPrice,
-        gas: result.tx.gas
-      } : null,
-
-      // Router address (usually the 1inch aggregation router)
-      routerAddress: result.tx?.to,
-
-      // Calldata for execution
-      calldata: result.tx?.data,
-
-      // Value to send (for ETH swaps)
-      value: ethers.BigNumber.from(result.tx?.value || '0'),
-
-      // Gas estimation
-      estimatedGas: result.tx?.gas ? parseInt(result.tx.gas) : null,
-
-      // Additional metadata
-      raw: result // Keep raw response for debugging
-    };
-
-    const outputFormatted = ethers.utils.formatUnits(
-      swap.toTokenAmount,
-      swap.toToken.decimals
-    );
-
-    console.log(`✅ 1inch swap calldata generated`);
-    console.log(`   Expected output: ${outputFormatted} ${swap.toToken.symbol}`);
-    console.log(`   Router: ${swap.routerAddress}`);
-    console.log(`   Protocols: ${swap.protocols.length} used`);
-    if (swap.estimatedGas) {
-      console.log(`   Estimated gas: ${swap.estimatedGas.toLocaleString()}`);
-    }
-
-    return swap;
-
-  } catch (error) {
-    console.error('❌ Error fetching 1inch swap:', error.message);
-    throw error;
   }
+
+  // Should never reach here, but just in case
+  throw new Error('Max retries exceeded for 1inch swap');
 }
 
 /**
@@ -586,83 +623,4 @@ export async function get1inchApprovalTx(tokenAddress, amount = null, chainId = 
   }
 }
 
-/**
- * Convenience wrapper that combines quote and swap for easy integration
- * This matches the pattern used by useUniswap and useBalancerV3
- *
- * @param {Object} params - Parameters
- * @param {string} params.tokenInAddress - Source token address
- * @param {string} params.tokenOutAddress - Destination token address
- * @param {ethers.BigNumber} params.amountIn - Input amount
- * @param {string} params.fromAddress - Wallet address
- * @param {number} params.slippageTolerance - Slippage in percentage (default 0.5%)
- * @param {number} params.chainId - Chain ID (default 1)
- * @returns {Promise<Object>} Combined quote and swap data
- */
-export async function use1inch({
-  tokenInAddress,
-  tokenOutAddress,
-  amountIn,
-  fromAddress,
-  slippageTolerance = 0.5,
-  chainId = DEFAULT_CHAIN_ID
-}) {
-  try {
-    console.log(`🔍 1inch routing: ${tokenInAddress} -> ${tokenOutAddress}`);
-
-    // Get quote first (faster, no gas estimation)
-    const quote = await get1inchQuote({
-      fromTokenAddress: tokenInAddress,
-      toTokenAddress: tokenOutAddress,
-      amount: amountIn,
-      chainId
-    });
-
-    // If quote is successful and output is reasonable, get swap data
-    if (quote.toTokenAmount.gt(0)) {
-      const swap = await get1inchSwap({
-        fromTokenAddress: tokenInAddress,
-        toTokenAddress: tokenOutAddress,
-        amount: amountIn,
-        fromAddress,
-        slippage: slippageTolerance,
-        chainId,
-        disableEstimate: true  // Disable gas estimation to avoid balance checks
-      });
-
-      return {
-        protocol: '1inch',
-        amountOut: swap.toTokenAmount.toString(),
-        minAmountOut: calculateMinAmountOut(swap.toTokenAmount, slippageTolerance).toString(),
-        quote: quote,
-        swap: swap,
-        calldata: swap.calldata,
-        routerAddress: swap.routerAddress,
-        value: swap.value.toString(),
-        estimatedGas: swap.estimatedGas,
-        protocols: swap.protocols,
-        // For compatibility with other DEX integrations
-        path: `1inch aggregated (${swap.protocols.length} protocols)`,
-        priceImpact: '0', // 1inch doesn't provide this directly
-        fees: '0' // 1inch doesn't charge platform fees
-      };
-    }
-
-    return null;
-
-  } catch (error) {
-    console.error('❌ Error in use1inch:', error.message);
-    return null;
-  }
-}
-
-/**
- * Calculate minimum output amount with slippage tolerance
- */
-function calculateMinAmountOut(amountOut, slippageTolerance) {
-  const slippageFactor = Math.floor((100 - slippageTolerance) * 100);
-  return amountOut.mul(slippageFactor).div(10000);
-}
-
-// Export default for convenience
-export default use1inch;
+// No default export - use named exports get1inchQuote and get1inchSwap directly
