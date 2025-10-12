@@ -4,6 +4,8 @@ import { ethers } from 'ethers';
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
+const balancerEncoderAddress = '0x0C09a7a07606E1eD8FDE25c38035F886aA82e499';
+const uniswapEncoderAddress = '0xd9200a8aE63531C847cE18517aF98BD666A48aE1';
 
 /**
  * Create execution plan for the selected route
@@ -149,8 +151,6 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
  * @param {Object} tokenIn - Input token object
  * @param {Object} tokenOut - Output token object
  * @param {string} walletBundlerAddress - Address of the WalletBundler contract
- * @param {string} balancerEncoderAddress - Address of BalancerEncoder contract
- * @param {string} uniswapEncoderAddress - Address of UniswapEncoder contract
  * @param {number} slippagePercent - Slippage tolerance in percent (default 0.5%)
  * @returns {Object} Arguments for the WalletBundler encodeAndExecute function
  */
@@ -158,8 +158,6 @@ export function createEncoderExecutionPlan(
   executionPlan,
   tokenIn,
   tokenOut,
-  balancerEncoderAddress,
-  uniswapEncoderAddress,
   slippagePercent = 0.5
 ) {
   const encoderTargets = [];

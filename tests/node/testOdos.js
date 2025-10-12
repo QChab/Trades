@@ -1,39 +1,37 @@
 import 'dotenv/config';  // Load environment variables from .env file
 import { ethers } from 'ethers';
 import {
-  get1inchQuote,
-  get1inchSwap,
-  get1inchProtocols,
-  get1inchTokens,
-  check1inchAllowance,
-  get1inchApprovalTx
-} from '../../src/renderer/utils/use1inch.js';
+  getOdosQuote,
+  getOdosSwap,
+  getOdosAssemble,
+  getOdosProtocols,
+  checkOdosAllowance,
+  getOdosApprovalTx
+} from '../../src/renderer/utils/useOdos.js';
 
 /**
- * Test 1inch API v6.0 Integration
+ * Test Odos API Integration
  *
- * This test suite validates the 1inch aggregator integration including:
+ * This test suite validates the Odos aggregator integration including:
  * - Quote fetching for price discovery
- * - Swap calldata generation
- * - Protocol and token listing
+ * - Swap calldata generation (quote + assemble)
+ * - Protocol listing (automatic)
  * - Approval checking and transaction generation
  *
- * IMPORTANT: You need a valid 1inch API key to run these tests
- * Get your API key from: https://portal.1inch.dev
- * Set it as environment variable: export ONEINCH_API_KEY="your-api-key"
+ * IMPORTANT: NO API KEY REQUIRED!
+ * Odos uses IP-based rate limiting: 600 requests per 5 minutes
  *
  * Rate Limits:
- * - Basic tier: 1 request per second
- * - Tests include delays to respect rate limits
+ * - 600 requests per 5 minutes per IP (~2 RPS)
+ * - Much better than 1inch's 1 RPS limit!
  */
 
 // Test configuration
 const CHAIN_ID = 1; // Ethereum Mainnet
 const SLIPPAGE_TOLERANCE = 0.5; // 0.5%
 
-// Test delay to respect rate limits (1 RPS)
-// Note: Swap endpoint requires longer delays than quote endpoint
-const RATE_LIMIT_DELAY = 3000; // 3 seconds between requests for safety
+// Test delay to respect rate limits
+const RATE_LIMIT_DELAY = 600; // 0.6 seconds between requests (safe margin)
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -41,7 +39,7 @@ function delay(ms) {
 // Common test tokens
 const TOKENS = {
   ETH: {
-    address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE', // 1inch ETH address
+    address: '0x0000000000000000000000000000000000000000', // Odos uses zero address for ETH
     symbol: 'ETH',
     decimals: 18
   },
@@ -96,19 +94,25 @@ async function testQuote() {
   try {
     const amount = ethers.utils.parseEther('1'); // 1 ETH
 
-    const quote = await get1inchQuote({
+    const quote = await getOdosQuote({
       fromToken: TOKENS.ETH,
       toToken: TOKENS.USDC,
       amount,
-      chainId: CHAIN_ID
+      userAddr: TEST_WALLET,
+      chainId: CHAIN_ID,
+      slippageLimitPercent: SLIPPAGE_TOLERANCE
     });
 
     console.log('\n📊 Quote Results:');
     console.log('─────────────────────────────────────');
     console.log(`From: ${ethers.utils.formatEther(quote.fromTokenAmount)} ${quote.fromToken.symbol}`);
     console.log(`To: ${ethers.utils.formatUnits(quote.toTokenAmount, quote.toToken.decimals)} ${quote.toToken.symbol}`);
+    console.log(`PathId: ${quote.pathId}`);
     if (quote.estimatedGas) {
       console.log(`Estimated Gas: ${quote.estimatedGas.toLocaleString()}`);
+    }
+    if (quote.priceImpact !== undefined) {
+      console.log(`Price Impact: ${quote.priceImpact}%`);
     }
 
     console.log('\n✅ Quote test PASSED');
@@ -121,28 +125,67 @@ async function testQuote() {
 }
 
 /**
- * Test 2: Swap Function - Generate calldata for ETH to USDC (no approval needed)
+ * Test 2: Assemble Function - Generate transaction from pathId
+ */
+async function testAssemble(pathId) {
+  console.log('\n========================================');
+  console.log('TEST 2: Assemble Transaction');
+  console.log('========================================\n');
+
+  try {
+    const assembled = await getOdosAssemble({
+      pathId,
+      userAddr: TEST_WALLET,
+      simulate: true // Enable simulation for gas estimate
+    });
+
+    console.log('\n📊 Assembled Results:');
+    console.log('─────────────────────────────────────');
+    console.log(`Router: ${assembled.routerAddress}`);
+    if (assembled.estimatedGas) {
+      console.log(`Estimated Gas: ${assembled.estimatedGas.toLocaleString()}`);
+    }
+
+    // Transaction details
+    console.log('\n📝 Transaction Data:');
+    console.log(`   To: ${assembled.tx.to}`);
+    console.log(`   Value: ${ethers.utils.formatEther(assembled.value)} ETH`);
+    console.log(`   Calldata: ${assembled.calldata.substring(0, 66)}...`);
+    console.log(`   Calldata length: ${assembled.calldata.length} characters`);
+
+    if (assembled.simulation) {
+      console.log('\n🔬 Simulation Results:');
+      console.log(`   Gas Estimate: ${assembled.simulation.gasEstimate || 'N/A'}`);
+    }
+
+    console.log('\n✅ Assemble test PASSED');
+    return assembled;
+
+  } catch (error) {
+    console.error('\n❌ Assemble test FAILED:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Test 3: Swap Function - Combined quote + assemble (ETH to USDC, no approval needed)
  */
 async function testSwap() {
   console.log('\n========================================');
-  console.log('TEST 2: Swap Calldata (ETH → USDC)');
+  console.log('TEST 3: Swap Function (ETH → USDC)');
   console.log('========================================\n');
-
-  // Extra delay before swap endpoint (more restrictive than quote)
-  console.log('Waiting extra 2s before swap request (stricter rate limits)...');
-  await delay(2000);
 
   try {
     const amount = ethers.utils.parseEther('1'); // 1 ETH
 
-    const swap = await get1inchSwap({
+    const swap = await getOdosSwap({
       fromToken: TOKENS.ETH,
       toToken: TOKENS.USDC,
       amount,
       fromAddress: TEST_WALLET,
       slippage: SLIPPAGE_TOLERANCE,
       chainId: CHAIN_ID,
-      disableEstimate: true  // Skip balance check for test wallet
+      simulate: true
     });
 
     console.log('\n📊 Swap Results:');
@@ -150,8 +193,12 @@ async function testSwap() {
     console.log(`From: ${ethers.utils.formatEther(swap.fromTokenAmount)} ${swap.fromToken.symbol}`);
     console.log(`To: ${ethers.utils.formatUnits(swap.toTokenAmount, swap.toToken.decimals)} ${swap.toToken.symbol}`);
     console.log(`Router: ${swap.routerAddress}`);
+    console.log(`PathId: ${swap.pathId}`);
     if (swap.estimatedGas) {
       console.log(`Estimated Gas: ${swap.estimatedGas.toLocaleString()}`);
+    }
+    if (swap.priceImpact !== undefined) {
+      console.log(`Price Impact: ${swap.priceImpact}%`);
     }
 
     // Transaction details
@@ -171,29 +218,27 @@ async function testSwap() {
 }
 
 /**
- * Test 3: Get supported protocols
+ * Test 4: Get supported protocols (placeholder - Odos auto-selects)
  */
 async function testGetProtocols() {
   console.log('\n========================================');
-  console.log('TEST 3: Get Supported Protocols');
+  console.log('TEST 4: Get Supported Protocols');
   console.log('========================================\n');
 
   try {
-    const protocols = await get1inchProtocols(CHAIN_ID);
+    const protocols = await getOdosProtocols(CHAIN_ID);
 
-    console.log('\n📋 Supported Protocols:');
+    console.log('\n📋 Protocol Selection:');
     console.log('─────────────────────────────────────');
-    console.log(`Total: ${protocols.length} protocols`);
+    console.log('Odos automatically selects from 100+ liquidity sources');
+    console.log('No manual protocol selection needed!');
 
-    // Show first 20 protocols
-    console.log('\nSample Protocols:');
-    protocols.slice(0, 20).forEach((protocol, idx) => {
-      console.log(`   ${idx + 1}. ${protocol.id || protocol.name || protocol}`);
+    protocols.forEach((protocol, idx) => {
+      console.log(`\n${idx + 1}. ${protocol.name || protocol.id}`);
+      if (protocol.description) {
+        console.log(`   ${protocol.description}`);
+      }
     });
-
-    if (protocols.length > 20) {
-      console.log(`   ... and ${protocols.length - 20} more`);
-    }
 
     console.log('\n✅ Get protocols test PASSED');
     return protocols;
@@ -205,81 +250,90 @@ async function testGetProtocols() {
 }
 
 /**
- * Test 4: Get token list
+ * Test 5: Token to Token swap (AAVE → USDC)
  */
-async function testGetTokens() {
+async function testTokenToToken() {
   console.log('\n========================================');
-  console.log('TEST 4: Get Token List');
+  console.log('TEST 5: Token to Token (AAVE → USDC)');
   console.log('========================================\n');
 
   try {
-    const tokens = await get1inchTokens(CHAIN_ID);
-    const tokenArray = Object.values(tokens);
+    const amount = ethers.utils.parseUnits('100', TOKENS.AAVE.decimals); // 100 AAVE
 
-    console.log('\n📋 Token List:');
-    console.log('─────────────────────────────────────');
-    console.log(`Total: ${tokenArray.length} tokens`);
-
-    // Show first 10 tokens
-    console.log('\nSample Tokens:');
-    tokenArray.slice(0, 10).forEach((token, idx) => {
-      console.log(`   ${idx + 1}. ${token.symbol} (${token.name}) - ${token.address}`);
+    const swap = await getOdosSwap({
+      fromToken: TOKENS.AAVE,
+      toToken: TOKENS.USDC,
+      amount,
+      fromAddress: TEST_WALLET,
+      slippage: SLIPPAGE_TOLERANCE,
+      chainId: CHAIN_ID,
+      simulate: true
     });
 
-    if (tokenArray.length > 10) {
-      console.log(`   ... and ${tokenArray.length - 10} more`);
+    console.log('\n📊 Token Swap Results:');
+    console.log('─────────────────────────────────────');
+    console.log(`From: ${ethers.utils.formatUnits(swap.fromTokenAmount, swap.fromToken.decimals)} ${swap.fromToken.symbol}`);
+    console.log(`To: ${ethers.utils.formatUnits(swap.toTokenAmount, swap.toToken.decimals)} ${swap.toToken.symbol}`);
+    console.log(`Router: ${swap.routerAddress}`);
+    if (swap.estimatedGas) {
+      console.log(`Estimated Gas: ${swap.estimatedGas.toLocaleString()}`);
+    }
+    if (swap.priceImpact !== undefined) {
+      console.log(`Price Impact: ${swap.priceImpact}%`);
     }
 
-    console.log('\n✅ Get tokens test PASSED');
-    return tokens;
+    console.log('\n✅ Token to token test PASSED');
+    return swap;
 
   } catch (error) {
-    console.error('\n❌ Get tokens test FAILED:', error.message);
+    console.error('\n❌ Token to token test FAILED:', error.message);
     throw error;
   }
 }
 
 /**
- * Test 5: Check allowance and get approval transaction
+ * Test 6: Approval transaction generation
  */
 async function testApproval() {
   console.log('\n========================================');
-  console.log('TEST 5: Check Allowance & Approval');
+  console.log('TEST 6: Approval Transaction');
   console.log('========================================\n');
 
   try {
-    // Check allowance for USDC
-    console.log('Checking USDC allowance...');
-    const allowance = await check1inchAllowance(
+    // First get a quote to know the router address
+    const amount = ethers.utils.parseUnits('100', TOKENS.USDC.decimals);
+    const swap = await getOdosSwap({
+      fromToken: TOKENS.USDC,
+      toToken: TOKENS.DAI,
+      amount,
+      fromAddress: TEST_WALLET,
+      slippage: SLIPPAGE_TOLERANCE,
+      chainId: CHAIN_ID
+    });
+
+    const routerAddress = swap.routerAddress;
+
+    console.log('\n📊 Approval Details:');
+    console.log('─────────────────────────────────────');
+    console.log(`Token: ${TOKENS.USDC.symbol}`);
+    console.log(`Router: ${routerAddress}`);
+
+    // Generate approval transaction
+    const approvalTx = getOdosApprovalTx(
       TOKENS.USDC.address,
-      TEST_WALLET,
-      CHAIN_ID
+      routerAddress,
+      null // null = infinite approval
     );
 
-    console.log('\n📊 Allowance Check:');
-    console.log('─────────────────────────────────────');
-    console.log(`Current Allowance: ${allowance.allowance.toString()}`);
-    console.log(`Needs Approval: ${allowance.needsApproval ? 'YES' : 'NO'}`);
-
-    // Get approval transaction (if needed)
-    if (allowance.needsApproval) {
-      await delay(RATE_LIMIT_DELAY);
-
-      console.log('\nGenerating approval transaction...');
-      const approvalTx = await get1inchApprovalTx(
-        TOKENS.USDC.address,
-        null, // null = infinite approval
-        CHAIN_ID
-      );
-
-      console.log('\n📝 Approval Transaction:');
-      console.log(`   To: ${approvalTx.to}`);
-      console.log(`   Data: ${approvalTx.data.substring(0, 66)}...`);
-      console.log(`   Gas: ${approvalTx.gas || 'Not estimated'}`);
-    }
+    console.log('\n📝 Approval Transaction:');
+    console.log(`   To: ${approvalTx.to}`);
+    console.log(`   Data: ${approvalTx.data.substring(0, 66)}...`);
+    console.log(`   Value: ${approvalTx.value}`);
+    console.log(`   Spender: ${approvalTx.raw.spender}`);
+    console.log(`   Amount: ${approvalTx.raw.amount === ethers.constants.MaxUint256.toString() ? 'Infinite' : approvalTx.raw.amount}`);
 
     console.log('\n✅ Approval test PASSED');
-    return allowance;
+    return approvalTx;
 
   } catch (error) {
     console.error('\n❌ Approval test FAILED:', error.message);
@@ -288,20 +342,21 @@ async function testApproval() {
 }
 
 /**
- * Test 6: Edge case - ETH to WETH (should handle zero address conversion)
+ * Test 7: Edge case - ETH to WETH (should handle 1:1 conversion)
  */
 async function testEthToWeth() {
   console.log('\n========================================');
-  console.log('TEST 6: Edge Case (ETH → WETH)');
+  console.log('TEST 7: Edge Case (ETH → WETH)');
   console.log('========================================\n');
 
   try {
     const amount = ethers.utils.parseEther('1'); // 1 ETH
 
-    const quote = await get1inchQuote({
+    const quote = await getOdosQuote({
       fromToken: TOKENS.ETH,
       toToken: TOKENS.WETH,
       amount,
+      userAddr: TEST_WALLET,
       chainId: CHAIN_ID
     });
 
@@ -334,21 +389,12 @@ async function testEthToWeth() {
  */
 async function runAllTests() {
   console.log('\n╔════════════════════════════════════════╗');
-  console.log('║   1inch API v6.0 Integration Tests    ║');
+  console.log('║     Odos API Integration Tests        ║');
+  console.log('║     NO API KEY REQUIRED!               ║');
   console.log('╚════════════════════════════════════════╝');
 
-  // Check if API key is configured
-  try {
-    if (!process.env.ONEINCH_API_KEY) {
-      throw new Error('ONEINCH_API_KEY environment variable not set');
-    }
-    console.log('✅ API key configured');
-  } catch (error) {
-    console.error('\n❌ API key not configured!');
-    console.error('Please set: export ONEINCH_API_KEY="your-api-key"');
-    console.error('Get your key from: https://portal.1inch.dev\n');
-    process.exit(1);
-  }
+  console.log('\n✅ Odos uses IP-based rate limiting (600 req/5min)');
+  console.log('✅ Much better than 1inch (1 req/sec)!\n');
 
   const testResults = {
     passed: 0,
@@ -358,19 +404,44 @@ async function runAllTests() {
 
   // Run tests sequentially with rate limit delays
   const tests = [
-    // { name: 'Quote', fn: testQuote },
-    { name: 'Swap', fn: testSwap },
+    { name: 'Quote (ETH→USDC)', fn: testQuote, storeResult: true },
+    { name: 'Assemble', fn: async () => {
+      // Use pathId from previous test
+      if (!window.testQuoteResult?.pathId) {
+        throw new Error('Quote test must run first to get pathId');
+      }
+      return testAssemble(window.testQuoteResult.pathId);
+    } },
+    { name: 'Swap (ETH→USDC)', fn: testSwap },
+    { name: 'Protocols', fn: testGetProtocols },
+    { name: 'Token to Token (AAVE→USDC)', fn: testTokenToToken },
     { name: 'Approval', fn: testApproval },
-    { name: 'Edge Case (ETH→WETH)', fn: testEthToWeth },
+    { name: 'Edge Case (ETH→WETH)', fn: testEthToWeth }
   ];
+
+  // Store results globally for cross-test use
+  if (typeof window === 'undefined') {
+    global.testQuoteResult = null;
+  } else {
+    window.testQuoteResult = null;
+  }
 
   for (let i = 0; i < tests.length; i++) {
     if (i > 0) await delay(RATE_LIMIT_DELAY);
 
     try {
-      await tests[i].fn();
+      const result = await tests[i].fn();
+
+      // Store result for next test if needed
+      if (tests[i].storeResult) {
+        if (typeof window === 'undefined') {
+          global.testQuoteResult = result;
+        } else {
+          window.testQuoteResult = result;
+        }
+      }
+
       testResults.passed++;
-      await new Promise(r => setTimeout(r, 20000))
     } catch (error) {
       testResults.failed++;
       testResults.errors.push({

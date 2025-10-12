@@ -1,10 +1,18 @@
 # 1inch API v6.0 Integration Guide
 
+**⚠️ IMPORTANT: The swap endpoint requires a paid plan ($149+/month). The free tier only provides quotes.**
+
+See [1INCH_API_TIER_RESTRICTIONS.md](./1INCH_API_TIER_RESTRICTIONS.md) for full details.
+
 This document provides comprehensive guidance on using the 1inch DEX aggregator integration in the Trades application.
 
 ## Overview
 
 The 1inch integration (`use1inch.js`) provides access to the 1inch v6.0 Swap API, which aggregates liquidity across multiple decentralized exchanges to find optimal trading routes.
+
+**Free Tier Limitations:**
+- ✅ `/quote` - Price discovery (works)
+- ❌ `/swap` - Swap execution (403 Forbidden, requires paid plan)
 
 ### Key Features
 

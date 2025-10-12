@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import WalletBundlerABI from '../../artifacts/contracts/WalletBundler.sol/WalletBundler.json' with { type: "json" };
 import BundlerRegistryABI from '../../artifacts/contracts/BundlerRegistry.sol/BundlerRegistry.json' with { type: "json" };
 
-const REGISTRY_ADDRESS = '0x...'; // To be deployed
+const REGISTRY_ADDRESS = '0x0e62874e8879b4762000b9F2A66aCBf23EEB2626'; // To be deployed
 const UNIVERSAL_ROUTER_ADDRESS = '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD';
 const BALANCER_VAULT_ADDRESS = '0xBA12222222228d8Ba445958a75a0704d566BF2C8';
 
@@ -10,7 +10,7 @@ export class BundlerManager {
   constructor(provider, signer, registryAddress = REGISTRY_ADDRESS) {
     this.provider = provider;
     this.signer = signer;
-    this.registry = new ethers.Contract(registryAddress, BundlerRegistryABI, signer);
+    this.registry = new ethers.Contract(registryAddress, BundlerRegistryABI.abi, signer);
   }
 
   /**
@@ -19,7 +19,7 @@ export class BundlerManager {
   async deployBundler() {
     // Deploy WalletBundler directly
     const WalletBundlerFactory = new ethers.ContractFactory(
-      WalletBundlerABI,
+      WalletBundlerABI.abi,
       WalletBundlerABI.bytecode,
       this.signer
     );
@@ -31,17 +31,26 @@ export class BundlerManager {
     const registerTx = await this.registry.storeAddress(bundler.address);
     await registerTx.wait();
 
-    return bundler;
+    return { success: true, address: bundler.address, contract: bundler };
   }
 
   /**
-   * Get existing bundler for wallet
+   * Get bundler address for wallet
    */
-  async getBundler(walletAddress) {
+  async getBundlerAddress(walletAddress) {
     const bundlerAddress = await this.registry.readAddress(walletAddress);
     if (bundlerAddress === ethers.constants.AddressZero) return null;
+    return bundlerAddress;
+  }
 
-    return new ethers.Contract(bundlerAddress, WalletBundlerABI, this.signer);
+  /**
+   * Get existing bundler contract instance for wallet
+   */
+  async getBundler(walletAddress) {
+    const bundlerAddress = await this.getBundlerAddress(walletAddress);
+    if (!bundlerAddress) return null;
+
+    return new ethers.Contract(bundlerAddress, WalletBundlerABI.abi, this.signer);
   }
 
   /**

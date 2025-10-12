@@ -1,0 +1,272 @@
+import { expect } from "chai";
+import hre from "hardhat";
+const { ethers } = hre;
+import { useMixedUniswapBalancer } from '../src/renderer/utils/useMixedUniswapBalancer.js';
+import { createExecutionPlan, createEncoderExecutionPlan } from '../src/renderer/utils/executionPlan.js';
+import { BundlerManager } from '../src/bundler/BundlerManager.js';
+
+// ===== TEST PARAMETERS =====
+const TEST_PARAMS = {
+  tokenInObject: {
+    address: '0x0000000000000000000000000000000000000000', // ETH
+    symbol: 'ETH',
+    decimals: 18
+  },
+  tokenOutObject: {
+    address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
+    symbol: 'AAVE',
+    decimals: 18
+  },
+  amountIn: '0.00000001', // In human-readable format, not wei
+  slippageTolerance: 0.5 // 0.5%
+};
+
+// ===== DEPLOYED CONTRACT ADDRESSES =====
+const DEPLOYED_ADDRESSES = {
+  bundlerRegistry: '0x0e62874e8879b4762000b9F2A66aCBf23EEB2626',
+  uniswapEncoder: '0x0C09a7a07606E1eD8FDE25c38035F886aA82e499',
+  balancerEncoder: '0xd9200a8aE63531C847cE18517aF98BD666A48aE1'
+};
+
+describe("Real Swap Integration Test", function () {
+  let wallet;
+  let provider;
+  let bundlerManager;
+  let bundlerAddress;
+  let walletBundler;
+
+  before(async function () {
+    console.log("\n🔧 Setting up test environment...\n");
+
+    // Get signer (the wallet that will execute the trade)
+    [wallet] = await ethers.getSigners();
+    provider = ethers.provider;
+
+    console.log("Test Wallet:", wallet.address);
+
+    // Check balance for input token
+    let balance;
+    const amountInWei = ethers.utils.parseUnits(
+      TEST_PARAMS.amountIn,
+      TEST_PARAMS.tokenInObject.decimals
+    );
+
+    if (TEST_PARAMS.tokenInObject.address === ethers.constants.AddressZero) {
+      // ETH balance
+      balance = await wallet.getBalance();
+      console.log(`${TEST_PARAMS.tokenInObject.symbol} Balance:`, ethers.utils.formatEther(balance), TEST_PARAMS.tokenInObject.symbol);
+
+      if (balance.lt(amountInWei)) {
+        throw new Error(
+          `Insufficient ${TEST_PARAMS.tokenInObject.symbol} balance. ` +
+          `Need ${TEST_PARAMS.amountIn} ${TEST_PARAMS.tokenInObject.symbol}, ` +
+          `have ${ethers.utils.formatEther(balance)} ${TEST_PARAMS.tokenInObject.symbol}`
+        );
+      }
+    } else {
+      // ERC20 token balance
+      const tokenContract = new ethers.Contract(
+        TEST_PARAMS.tokenInObject.address,
+        ["function balanceOf(address) view returns (uint256)"],
+        provider
+      );
+      balance = await tokenContract.balanceOf(wallet.address);
+      console.log(
+        `${TEST_PARAMS.tokenInObject.symbol} Balance:`,
+        ethers.utils.formatUnits(balance, TEST_PARAMS.tokenInObject.decimals),
+        TEST_PARAMS.tokenInObject.symbol
+      );
+
+      if (balance.lt(amountInWei)) {
+        throw new Error(
+          `Insufficient ${TEST_PARAMS.tokenInObject.symbol} balance. ` +
+          `Need ${TEST_PARAMS.amountIn} ${TEST_PARAMS.tokenInObject.symbol}, ` +
+          `have ${ethers.utils.formatUnits(balance, TEST_PARAMS.tokenInObject.decimals)} ${TEST_PARAMS.tokenInObject.symbol}`
+        );
+      }
+    }
+
+    // Initialize BundlerManager
+    console.log("\n📦 Initializing BundlerManager...");
+    bundlerManager = new BundlerManager(
+      provider,
+      wallet,
+      DEPLOYED_ADDRESSES.bundlerRegistry
+    );
+
+    // Get bundler address for this wallet
+    console.log("Querying BundlerRegistry for wallet's bundler...");
+    bundlerAddress = await bundlerManager.getBundlerAddress(wallet.address);
+
+    if (!bundlerAddress || bundlerAddress === ethers.constants.AddressZero) {
+      throw new Error(
+        `No bundler found for wallet ${wallet.address}.\n` +
+        `Please run: npx hardhat run scripts/registerBundler.js --network mainnet`
+      );
+    }
+
+    console.log("✓ Found existing bundler:", bundlerAddress);
+
+    // Get WalletBundler contract instance
+    const WalletBundlerArtifact = await hre.artifacts.readArtifact("WalletBundler");
+    walletBundler = new ethers.Contract(bundlerAddress, WalletBundlerArtifact.abi, wallet);
+
+    console.log("\n✅ Setup complete\n");
+  });
+
+  it("Should find optimal route and generate execution plan", async function () {
+    this.timeout(120000); // 2 minutes for routing
+
+    console.log("\n🔍 Finding optimal route...");
+    console.log(`   From: ${TEST_PARAMS.amountIn} ${TEST_PARAMS.tokenInObject.symbol}`);
+    console.log(`   To: ${TEST_PARAMS.tokenOutObject.symbol}`);
+    console.log(`   Slippage: ${TEST_PARAMS.slippageTolerance}%\n`);
+
+    // Convert amountIn to wei
+    const amountInWei = ethers.utils.parseUnits(
+      TEST_PARAMS.amountIn,
+      TEST_PARAMS.tokenInObject.decimals
+    );
+
+    // Find best route using the routing optimizer
+    const routeResult = await useMixedUniswapBalancer({
+      tokenInObject: TEST_PARAMS.tokenInObject,
+      tokenOutObject: TEST_PARAMS.tokenOutObject,
+      amountIn: amountInWei,
+      provider: provider,
+      slippageTolerance: TEST_PARAMS.slippageTolerance,
+      maxHops: 2,
+      useUniswap: true,
+      useBalancer: true
+    });
+
+    expect(routeResult).to.not.be.null;
+    expect(routeResult.bestRoute).to.not.be.null;
+    expect(routeResult.bestRoute.totalOutput).to.not.equal(0);
+
+    console.log("\n✅ Route found:");
+    console.log(`   Type: ${routeResult.bestRoute.type}`);
+    console.log(`   Expected Output: ${ethers.utils.formatUnits(
+      routeResult.bestRoute.totalOutput,
+      TEST_PARAMS.tokenOutObject.decimals
+    )} ${TEST_PARAMS.tokenOutObject.symbol}`);
+
+    if (routeResult.bestRoute.splits) {
+      console.log("\n   Split Details:");
+      routeResult.bestRoute.splits.forEach((split, i) => {
+        console.log(`      ${i + 1}. ${split.protocol}: ${(split.percentage * 100).toFixed(2)}%`);
+      });
+    }
+
+    // Create execution plan
+    console.log("\n📋 Creating execution plan...");
+    const executionPlan = await createExecutionPlan(
+      routeResult.bestRoute,
+      TEST_PARAMS.tokenInObject,
+      TEST_PARAMS.tokenOutObject,
+      TEST_PARAMS.slippageTolerance
+    );
+
+    expect(executionPlan).to.not.be.null;
+    expect(executionPlan.executionSteps.length).to.be.greaterThan(0);
+
+    console.log(`   Total Steps: ${executionPlan.executionSteps.length}`);
+    console.log(`   Protocols: ${executionPlan.summary.protocols.join(', ')}`);
+    console.log(`   Min Output: ${executionPlan.summary.minOutput} ${TEST_PARAMS.tokenOutObject.symbol}`);
+
+    // Generate encoder execution plan
+    console.log("\n🔧 Generating encoder execution plan...");
+    const encoderPlan = createEncoderExecutionPlan(
+      executionPlan,
+      TEST_PARAMS.tokenInObject,
+      TEST_PARAMS.tokenOutObject,
+      TEST_PARAMS.slippageTolerance
+    );
+
+    expect(encoderPlan).to.not.be.null;
+    expect(encoderPlan.encoderTargets.length).to.equal(encoderPlan.encoderData.length);
+    expect(encoderPlan.encoderTargets.length).to.equal(encoderPlan.wrapOperations.length);
+
+    console.log("\n📦 Encoder Plan Details:");
+    console.log(`   Steps: ${encoderPlan.encoderTargets.length}`);
+    console.log(`   From Token: ${encoderPlan.fromToken}`);
+    console.log(`   From Amount: ${ethers.utils.formatUnits(encoderPlan.fromAmount, TEST_PARAMS.tokenInObject.decimals)} ${TEST_PARAMS.tokenInObject.symbol}`);
+    console.log(`   To Token: ${encoderPlan.toToken}`);
+    console.log(`   Expected Output: ${ethers.utils.formatUnits(encoderPlan.metadata.expectedOutput, TEST_PARAMS.tokenOutObject.decimals)} ${TEST_PARAMS.tokenOutObject.symbol}`);
+
+    console.log("\n   Encoder Targets:");
+    encoderPlan.encoderTargets.forEach((target, i) => {
+      const protocol = target === DEPLOYED_ADDRESSES.uniswapEncoder ? 'Uniswap' : 'Balancer';
+      const wrapOpNames = ['None', 'Wrap before', 'Wrap after', 'Unwrap before', 'Unwrap after'];
+      console.log(`      ${i + 1}. ${protocol} (Wrap: ${wrapOpNames[encoderPlan.wrapOperations[i]]})`);
+    });
+
+    // Prepare contract call arguments
+    const contractCallArgs = {
+      fromToken: encoderPlan.fromToken,
+      fromAmount: encoderPlan.fromAmount,
+      toToken: encoderPlan.toToken,
+      encoderTargets: encoderPlan.encoderTargets,
+      encoderData: encoderPlan.encoderData,
+      wrapOperations: encoderPlan.wrapOperations
+    };
+
+    console.log("\n📝 Contract Call Arguments:");
+    console.log(JSON.stringify({
+      fromToken: contractCallArgs.fromToken,
+      fromAmount: contractCallArgs.fromAmount.toString(),
+      toToken: contractCallArgs.toToken,
+      encoderTargets: contractCallArgs.encoderTargets,
+      wrapOperations: contractCallArgs.wrapOperations,
+      encoderDataLengths: contractCallArgs.encoderData.map(d => d.length)
+    }, null, 2));
+
+    // ========================================
+    // COMMENTED OUT: Actual swap execution
+    // ========================================
+    console.log("\n🚀 Executing swap on WalletBundler...");
+    console.log(`   Bundler Address: ${bundlerAddress}`);
+
+    // Check if we're sending ETH
+    const msgValue = contractCallArgs.fromToken === ethers.constants.AddressZero
+      ? contractCallArgs.fromAmount
+      : 0;
+
+    console.log(`   ETH Value: ${ethers.utils.formatEther(msgValue)} ETH`);
+
+    /*
+    // Execute the swap
+    const tx = await walletBundler.encodeAndExecute(
+      contractCallArgs.fromToken,
+      contractCallArgs.fromAmount,
+      contractCallArgs.toToken,
+      contractCallArgs.encoderTargets,
+      contractCallArgs.encoderData,
+      contractCallArgs.wrapOperations,
+      { value: msgValue }
+    );
+
+    console.log(`   Transaction Hash: ${tx.hash}`);
+    console.log("   Waiting for confirmation...");
+
+    const receipt = await tx.wait();
+
+    console.log(`   ✅ Transaction confirmed in block ${receipt.blockNumber}`);
+    console.log(`   Gas Used: ${receipt.gasUsed.toString()}`);
+    console.log(`   Gas Cost: ${ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice))} ETH`);
+
+    // Check final balance
+    if (contractCallArgs.toToken === ethers.constants.AddressZero) {
+      const finalBalance = await wallet.getBalance();
+      console.log(`   Final ETH Balance: ${ethers.utils.formatEther(finalBalance)} ETH`);
+    } else {
+      const tokenContract = await ethers.getContractAt(
+        ["function balanceOf(address) view returns (uint256)"],
+        contractCallArgs.toToken
+      );
+      const finalBalance = await tokenContract.balanceOf(wallet.address);
+      console.log(`   Final ${TEST_PARAMS.tokenOutObject.symbol} Balance: ${ethers.utils.formatUnits(finalBalance, TEST_PARAMS.tokenOutObject.decimals)} ${TEST_PARAMS.tokenOutObject.symbol}`);
+    }
+    */
+  });
+});
