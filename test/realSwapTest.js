@@ -24,8 +24,8 @@ const TEST_PARAMS = {
 // ===== DEPLOYED CONTRACT ADDRESSES =====
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x0e62874e8879b4762000b9F2A66aCBf23EEB2626',
-  uniswapEncoder: '0x0C09a7a07606E1eD8FDE25c38035F886aA82e499',
-  balancerEncoder: '0xd9200a8aE63531C847cE18517aF98BD666A48aE1'
+  uniswapEncoder: '0x4B748Ed83A186E214696487E5686fB1B5bD19932',
+  balancerEncoder: '0x0156BB9cCeF37D3d1b9a3CB52b9b4BC26dA1563e'
 };
 
 describe("Real Swap Integration Test", function () {
@@ -160,11 +160,13 @@ describe("Real Swap Integration Test", function () {
 
     // Create execution plan
     console.log("\n📋 Creating execution plan...");
+    console.log(`   Passing amountInWei: ${amountInWei.toString()} wei`);
     const executionPlan = await createExecutionPlan(
       routeResult.bestRoute,
       TEST_PARAMS.tokenInObject,
       TEST_PARAMS.tokenOutObject,
-      TEST_PARAMS.slippageTolerance
+      TEST_PARAMS.slippageTolerance,
+      amountInWei  // Pass the input amount for normalization
     );
 
     expect(executionPlan).to.not.be.null;
@@ -234,7 +236,6 @@ describe("Real Swap Integration Test", function () {
 
     console.log(`   ETH Value: ${ethers.utils.formatEther(msgValue)} ETH`);
 
-    /*
     // Execute the swap
     const tx = await walletBundler.encodeAndExecute(
       contractCallArgs.fromToken,
@@ -243,7 +244,10 @@ describe("Real Swap Integration Test", function () {
       contractCallArgs.encoderTargets,
       contractCallArgs.encoderData,
       contractCallArgs.wrapOperations,
-      { value: msgValue }
+      {
+        value: msgValue,
+        // gasLimit: 500000  // Fixed gas limit to skip estimation and see actual error
+      }
     );
 
     console.log(`   Transaction Hash: ${tx.hash}`);
@@ -267,6 +271,5 @@ describe("Real Swap Integration Test", function () {
       const finalBalance = await tokenContract.balanceOf(wallet.address);
       console.log(`   Final ${TEST_PARAMS.tokenOutObject.symbol} Balance: ${ethers.utils.formatUnits(finalBalance, TEST_PARAMS.tokenOutObject.decimals)} ${TEST_PARAMS.tokenOutObject.symbol}`);
     }
-    */
   });
 });

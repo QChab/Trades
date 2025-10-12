@@ -45,12 +45,27 @@ The application integrates with multiple DEXs through a unified interface:
 - **Balancer**: Via Vault contract (0xBA12222222228d8Ba445958a75a0704d566BF2C8)
 - **Permit2**: For secure token approvals (0x000000000022D473030F116dDEE9F6B43aC78BA3)
 
-#### Protocol Return Values
-The `bestTrade` routing system can return one of four protocol identifiers:
+#### Quote Aggregator System (Latest Architecture)
+The trading system uses a unified quote aggregator (`quoteAggregator.js`) that queries all available protocols in parallel and selects the best quote after accounting for gas costs.
+
+**Protocol Identifiers**:
 - **"Uniswap"**: Direct Uniswap V4 execution via Universal Router
 - **"Balancer"**: Direct Balancer V3 execution via Vault contract
-- **"Contract"**: WalletBundler contract execution for MEV-protected multi-DEX atomic trades
-- **"1inch"**: 1inch aggregator integration (limited use due to API restrictions)
+- **"Contract"** (WalletBundler): MEV-protected multi-DEX atomic trades via personal bundler contract
+- **"Odos"**: Odos aggregator API for cross-DEX routing
+
+**Wallet Mode Filtering**:
+- **"contract"**: Only WalletBundler
+- **"odos"**: Only Odos aggregator
+- **"odos & contract"**: Both WalletBundler and Odos
+- **undefined/none**: All 4 protocols (Uniswap, Balancer, WalletBundler, Odos)
+
+**Key Features**:
+- Queries protocols with 100% of input amount (no percentage-based splits)
+- Parallel quote fetching using Promise.allSettled for redundancy
+- Gas-cost-aware best quote selection
+- Standardized response format: `{protocol, outputAmount, gasEstimate, trades, rawData}`
+- WalletBundler internally uses sophisticated cross-DEX optimizer (useMixedUniswapBalancer)
 
 #### Order Management System
 - **Manual Trading**: Market and limit orders with price inversion support
@@ -66,18 +81,30 @@ The `bestTrade` routing system can return one of four protocol identifiers:
 
 #### ManualTrading.vue
 Central trading interface containing:
+- **getBestTrades()**: Simplified quote aggregation using quoteAggregator.js (~80 lines vs. previous ~300 lines)
 - Order type determination logic (take profit vs stop loss)
 - Price inversion handling for different token pair displays
 - Gas cost calculation with negative value protection
-- Mixed trade optimization (combining Uniswap + Balancer)
 - Trigger condition evaluation with exact execution price calculations
+- **NO checkboxes**: Removed Uniswap/Balancer/Mixed UI checkboxes - best quote auto-selected
+- **Wallet mode dropdown**: User selects protocol filtering (Odos, Contract, Odos & Contract, or None)
+
+#### Quote Aggregator Module (quoteAggregator.js)
+Unified interface for all protocol quote requests:
+- **getQuoteUniswap()**: Queries Uniswap V4 with 100% input amount
+- **getQuoteBalancer()**: Queries Balancer V3 with 100% input amount
+- **getQuoteWalletBundler()**: Uses useMixedUniswapBalancer for cross-DEX optimization
+- **getQuoteOdos()**: Queries Odos aggregator API
+- **getAllQuotes()**: Fetches all allowed protocols in parallel
+- **selectBestQuote()**: Accounts for gas costs to determine true net output
+- **getAllowedProtocols()**: Filters protocols based on wallet mode
 
 #### Trade Execution Logic
 Complex price comparison system handles:
 - `shouldSwitchTokensForLimit`: Controls price display inversion
-- Normalized price calculations for consistent order type determination  
+- Normalized price calculations for consistent order type determination
 - Gas cost deduction with underflow protection (BigNumber limitations)
-- Mixed trade sorting by profitability including negative scenarios
+- Protocol-specific execution paths (Uniswap, Balancer, Contract, Odos)
 
 #### Data Persistence
 - **SQLite Database**: Trade history and transaction records
@@ -343,11 +370,17 @@ Hop 2: Combined swap uses ALL intermediate tokens to final output
 
 This dynamic encoding system ensures robust execution of complex cross-DEX trades while minimizing gas costs and eliminating common failure modes from slippage and rounding errors.
 
-### 1inch Integration Analysis
-- **API Limitations**: 1 RPS rate limit on basic tier, registration required since 2023
-- **No Platform Fees**: 1inch doesn't charge trading fees, only captures rare positive slippage (~1%)
-- **Direct Contract Usage**: Technically possible but impractical due to proprietary routing algorithm
-- **Recommendation**: Use direct DEX integration instead of 1inch aggregation
+### Odos Aggregator Integration
+- **Purpose**: Cross-DEX routing aggregator used as fallback/comparison protocol
+- **API Integration**: Uses Odos quote API (useOdos.js) for route discovery
+- **Return Format**: Standardized to `{toTokenAmount, estimatedGas, pathId, priceImpact}`
+- **Wallet Mode**: Can be enabled via "odos" or "odos & contract" mode
+- **Benefits**: Provides independent routing algorithm as backup if WalletBundler fails
+
+### Legacy 1inch Notes
+- **Deprecated**: 1inch mode has been replaced with Odos in all UI and logic
+- **API Limitations**: 1 RPS rate limit, registration required, not practical for high-frequency use
+- **Migration**: All "1inch" references updated to "odos" in wallet modes
 
 ### Balancer V3 Integration
 - **Pool Discovery**: Queries Balancer V3 subgraph for pool data, handles decimal balance parsing

@@ -65,13 +65,11 @@ contract UniswapEncoder {
         bytes[] memory inputs = new bytes[](1);
         inputs[0] = abi.encode(params);
 
-        uint256 deadline = EXPIRATION_OFFSET;
-
         callData = abi.encodeWithSignature(
             "execute(bytes,bytes[],uint256)",
             commands,
             inputs,
-            deadline
+            EXPIRATION_OFFSET
         );
 
         return (UNIVERSAL_ROUTER, callData, amountIn, tokenIn);
@@ -84,6 +82,7 @@ contract UniswapEncoder {
      * @param tokenOut Address of output token
      * @param fee Pool fee tier
      * @param minAmountOut Minimum acceptable output (can be 0)
+     * @param wrapOp Wrap operation: 0=none, 1=wrap ETH before, 3=unwrap WETH before
      * @return target The Universal Router address
      * @return callData The encoded swap with actual balance
      * @return inputAmount Returns the actual balance amount
@@ -93,19 +92,23 @@ contract UniswapEncoder {
         address tokenIn,
         address tokenOut,
         uint24 fee,
-        uint256 minAmountOut
+        uint256 minAmountOut,
+        uint8 wrapOp
     ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
-        // Get the actual balance (ETH or token)
-        uint256 actualBalance;
-        if (tokenIn == address(0)) {
-            // ETH balance
-            actualBalance = msg.sender.balance;
-        } else {
-            // Token balance using optimized assembly
-            actualBalance = _getTokenBalance(tokenIn, msg.sender);
+        // Determine which balance to query based on wrap operation
+        address balanceToken = tokenIn;
+        if (wrapOp == 1) {
+            // Will wrap ETH to WETH before swap, so query ETH balance
+            balanceToken = address(0);
+        } else if (wrapOp == 3) {
+            // Will unwrap WETH to ETH before swap, so query WETH balance
+            balanceToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // WETH
         }
 
-        bytes memory commands = abi.encodePacked(V4_SWAP);
+        // Get the actual balance (ETH or token)
+        uint256 actualBalance = balanceToken == address(0)
+            ? msg.sender.balance
+            : _getTokenBalance(balanceToken, msg.sender);
 
         ExactInputSingleParams memory params = ExactInputSingleParams({
             tokenIn: tokenIn,
@@ -120,13 +123,11 @@ contract UniswapEncoder {
         bytes[] memory inputs = new bytes[](1);
         inputs[0] = abi.encode(params);
 
-        uint256 deadline = EXPIRATION_OFFSET;
-
         callData = abi.encodeWithSignature(
             "execute(bytes,bytes[],uint256)",
-            commands,
+            abi.encodePacked(V4_SWAP),
             inputs,
-            deadline
+            EXPIRATION_OFFSET
         );
 
         return (UNIVERSAL_ROUTER, callData, actualBalance, tokenIn);

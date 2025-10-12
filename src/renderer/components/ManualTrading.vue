@@ -64,29 +64,6 @@
                 Set market price
               </span> -->
             </div>
-            <div
-              v-else
-              class="checkboxes"
-            >
-              <label>
-                <input
-                  v-model="shouldUseUniswap"
-                  type="checkbox"
-                > Uniswap
-              </label>
-              <label>
-                <input
-                  v-model="shouldUseBalancer"
-                  type="checkbox"
-                > Balancer
-              </label>
-              <label>
-                <input
-                  v-model="shouldUseUniswapAndBalancer"
-                  type="checkbox"
-                > Uniswap & Balancer
-              </label>
-            </div>
           </div>
           <div class="from-swap">
             <p>Sell</p>
@@ -209,7 +186,7 @@
           <div class="address-form">
             <p>
               <span v-if="tradeSummary.protocol && tabOrder === 'market'">
-                On {{ tradeSummary.protocol === 'Uniswap & Balancer' ? (`Uniswap ${tradeSummary.fraction}% & Balancer ${100 - tradeSummary.fraction}%`) : tradeSummary.protocol }}
+                On {{ tradeSummary.protocol }}
               </span> with
             </p>
             <div class="sender-buttons">
@@ -239,17 +216,17 @@
                   None
                 </option>
                 <option
-                  :key="'1inch & contract'"
-                  :value="'1inch & contract'"
+                  :key="'odos & contract'"
+                  :value="'odos & contract'"
                   :disabled="!contractAddress[senderDetails?.address]"
                 >
-                  1inch & contract
+                  Odos & Contract
                 </option>
                 <option
-                  :key="'1inch'"
-                  :value="'1inch'"
+                  :key="'odos'"
+                  :value="'odos'"
                 >
-                  1inch
+                  Odos
                 </option>
                 <option
                   :key="'contract'"
@@ -630,6 +607,9 @@ import { useUniswapV4 } from '../composables/useUniswap';
 import { useBalancerV3 } from '../composables/useBalancer';
 import { useChainlinkPrice } from '../composables/useChainlinkPrice';
 import { useMixedUniswapBalancer } from '../utils/useMixedUniswapBalancer';
+import { getAllQuotes, selectBestQuote } from '../utils/quoteAggregator.js';
+import { createExecutionPlan, createEncoderExecutionPlan } from '../utils/executionPlan.js';
+import { getOdosAssemble } from '../utils/useOdos.js';
 import spaceThousands from '../composables/spaceThousands';
 import OrderBookLevels from './OrderBookLevels.vue';
 import ConfirmationModal from './ConfirmationModal.vue';
@@ -692,10 +672,8 @@ export default {
     const tabOrder         = ref('market');
     const isSwapButtonDisabled = ref(false);
     const needsToApprove   = ref(false);
+    const odosRouterAddress = ref(null); // Store Odos router address for approval
     const slippage         = ref(70);
-    const shouldUseUniswap = ref(true);
-    const shouldUseBalancer = ref(true);
-    const shouldUseUniswapAndBalancer = ref(true);
     const priceLimit = ref(null);
     const contractAddress = reactive({});
     const walletModes = reactive({});
@@ -1266,10 +1244,7 @@ export default {
       fromTokenAddr,
       toTokenAddr,
       amount,
-      senderAddr,
-      shouldUseUniswapValue,
-      shouldUseBalancerValue,
-      shouldUseUniswapAndBalancerValue
+      senderAddr
     ) => {
       if (!fromTokenAddr || !toTokenAddr || !amount || amount <= 0) {
         throw new Error('Invalid parameters for getBestTrades');
@@ -1277,276 +1252,74 @@ export default {
 
       const fromToken = tokensByAddresses.value[fromTokenAddr];
       const toToken = tokensByAddresses.value[toTokenAddr];
-      
+
       if (!fromToken || !toToken) {
         throw new Error('Token not found in tokensByAddresses');
       }
 
       console.log('Fetching quotes on exchanges for', fromToken.symbol, '->', toToken.symbol);
-      
-      const results = await Promise.allSettled([
-        (shouldUseUniswapValue || shouldUseUniswapAndBalancerValue) ? 
-          getTradesUniswap(fromTokenAddr, toTokenAddr, amount) : null,
-        (shouldUseBalancerValue) ? 
-          getTradesBalancer(fromTokenAddr, toTokenAddr, amount, senderAddr, true) : null,
-        (shouldUseUniswapAndBalancerValue) ? 
-          getTradesBalancer(fromTokenAddr, toTokenAddr, amount * .01, senderAddr, true) : null,
-      ]);
 
-      console.log(results);
+      // Get wallet mode for protocol filtering
+      const walletMode = senderDetails.value.mode;
 
-      let isUsingUniswap = true;
-      let validTrades, totalHuman, totalBig;
-      if (results[0] && results[0].status === 'fulfilled' && results[0].value) {
-        if (results[0].value === 'outdated') throw new Error('Quote is outdated');
-        if (results[0].value === 'no swap found') {
-          isUsingUniswap = false;
-        }
-        else if (!results[0].value[100] || results[0].value[100] === 'outdated') throw new Error('Quote is outdated');
-        else {
-          validTrades = results[0].value[100].validTrades;
-          totalHuman = results[0].value[100].totalHuman;
-          totalBig = results[0].value[100].totalBig;
-        }
-      } else if (!results[0] || results[0].status === 'rejected') {
-        isUsingUniswap = false;
-        if (results[0] && results[0].reason)
-          console.error(results[0].reason);
+      // Get quotes from all allowed protocols
+      const quotes = await getAllQuotes({
+        fromToken,
+        toToken,
+        amount,
+        senderAddress: senderAddr,
+        walletMode,
+        provider: props.provider,
+        pools: pools.value,
+        tokensByAddresses: tokensByAddresses.value,
+        getTradesUniswapFn: getTradesUniswap,
+        getTradesBalancerFn: getTradesBalancer
+      });
+
+      if (!quotes || quotes.length === 0) {
+        throw new Error('No quotes available from any protocol');
       }
 
-      let callData, outputAmount, value, gasLimit, contractAddress;
-      if (results[1] && results[1].status === 'fulfilled' && results[1].value) {
-        callData = results[1].value.callData;
-        outputAmount = results[1].value.outputAmount;
-        value = results[1].value.value;
-        gasLimit = results[1].value.gasLimit;
-        contractAddress = results[1].value.contractAddress;
-      } else if (!shouldUseUniswapAndBalancerValue && !shouldUseUniswapValue && (!results[1] || results[1].status === 'rejected')) {
-        if (results[1] && results[1].reason)
-          throw results[1].reason;
+      // Select best quote based on output after gas costs
+      const bestQuote = selectBestQuote(
+        quotes,
+        toToken,
+        props.ethPrice,
+        props.gasPrice
+      );
+
+      if (!bestQuote) {
+        throw new Error('No valid quote found');
       }
 
-      let uniswapGasLimit = 0
-      let offsetUniswap, outputUniswap, negativeOutputUniswap;
-      if (validTrades && validTrades.length && toToken.price && props.gasPrice && props.ethPrice) {
-        uniswapGasLimit = 120000 + 60000 * validTrades.length;
-        offsetUniswap = BigNumber.from(Math.ceil((uniswapGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, toToken.decimals) / toToken.price).toPrecision(50).split('.')[0])
-        if (totalBig.gte(offsetUniswap)) {
-          outputUniswap = totalBig.sub(offsetUniswap)
-        } else {
-          // Store negative value as positive BigNumber for later comparison
-          negativeOutputUniswap = offsetUniswap.sub(totalBig)
-          outputUniswap = BigNumber.from('0')
-        }
-      }
-      let offsetBalancer, outputBalancer, negativeOutputBalancer;
-      if (gasLimit && props.gasPrice && props.ethPrice && toToken.price && outputAmount) { // Add outputAmount check
-        offsetBalancer = BigNumber.from(Math.ceil((gasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, toToken.decimals) / toToken.price).toPrecision(50).split('.')[0])
-        const outputAmountBN = BigNumber.from(outputAmount)
-        if (outputAmountBN.gte(offsetBalancer)) {
-          outputBalancer = outputAmountBN.sub(offsetBalancer)
-        } else {
-          // Store negative value as positive BigNumber for later comparison
-          negativeOutputBalancer = offsetBalancer.sub(outputAmountBN)
-          outputBalancer = BigNumber.from('0')
-        }
-      }
-      let outputU = outputUniswap || totalBig || BigNumber.from('0'); // Changed default
-      let outputB = outputBalancer || BigNumber.from('0'); // Changed default and removed undefined check
-
-      let bestOutputLessGas = 0;
-      let bestNegativeOutput = null; // Track best negative output for comparison with mixed trades
-      if (outputU && outputB) { // Allow negative values for comparison
-        // Check if both outputs are zero (unprofitable trades)
-        if (outputU.eq(0) && outputB.eq(0) && negativeOutputUniswap && negativeOutputBalancer) {
-          // Both trades are unprofitable - choose the less negative one
-          if (negativeOutputUniswap.lte(negativeOutputBalancer) && shouldUseUniswapValue) {
-            bestOutputLessGas = outputU; // Will be 0
-            bestNegativeOutput = negativeOutputUniswap;
-            isUsingUniswap = true;
-            console.log('Both trades unprofitable - choosing Uniswap as less negative')
-          } else if (shouldUseBalancerValue) {
-            bestOutputLessGas = outputB; // Will be 0
-            bestNegativeOutput = negativeOutputBalancer;
-            isUsingUniswap = false;
-            console.log('Both trades unprofitable - choosing Balancer')
-          }
-        } else {
-          // Normal comparison when at least one is profitable
-          if (outputU.gte(outputB) && shouldUseUniswapValue) {
-            bestOutputLessGas = outputU;
-            isUsingUniswap = true;
-            // console.log('Using Uniswap')
-          } else if (shouldUseBalancerValue) {
-            bestOutputLessGas = outputB;
-            isUsingUniswap = false;
-            // console.log('Using Balancer')
-          }
-        }
-      } if (!outputB) {
-        isUsingUniswap = true;
-      }
-
-      if (shouldUseUniswapValue && !shouldUseBalancerValue)
-        isUsingUniswap = true
-      if (shouldUseBalancerValue && !shouldUseUniswapValue)
-        isUsingUniswap = false
-
-      // Handle mixed trades if enabled
-      let bestMixed, fractionMixed, mixedRoute;
-      if (shouldUseUniswapAndBalancerValue) {
-        try {
-          console.log('🔄 Fetching mixed route using useMixedUniswapBalancer...');
-
-          // Call the utils function to get optimized mixed route
-          const mixedResult = await useMixedUniswapBalancer({
-            tokenInObject: fromToken,
-            tokenOutObject: toToken,
-            amountIn: amount,
-            provider: toRaw(props.provider),
-            slippageTolerance: 0.5,
-            maxHops: 3,
-            useUniswap: true,
-            useBalancer: true
-          });
-
-          if (mixedResult && mixedResult.bestRoute && mixedResult.bestRoute.totalOutput) {
-            mixedRoute = mixedResult.bestRoute;
-            console.log('✅ Mixed route found:', {
-              type: mixedRoute.type,
-              totalOutput: ethers.utils.formatUnits(mixedRoute.totalOutput, toToken.decimals),
-              splits: mixedRoute.splits?.map(s => ({
-                protocol: s.protocol,
-                percentage: `${(s.percentage * 100).toFixed(1)}%`,
-                output: ethers.utils.formatUnits(s.output, toToken.decimals)
-              }))
-            });
-
-            // Calculate gas offset for mixed route
-            let offsetMixed, outputMixed, negativeOutputMixed;
-            if (props.gasPrice && props.ethPrice && toToken.price) {
-              const mixedGasLimit = mixedRoute.estimatedGas || 500000;
-              offsetMixed = BigNumber.from(Math.ceil((mixedGasLimit * Number(props.ethPrice) * Number(props.gasPrice) / 1e18) * Math.pow(10, toToken.decimals) / toToken.price).toPrecision(50).split('.')[0]);
-
-              if (mixedRoute.totalOutput.gte(offsetMixed)) {
-                outputMixed = mixedRoute.totalOutput.sub(offsetMixed);
-              } else {
-                negativeOutputMixed = offsetMixed.sub(mixedRoute.totalOutput);
-                outputMixed = BigNumber.from('0');
-              }
-            } else {
-              outputMixed = mixedRoute.totalOutput;
-            }
-
-            // Compare mixed route with single-protocol routes
-            const onlyMixedEnabled = shouldUseUniswapAndBalancerValue && !shouldUseUniswapValue && !shouldUseBalancerValue;
-
-            if (onlyMixedEnabled) {
-              // When only mixed trades enabled, always use it
-              bestMixed = {
-                outputAmount: outputMixed,
-                rawTotalOutput: mixedRoute.totalOutput,
-                negativeOutput: negativeOutputMixed,
-                route: mixedRoute,
-                executionPlan: mixedResult.executionPlan
-              };
-            } else {
-              // Compare with single-protocol routes
-              let hasBetterOutput = false;
-
-              if (bestOutputLessGas && typeof bestOutputLessGas.eq === 'function' &&
-                  bestOutputLessGas.eq(0) && outputMixed.eq(0) &&
-                  bestNegativeOutput && negativeOutputMixed) {
-                // Both negative - choose less negative
-                hasBetterOutput = negativeOutputMixed.lt(bestNegativeOutput);
-                console.log('Comparing negative outputs - mixed vs single protocol');
-              } else if (outputMixed.gt(0)) {
-                // Mixed route is profitable
-                hasBetterOutput = !bestOutputLessGas || outputMixed.gte(bestOutputLessGas);
-              }
-
-              if (hasBetterOutput) {
-                bestMixed = {
-                  outputAmount: outputMixed,
-                  rawTotalOutput: mixedRoute.totalOutput,
-                  negativeOutput: negativeOutputMixed,
-                  route: mixedRoute,
-                  executionPlan: mixedResult.executionPlan
-                };
-
-                // Calculate effective split percentage for display
-                if (mixedRoute.splits && mixedRoute.splits.length > 0) {
-                  const balancerSplit = mixedRoute.splits.find(s => s.protocol === 'balancer');
-                  if (balancerSplit) {
-                    fractionMixed = Math.round((1 - balancerSplit.percentage) * 100);
-                  }
-                }
-              }
-            }
-          } else {
-            console.log('⚠️ No mixed route found');
-          }
-        } catch (error) {
-          console.error('❌ Error fetching mixed route:', error);
-        }
-      }
-
-      // Build final trade result
-      let finalTrades, finalTotalHuman, protocol, finalGasLimit;
-
-      if (bestMixed) {
-        console.log('Using mixed route:', bestMixed);
-        // Always use raw total output for display (before gas costs)
-        totalHuman = ethers.utils.formatUnits(bestMixed.rawTotalOutput, toToken.decimals);
-
-        // Store the execution plan and route for later use
-        finalTrades = [{
-          route: bestMixed.route,
-          executionPlan: bestMixed.executionPlan,
-          outputAmount: bestMixed.rawTotalOutput,
-          isMixed: true
-        }];
-
-        protocol = 'Contract';
-        finalGasLimit = bestMixed.route.estimatedGas || 500000;
-      } else if (isUsingUniswap) {
-        finalTrades = validTrades;
-        protocol = 'Uniswap';
-        finalGasLimit = uniswapGasLimit;
-      } else if (outputAmount) {
-        finalTrades = [{
-          callData,
-          outputAmount,
-          value,
-          tradeSummary,
-          contractAddress,
-        }];
-        totalHuman = ethers.utils.formatUnits(outputAmount, toToken.decimals);
-        protocol = 'Balancer';
-        finalGasLimit = gasLimit;
-      } else {
-        throw new Error('No swap found');
-      }
-
-      if (!shouldUseUniswapValue && !shouldUseBalancerValue && !bestMixed) {
-        throw new Error('No swap found');
-      }
-
-      if (!finalTrades || finalTrades.length === 0 || !totalHuman) {
-        throw new Error('No valid trades found');
-      }
+      // Format output for display
+      const totalHuman = ethers.utils.formatUnits(bestQuote.outputAmount, toToken.decimals);
+      let finalTotalHuman;
       finalTotalHuman = totalHuman.length > 9 && totalHuman[0] !== '0' ? Number(totalHuman).toFixed(4) : Number(totalHuman).toFixed(6);
       if (finalTotalHuman === '0.000000' || finalTotalHuman === '0.00') {
         finalTotalHuman = tokensByAddresses.value[toTokenAddr].decimals >= 9 ? Number(totalHuman).toFixed(9) : Number(totalHuman).toFixed(6);
       }
 
+      // Map protocol names to match existing execution logic
+      let protocol = bestQuote.protocol;
+      if (protocol === 'WalletBundler') {
+        protocol = 'Contract';
+      } else if (protocol === 'Odos') {
+        protocol = 'Odos';
+      }
+
       return {
-        trades: finalTrades,
+        trades: bestQuote.trades,
         totalHuman: finalTotalHuman,
         protocol,
-        gasLimit: finalGasLimit,
-        bestMixed,
-        fractionMixed,
+        gasLimit: bestQuote.gasEstimate,
+        bestMixed: protocol === 'Contract' ? {
+          outputAmount: bestQuote.outputAmount,
+          rawTotalOutput: bestQuote.outputAmount,
+          route: bestQuote.trades[0]?.route,
+          executionPlan: bestQuote.trades[0]?.executionPlan
+        } : null,
+        fractionMixed: bestQuote.splits ? Math.round((1 - (bestQuote.splits.find(s => s.protocol === 'balancer')?.percentage || 0)) * 100) : null,
         fromToken,
         toToken
       };
@@ -1629,10 +1402,7 @@ export default {
               _newFrom,
               _newTo,
               _newAmt,
-              _newSender.address,
-              shouldUseUniswapValue,
-              shouldUseBalancerValue,
-              shouldUseUniswapAndBalancerValue
+              _newSender.address
             );
 
             // SECURITY CHECKS: ensure each leg’s input/output token matches our chosen tokens
@@ -1676,11 +1446,7 @@ export default {
 
             // Check if approval is needed
             if (_newFrom !== ethers.constants.AddressZero) {
-              if (tradeSummary.protocol === 'Uniswap & Balancer') {
-                await checkAllowances(_newFrom, true, bestTradeResult.trades);
-                await checkAllowances(_newFrom, false, bestTradeResult.trades);
-              } else 
-                await checkAllowances(_newFrom, tradeSummary.protocol === 'Uniswap', bestTradeResult.trades);
+              await checkAllowances(_newFrom, null, bestTradeResult.trades);
             } else {
               needsToApprove.value = false;
             }
@@ -1710,21 +1476,21 @@ export default {
         needsToApprove.value = false;
         return;
       }
-      
+
       // Skip allowance check for ETH (zero address) - native token doesn't need approval
       if (tokenAddress === ethers.constants.AddressZero) {
         console.log('Skipping allowance check for ETH (native token)');
         needsToApprove.value = false;
         return;
       }
-      
+
       // Validate token address before creating contract
       if (!tokenAddress || !ethers.utils.isAddress(tokenAddress)) {
         console.error('Invalid token address in checkAllowances:', tokenAddress);
         needsToApprove.value = false;
         return;
       }
-      
+
       const erc20 = new ethers.Contract(
         tokenAddress,
         ERC20_ABI,
@@ -1732,7 +1498,7 @@ export default {
       );
 
       // Uniswap
-      if (isUsingUniswap) {
+      if (tradeSummary.protocol === 'Uniswap') {
         // 1. ERC20.approve(PERMIT2_ADDRESS)
         const permitAllowance = await erc20.allowance(
           senderDetails.value.address,
@@ -1761,18 +1527,99 @@ export default {
       }
 
       // Balancer V3
-      if (localTrades && localTrades.length > 0) {
-        const balancerTradeV3 = localTrades.find(
-          t => t.callData && t.contractAddress.toLowerCase() !== BALANCER_VAULT_ADDRESS.toLowerCase()
-        );
-        if (balancerTradeV3) {
-          // 1. ERC20.approve(PERMIT2_ADDRESS)
-          const permitAllowance = await erc20.allowance(
-            senderDetails.value.address,
-            PERMIT2_ADDRESS
+      if (tradeSummary.protocol === 'Balancer') {
+        if (localTrades && localTrades.length > 0) {
+          const balancerTradeV3 = localTrades.find(
+            t => t.callData && t.contractAddress.toLowerCase() !== BALANCER_VAULT_ADDRESS.toLowerCase()
           );
-          if (BigNumber.from(permitAllowance).lt(BigNumber.from('100000000000000000000000000')))
-            return needsToApprove.value = true;
+          if (balancerTradeV3) {
+            // 1. ERC20.approve(PERMIT2_ADDRESS)
+            const permitAllowance = await erc20.allowance(
+              senderDetails.value.address,
+              PERMIT2_ADDRESS
+            );
+            if (BigNumber.from(permitAllowance).lt(BigNumber.from('100000000000000000000000000')))
+              return needsToApprove.value = true;
+          }
+        }
+        needsToApprove.value = false;
+        return;
+      }
+
+      // Contract (WalletBundler)
+      if (tradeSummary.protocol === 'Contract') {
+        const bundlerAddress = contractAddress[senderDetails.value.address];
+        if (!bundlerAddress) {
+          console.error('No bundler contract found for Contract protocol');
+          needsToApprove.value = false;
+          return;
+        }
+
+        // Check allowance for bundler contract
+        const allowance = await erc20.allowance(
+          senderDetails.value.address,
+          bundlerAddress
+        );
+
+        if (BigNumber.from(allowance).lt(BigNumber.from('100000000000000000000000000'))) {
+          needsToApprove.value = true;
+          return;
+        }
+        needsToApprove.value = false;
+        return;
+      }
+
+      // Odos
+      if (tradeSummary.protocol === 'Odos') {
+        // For Odos, we need the router address from the assembled transaction
+        // This will be available in trades[0].rawData
+        if (localTrades && localTrades.length > 0 && localTrades[0].rawData) {
+          // Store Odos router address for later approval use
+          odosRouterAddress.value = null;
+
+          // We need to get the assembled transaction to know the router address
+          // For now, we'll fetch it to check allowance
+          try {
+            const trade = localTrades[0];
+            if (!trade.rawData.pathId) {
+              console.error('Missing pathId for Odos allowance check');
+              needsToApprove.value = false;
+              return;
+            }
+
+            // Get assembled transaction to get router address
+            const assembled = await getOdosAssemble({
+              pathId: trade.rawData.pathId,
+              userAddr: senderDetails.value.address,
+              simulate: false
+            });
+
+            if (!assembled || !assembled.routerAddress) {
+              console.error('Failed to get Odos router address');
+              needsToApprove.value = false;
+              return;
+            }
+
+            // Store router address for later use in approval
+            odosRouterAddress.value = assembled.routerAddress;
+
+            // Check allowance for Odos router
+            const allowance = await erc20.allowance(
+              senderDetails.value.address,
+              assembled.routerAddress
+            );
+
+            if (BigNumber.from(allowance).lt(BigNumber.from('100000000000000000000000000'))) {
+              needsToApprove.value = true;
+              return;
+            }
+            needsToApprove.value = false;
+            return;
+          } catch (error) {
+            console.error('Error checking Odos allowance:', error);
+            needsToApprove.value = false;
+            return;
+          }
         }
       }
 
@@ -2419,74 +2266,90 @@ export default {
           }
 
           globalTxs.push(response.tx);
-        } else if (currentTradeSummary.protocol === 'Uniswap & Balancer') {
-          const maxFeePerGas = ethers.utils.parseUnits(
-            (Number(props.gasPrice) * 1.85 / 1e9).toFixed(3), 9
-          )
-          const maxPriorityFeePerGas =  ethers.utils.parseUnits(
-            (0.02 + Math.random()*0.05 + Number(props.gasPrice)/(40e9)).toFixed(9), 9
-          )
-          
-          // Get current nonce from NonceManager cache in main.mjs
-          const nonceResult = await window.electronAPI.getCurrentNonce(currentTradeSummary.sender.address);
-          if (!nonceResult.success) {
-            throw new Error('Failed to get nonce: ' + nonceResult.error);
-          }
-          const nonce = nonceResult.nonce;
-          console.log(`Using NonceManager nonce ${nonce} for mixed trades`);
-
-          const [resultsU, resultsB] = await Promise.all([
-            executeMixedSwaps(
-              currentTrades.filter((t) => !t.callData),
-              {
-                ...currentTradeSummary,
-                fromAmount: currentTradeSummary.fromAmountU,
-                expectedToAmount: currentTradeSummary.toAmountU,
-                toAmount: currentTradeSummary.toAmountU,
-                protocol: 'Uniswap'
-              },
-              slippage.value,
-              props.gasPrice,
-              maxFeePerGas,
-              maxPriorityFeePerGas,
-              nonce,
-            ),
-            window.electronAPI.sendTransaction({
-              callData: currentTrades.filter(t => t.callData)[0].callData,
-              outputAmount: currentTrades.filter(t => t.callData)[0].outputAmount.toString(),
-              value: currentTrades.filter(t => t.callData)[0].value.toString(),
-              nonce: nonce + 1,
-              maxFeePerGas: maxFeePerGas,
-              maxPriorityFeePerGas: maxPriorityFeePerGas,
-              from: currentTradeSummary.sender.address,
-              contractAddress: currentTrades.filter(t => t.contractAddress)[0].contractAddress,
-              tradeSummary: JSON.parse(JSON.stringify({
-                ...currentTradeSummary,
-                fromAmount: currentTradeSummary.fromAmountB,
-                expectedToAmount: currentTradeSummary.toAmountB,
-                toAmount: currentTradeSummary.toAmountB,
-                protocol: 'Balancer',
-              })),
-            })
-          ]);
-          
-          if (!resultsU?.success)
-            swapMessage.value = 'Problem in sending transaction to Uniswap in U + B: ' + resultsU?.error?.toString()
-          if (resultsU.warnings && resultsU.warnings.length) {
-            globalWarnings = resultsU.warnings;
-          }
-          if (!resultsB?.success)
-            swapMessage.value += 'Problem in sending transaction to Balancer in U + B: ' + resultsB?.error?.toString()
-          if (resultsB.warnings && resultsB.warnings.length) {
-            globalWarnings = resultsB.warnings;
+        } else if (currentTradeSummary.protocol === 'Contract') {
+          // WalletBundler execution for cross-DEX optimization
+          const trade = currentTrades[0];
+          if (!trade || !trade.executionPlan) {
+            throw new Error('Missing execution plan for Contract protocol');
           }
 
-          if (resultsU && resultsU.success)
-            globalTxs.push(resultsU.tx);
-          if (resultsB && resultsB.success)
-            globalTxs.push(resultsB.tx);
+          // Create encoder-based execution plan
+          const encoderPlan = createEncoderExecutionPlan(
+            trade.executionPlan,
+            currentTradeSummary.fromToken,
+            currentTradeSummary.toToken,
+            slippage.value
+          );
+
+          // Get bundler contract address for this wallet
+          const bundlerAddress = contractAddress[currentTradeSummary.sender.address];
+          if (!bundlerAddress) {
+            throw new Error('No bundler contract deployed for this wallet. Please deploy first.');
+          }
+
+          // Execute via bundler contract
+          const bundlerArgs = {
+            bundlerAddress,
+            fromToken: encoderPlan.fromToken,
+            fromAmount: encoderPlan.fromAmount.toString(),
+            toToken: encoderPlan.toToken,
+            encoderTargets: encoderPlan.encoderTargets,
+            encoderData: encoderPlan.encoderData,
+            wrapOperations: encoderPlan.wrapOperations,
+            minOutputAmount: trade.executionPlan.minOutput.toString(),
+            from: currentTradeSummary.sender.address,
+            tradeSummary: JSON.parse(JSON.stringify(currentTradeSummary)),
+            value: encoderPlan.fromToken === ethers.constants.AddressZero ? encoderPlan.fromAmount.toString() : '0'
+          };
+
+          const response = await window.electronAPI.executeBundler(bundlerArgs);
+          if (!response?.success) {
+            throw new Error('Problem in executing WalletBundler transaction: ' + response?.error?.toString());
+          }
+          if (response.warnings && response.warnings.length) {
+            globalWarnings = response.warnings;
+          }
+
+          globalTxs.push(response.tx);
+        } else if (currentTradeSummary.protocol === 'Odos') {
+          // Odos aggregator execution
+          const trade = currentTrades[0];
+          if (!trade || !trade.rawData || !trade.rawData.pathId) {
+            throw new Error('Missing pathId for Odos protocol');
+          }
+
+          // Get assembled transaction data from Odos
+          const assembled = await getOdosAssemble({
+            pathId: trade.rawData.pathId,
+            userAddr: currentTradeSummary.sender.address,
+            simulate: false
+          });
+
+          if (!assembled || !assembled.transaction) {
+            throw new Error('Failed to assemble Odos transaction');
+          }
+
+          // Send Odos transaction
+          const odosArgs = {
+            to: assembled.transaction.to,
+            data: assembled.transaction.data,
+            value: assembled.transaction.value || '0',
+            from: currentTradeSummary.sender.address,
+            tradeSummary: JSON.parse(JSON.stringify(currentTradeSummary)),
+            gasLimit: assembled.transaction.gas || trade.gasEstimate || 300000
+          };
+
+          const response = await window.electronAPI.sendTransaction(odosArgs);
+          if (!response?.success) {
+            throw new Error('Problem in sending Odos transaction: ' + response?.error?.toString());
+          }
+          if (response.warnings && response.warnings.length) {
+            globalWarnings = response.warnings;
+          }
+
+          globalTxs.push(response.tx);
         }
-        
+
         // Subtract "from amount" from our local offset map
         if (!providedTradeSummary)
           increaseOffsetBalance(
@@ -2503,28 +2366,9 @@ export default {
         }
 
         console.log(currentTradeSummary);
-        
-        if (currentTradeSummary.protocol === 'Uniswap & Balancer') {
-          currentTradeSummary.txId = globalTxs[0]?.hash || null;
-          emit('update:trade', {
-             ...currentTradeSummary,
-            fromAmount: currentTradeSummary.fromAmountU,
-            expectedToAmount: currentTradeSummary.toAmountU,
-            toAmount: currentTradeSummary.toAmountU,
-            protocol: 'Uniswap'
-          });
-          currentTradeSummary.txId = globalTxs[1]?.hash || null;
-          emit('update:trade', {
-            ...currentTradeSummary,
-            fromAmount: currentTradeSummary.fromAmountB,
-            expectedToAmount: currentTradeSummary.toAmountB,
-            toAmount: currentTradeSummary.toAmountB,
-            protocol: 'Balancer'
-          });
-        } else {
-          currentTradeSummary.txId = globalTxs[0]?.hash || null;
-          emit('update:trade', { ...currentTradeSummary });
-        }
+
+        currentTradeSummary.txId = globalTxs[0]?.hash || null;
+        emit('update:trade', { ...currentTradeSummary });
       } catch (error) {
         // If using provided trade summary, update it; otherwise update the reactive one
         const currentTradeSummary = providedTradeSummary || tradeSummary;
@@ -2591,7 +2435,7 @@ export default {
         }
         
         // Uniswap
-        if (activeTradeSummary.protocol === 'Uniswap' || activeTradeSummary.protocol === 'Uniswap & Balancer') {
+        if (activeTradeSummary.protocol === 'Uniswap') {
           const { success, error } = await window.electronAPI.approveSpender(
             senderAddress,
             tokenAddr,
@@ -2601,7 +2445,7 @@ export default {
           if (!success) throw error;
         }
         // Balancer
-        if (activeTradeSummary.protocol === 'Balancer' || activeTradeSummary.protocol === 'Uniswap & Balancer') {
+        else if (activeTradeSummary.protocol === 'Balancer') {
           const myTrades = localTrades || trades.value;
           const balancerTradeV3 = myTrades.find(
             t => t.callData && t.contractAddress.toLowerCase() !== BALANCER_VAULT_ADDRESS.toLowerCase()
@@ -2622,6 +2466,34 @@ export default {
             );
             if (!success) throw error;
           }
+        }
+        // Contract (WalletBundler)
+        else if (activeTradeSummary.protocol === 'Contract') {
+          const bundlerAddress = contractAddress[senderAddress];
+          if (!bundlerAddress) {
+            throw new Error('No bundler contract deployed for this wallet. Please deploy first.');
+          }
+
+          const { success, error } = await window.electronAPI.approveSpender(
+            senderAddress,
+            tokenAddr,
+            bundlerAddress
+          );
+          if (!success) throw error;
+        }
+        // Odos
+        else if (activeTradeSummary.protocol === 'Odos') {
+          // Use stored router address from allowance check
+          if (!odosRouterAddress.value) {
+            throw new Error('Odos router address not available. Please refresh quote.');
+          }
+
+          const { success, error } = await window.electronAPI.approveSpender(
+            senderAddress,
+            tokenAddr,
+            odosRouterAddress.value
+          );
+          if (!success) throw error;
         }
 
         needsToApprove.value = false;
@@ -3212,10 +3084,7 @@ export default {
           order.fromToken.address,
           order.toToken.address,
           executionAmount.toString(),
-          order?.sender?.address || senderDetails.value.address,
-          true,
-          true,
-          fromToken.price * Number(executionAmount) >= 100,
+          order?.sender?.address || senderDetails.value.address
         );
 
         if (!bestTradeResult || !bestTradeResult.totalHuman) {
@@ -3767,10 +3636,7 @@ export default {
                 order.fromToken.address,
                 order.toToken.address,
                 testAmount.toString(),
-                order?.sender?.address || senderDetails.value.address,
-                true,
-                true,
-                true,
+                order?.sender?.address || senderDetails.value.address
               );
 
               // Calculate exact execution price using the helper (with small test amount)
@@ -3896,10 +3762,7 @@ export default {
           order.fromToken.address,
           order.toToken.address,
           testAmount.toString(),
-          order?.sender?.address || senderDetails.value.address,
-          true,
-          true,
-          fromTokenData.price * testAmount >= 100,
+          order?.sender?.address || senderDetails.value.address
         );
       } catch (error) {
         console.error(`Error getting best trades for order ${order.id}:`, error);

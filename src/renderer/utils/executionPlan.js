@@ -4,14 +4,19 @@ import { ethers } from 'ethers';
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
-const balancerEncoderAddress = '0x0C09a7a07606E1eD8FDE25c38035F886aA82e499';
-const uniswapEncoderAddress = '0xd9200a8aE63531C847cE18517aF98BD666A48aE1';
+const balancerEncoderAddress = '0x0156BB9cCeF37D3d1b9a3CB52b9b4BC26dA1563e';
+const uniswapEncoderAddress = '0x4B748Ed83A186E214696487E5686fB1B5bD19932';
 
 /**
  * Create execution plan for the selected route
  * Now async to support intermediate amount calculations
+ * @param {Object} route - The route object from routing optimizer
+ * @param {Object} tokenIn - Input token object
+ * @param {Object} tokenOut - Output token object
+ * @param {number} slippageTolerance - Slippage tolerance percentage
+ * @param {BigNumber} inputAmount - Optional input amount in wei (required for normalized routes)
  */
-export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTolerance) {
+export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTolerance, inputAmount = null) {
   const plan = {
     route,
     executionSteps: [],
@@ -21,8 +26,14 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
   };
 
   // Normalize route to have poolExecutionStructure if it doesn't have one
-  if (!route.poolExecutionStructure) {
-    route = normalizeRouteToPoolStructure(route, tokenIn, tokenOut);
+  // OR if we have inputAmount but the structure doesn't have inputAmounts set
+  const needsNormalization = !route.poolExecutionStructure ||
+    (inputAmount && route.poolExecutionStructure &&
+     route.poolExecutionStructure.levels?.[0]?.pools?.[0]?.inputAmount === undefined);
+
+  if (needsNormalization) {
+    console.log(`   🔄 ${route.poolExecutionStructure ? 'Re-normalizing with inputAmount' : 'Normalizing route'}`);
+    route = normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount);
   }
 
   if (route.type === 'optimized-multi-route-split' || route.poolExecutionStructure) {
@@ -162,7 +173,7 @@ export function createEncoderExecutionPlan(
     }
 
     // Determine actual token addresses
-    const inputTokenAddress = step.inputToken?.address ||
+    let inputTokenAddress = step.inputToken?.address ||
                              (step.inputToken === 'ETH' ? ETH_ADDRESS :
                               step.inputToken === 'WETH' ? WETH_ADDRESS :
                               tokenIn.address);
@@ -170,6 +181,21 @@ export function createEncoderExecutionPlan(
                               (step.outputToken === 'ETH' ? ETH_ADDRESS :
                                step.outputToken === 'WETH' ? WETH_ADDRESS :
                                tokenOut.address);
+
+    // CRITICAL: For Balancer, if the pool uses WETH but we have ETH, we need to wrap
+    // Check if pool expects WETH but we're sending ETH
+    let needsWrapBeforeSwap = false;
+    if (step.protocol === 'balancer') {
+      const poolExpectsWETH = step.path?.hops?.[0]?.tokenIn?.toLowerCase() === WETH_ADDRESS.toLowerCase();
+      const weHaveETH = tokenIn.address === ETH_ADDRESS || inputTokenAddress === ETH_ADDRESS;
+
+      if (poolExpectsWETH && weHaveETH) {
+        console.log('   🔄 Pool expects WETH but we have ETH - will wrap before swap');
+        // Use WETH address for the encoder
+        inputTokenAddress = WETH_ADDRESS;
+        needsWrapBeforeSwap = true;
+      }
+    }
 
     // Calculate minimum amount out with slippage for this step
     let minAmountOut = BigNumber.from(0);
@@ -184,7 +210,13 @@ export function createEncoderExecutionPlan(
 
     if (step.protocol === 'balancer') {
       // Extract Balancer pool ID from path
-      poolId = step.poolId || step.path?.hops?.[0]?.poolId || '0x0000000000000000000000000000000000000000000000000000000000000000';
+      console.log(`   [Balancer] step.poolId: ${step.poolId || 'undefined'}`);
+      console.log(`   [Balancer] step.path?.hops?.[0]?.poolId: ${step.path?.hops?.[0]?.poolId || 'undefined'}`);
+      console.log(`   [Balancer] step.path?.hops?.[0]?.poolData?.id: ${step.path?.hops?.[0]?.poolData?.id || 'undefined'}`);
+      const rawPoolId = step.poolId || step.path?.hops?.[0]?.poolId || '0x0000000000000000000000000000000000000000000000000000000000000000';
+      // Convert address (20 bytes) to bytes32 (32 bytes) by zero-padding
+      poolId = rawPoolId.length === 42 ? ethers.utils.hexZeroPad(rawPoolId, 32) : rawPoolId;
+      console.log(`   [Balancer] Final poolId (bytes32): ${poolId}`);
     } else if (step.protocol === 'uniswap') {
       // Extract fee from Uniswap trade
       const tradeRoute = step.trade?.route || step.trade?.swaps?.[0]?.route;
@@ -202,17 +234,18 @@ export function createEncoderExecutionPlan(
       if (inputAmount.eq(ethers.constants.MaxUint256)) {
         // Use all balance swap - encoder will query actual balance
         const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['bytes32', 'address', 'address', 'uint256'],
+          ['bytes32', 'address', 'address', 'uint256', 'uint8'],
           [
             poolId,
             inputTokenAddress,
             outputTokenAddress,
-            minAmountOut
+            minAmountOut,
+            step.wrapOperation || 0
           ]
         );
 
         // Encode the function selector for encodeUseAllBalanceSwap
-        const selector = ethers.utils.id('encodeUseAllBalanceSwap(bytes32,address,address,uint256)').slice(0, 10);
+        const selector = ethers.utils.id('encodeUseAllBalanceSwap(bytes32,address,address,uint256,uint8)').slice(0, 10);
         encoderData.push(selector + encoderCalldata.slice(2));
       } else {
         // Regular swap with exact amount
@@ -237,17 +270,18 @@ export function createEncoderExecutionPlan(
       if (inputAmount.eq(ethers.constants.MaxUint256)) {
         // Use all balance swap - encoder will query actual balance
         const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['address', 'address', 'uint24', 'uint256'],
+          ['address', 'address', 'uint24', 'uint256', 'uint8'],
           [
             inputTokenAddress,
             outputTokenAddress,
             fee,
-            minAmountOut
+            minAmountOut,
+            step.wrapOperation || 0
           ]
         );
 
         // Encode the function selector for encodeUseAllBalanceSwap
-        const selector = ethers.utils.id('encodeUseAllBalanceSwap(address,address,uint24,uint256)').slice(0, 10);
+        const selector = ethers.utils.id('encodeUseAllBalanceSwap(address,address,uint24,uint256,uint8)').slice(0, 10);
         encoderData.push(selector + encoderCalldata.slice(2));
       } else {
         // Regular swap with exact amount
@@ -269,12 +303,25 @@ export function createEncoderExecutionPlan(
     }
   });
 
+  // Calculate total input amount from level 0 execution steps
+  const totalInputAmount = executionPlan.executionSteps
+    .filter(step => step.level === 0)
+    .reduce((sum, step) => {
+      const stepAmount = step.inputAmount || BigNumber.from(0);
+      return sum.add(stepAmount);
+    }, BigNumber.from(0));
+
+  // Fallback to route properties if no execution steps with input amounts
+  const fromAmount = totalInputAmount.gt(0)
+    ? totalInputAmount
+    : (executionPlan.route.inputAmount ||
+       executionPlan.route.paths?.[0]?.inputAmount ||
+       executionPlan.route.splits?.reduce((sum, s) => sum.add(s.input || s.amount), BigNumber.from(0)) ||
+       BigNumber.from(0));
+
   return {
     fromToken: tokenIn.address || ETH_ADDRESS,
-    fromAmount: executionPlan.route.inputAmount ||
-                executionPlan.route.paths?.[0]?.inputAmount ||
-                executionPlan.route.splits?.reduce((sum, s) => sum.add(s.input || s.amount), BigNumber.from(0)) ||
-                BigNumber.from(0),
+    fromAmount,
     toToken: tokenOut.address || ETH_ADDRESS,
     encoderTargets,
     encoderData,
@@ -443,9 +490,14 @@ export function shouldUseAllBalance(step, executionPlan) {
 /**
  * Normalize any route type to have a poolExecutionStructure
  * Converts single-path routes (balancer-path-1, uniswap-path-1, etc) to pool-based structure
+ * @param {Object} route - The route to normalize
+ * @param {Object} tokenIn - Input token object
+ * @param {Object} tokenOut - Output token object
+ * @param {BigNumber} inputAmount - The input amount in wei
  */
-function normalizeRouteToPoolStructure(route, tokenIn, tokenOut) {
+function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = null) {
   console.log(`\n📐 Normalizing route type "${route.type}" to pool execution structure...`);
+  console.log(`   Received inputAmount param: ${inputAmount ? inputAmount.toString() : 'null/undefined'}`);
 
   // Simple single-path routes (balancer-path-1, uniswap-path-1, etc.)
   if (route.type && (route.type.startsWith('balancer-path-') || route.type.startsWith('uniswap-path-'))) {
@@ -454,22 +506,50 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut) {
       throw new Error(`Route ${route.type} missing paths array`);
     }
 
+    console.log(`   path.inputAmount: ${path.inputAmount ? path.inputAmount.toString() : 'undefined'}`);
+    console.log(`   route.inputAmount: ${route.inputAmount ? route.inputAmount.toString() : 'undefined'}`);
+
+    // Determine the input amount from multiple sources (use ?? for BigNumber safety)
+    const firstHopInputAmount = inputAmount ?? path.inputAmount ?? route.inputAmount;
+    console.log(`   Final firstHopInputAmount: ${firstHopInputAmount ? firstHopInputAmount.toString() : 'undefined'}`);
+
     const pools = [];
 
     if (route.protocol === 'balancer') {
       // Balancer single path - could be multi-hop
       if (path.path && path.path.hops) {
+        console.log(`   Balancer path.path.hops:`, JSON.stringify(path.path.hops, null, 2));
         path.path.hops.forEach((hop, hopIndex) => {
+          // For Balancer V3, the pool address IS the pool ID
+          const balancerPoolId = hop.poolAddress || hop.poolData?.address || hop.poolData?.id || '';
+
+          // Detect if we need to wrap/unwrap ETH<->WETH for first hop
+          let wrapOp = 0;
+          if (hopIndex === 0) {
+            const poolExpectsWETH = hop.tokenIn?.toLowerCase() === WETH_ADDRESS.toLowerCase();
+            const poolExpectsETH = hop.tokenIn?.toLowerCase() === ETH_ADDRESS.toLowerCase();
+            const userSendsETH = tokenIn.address === ETH_ADDRESS;
+            const userSendsWETH = tokenIn.address === WETH_ADDRESS;
+
+            if (poolExpectsWETH && userSendsETH) {
+              wrapOp = 1; // Wrap ETH to WETH before swap
+              console.log(`   🔄 Pool expects WETH but user sends ETH - setting wrapOperation: 1 (wrap before)`);
+            } else if (poolExpectsETH && userSendsWETH) {
+              wrapOp = 3; // Unwrap WETH to ETH before swap
+              console.log(`   🔄 Pool expects ETH but user sends WETH - setting wrapOperation: 3 (unwrap before)`);
+            }
+          }
+
           pools.push({
-            poolAddress: hop.poolData?.address || hop.poolData?.id || '',
-            poolId: hop.poolData?.id || '',
+            poolAddress: balancerPoolId,
+            poolId: balancerPoolId,
             protocol: 'balancer',
             inputToken: hopIndex === 0 ? tokenIn.symbol : hop.poolData?.tokens?.find(t => t.address.toLowerCase() === hop.tokenIn.toLowerCase())?.symbol || 'UNKNOWN',
             outputToken: hopIndex === path.path.hops.length - 1 ? tokenOut.symbol : hop.poolData?.tokens?.find(t => t.address.toLowerCase() === hop.tokenOut.toLowerCase())?.symbol || 'UNKNOWN',
             percentage: 1.0,
-            inputAmount: hopIndex === 0 ? path.inputAmount : undefined,
+            inputAmount: hopIndex === 0 ? firstHopInputAmount : undefined,
             expectedOutput: hopIndex === path.path.hops.length - 1 ? path.outputAmount : undefined,
-            wrapOperation: 0,
+            wrapOperation: wrapOp,
             shouldUseAllBalance: true,
             path: path.path
           });
@@ -484,7 +564,7 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut) {
         inputToken: tokenIn.symbol,
         outputToken: tokenOut.symbol,
         percentage: 1.0,
-        inputAmount: path.inputAmount,
+        inputAmount: firstHopInputAmount,
         expectedOutput: path.outputAmount,
         wrapOperation: 0,
         shouldUseAllBalance: true,

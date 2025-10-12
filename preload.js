@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deployBundler: (walletAddress, registryAddress) => ipcRenderer.invoke('deploy-bundler', walletAddress, registryAddress),
   getBundler: (walletAddress, registryAddress) => ipcRenderer.invoke('get-bundler', walletAddress, registryAddress),
   approveBundler: (walletAddress, tokenAddress, registryAddress) => ipcRenderer.invoke('approve-bundler', walletAddress, tokenAddress, registryAddress),
+  executeBundler: (args) => ipcRenderer.invoke('execute-bundler', args),
   loadPoolCache: () => ipcRenderer.invoke('load-pool-cache'),
   savePoolCache: (cache) => ipcRenderer.invoke('save-pool-cache', cache),
 });

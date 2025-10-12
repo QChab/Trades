@@ -1151,6 +1151,78 @@ function createWindow() {
     }
   });
 
+  ipcMain.handle('execute-bundler', async (event, args) => {
+    const warnings = [];
+    try {
+      const wallet = getWallet(args.from.toLowerCase(), true);
+      const walletAddress = await wallet.getAddress();
+
+      // Check ETH balance
+      const balance = await provider.getBalance(walletAddress);
+      const balanceEth = Number(ethers.utils.formatEther(balance));
+      if (balanceEth < 0.0005) {
+        throw new Error(`ETH Balance of address ${walletAddress} too low (< 0.0005)`);
+      } else if (balanceEth < 0.01) {
+        warnings.push(`Beware ETH Balance of address ${walletAddress} low (< 0.01)`);
+      }
+
+      // Get WalletBundler contract
+      const WalletBundlerABI = [
+        'function encodeAndExecute(address fromToken, uint256 fromAmount, address toToken, address[] calldata encoderTargets, bytes[] calldata encoderData, uint8[] calldata wrapOperations) external payable returns (bool[] memory)'
+      ];
+
+      const bundlerContract = new ethers.Contract(args.bundlerAddress, WalletBundlerABI, wallet);
+
+      // Get nonce from NonceManager
+      const nonce = await nonceManager.getNonce(walletAddress);
+
+      // Prepare transaction
+      const txData = {
+        value: args.value || '0',
+        maxFeePerGas: ethers.utils.parseUnits((Number(gasPrice) * 1.85 / 1e9).toFixed(3), 9),
+        maxPriorityFeePerGas: ethers.utils.parseUnits((0.02 + Math.random() * 0.05 + (Number(gasPrice) / (40e9))).toFixed(9), 9),
+        nonce: nonce
+      };
+
+      console.log('Executing WalletBundler.encodeAndExecute with:', {
+        fromToken: args.fromToken,
+        fromAmount: args.fromAmount,
+        toToken: args.toToken,
+        encoderTargets: args.encoderTargets,
+        wrapOperations: args.wrapOperations,
+        value: txData.value
+      });
+
+      // Execute the bundler transaction
+      let txResponse;
+      try {
+        txResponse = await bundlerContract.encodeAndExecute(
+          args.fromToken,
+          args.fromAmount,
+          args.toToken,
+          args.encoderTargets,
+          args.encoderData,
+          args.wrapOperations,
+          txData
+        );
+
+        console.log(`WalletBundler transaction sent with nonce ${txResponse?.nonce}, hash: ${txResponse?.hash}`);
+        nonceManager.incrementNonce(walletAddress);
+      } catch (err) {
+        await nonceManager.handleTransactionError(walletAddress, err);
+        throw err;
+      }
+
+      // Save trade in database
+      saveTradeInDB({ ...args.tradeSummary, txId: txResponse?.hash });
+
+      return { success: true, warnings, tx: JSON.parse(JSON.stringify(txResponse)) };
+    } catch (err) {
+      console.error('WalletBundler execution error:', err);
+      return { success: false, error: err.toString(), warnings };
+    }
+  });
+
   ipcMain.handle('confirm-trade', (event, txId, gasCost, toAmount) => {
     return confirmTradeInDB(txId, gasCost, toAmount);
   });

@@ -83,6 +83,7 @@ contract BalancerEncoder {
      * @param tokenIn Address of input token
      * @param tokenOut Address of output token
      * @param minAmountOut Minimum acceptable output (can be 0 for intermediate)
+     * @param wrapOp Wrap operation: 0=none, 1=wrap ETH before, 3=unwrap WETH before
      * @return target The Vault contract address
      * @return callData The encoded swap call with actual balance
      * @return inputAmount Returns the actual balance amount
@@ -92,10 +93,23 @@ contract BalancerEncoder {
         bytes32 poolId,
         address tokenIn,
         address tokenOut,
-        uint256 minAmountOut
+        uint256 minAmountOut,
+        uint8 wrapOp
     ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
+        // Determine which balance to query based on wrap operation
+        address balanceToken = tokenIn;
+        if (wrapOp == 1) {
+            // Will wrap ETH to WETH before swap, so query ETH balance
+            balanceToken = address(0);
+        } else if (wrapOp == 3) {
+            // Will unwrap WETH to ETH before swap, so query WETH balance
+            balanceToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // WETH
+        }
+
         // Get the actual token balance using optimized assembly
-        uint256 actualBalance = _getTokenBalance(tokenIn, msg.sender);
+        uint256 actualBalance = balanceToken == address(0)
+            ? msg.sender.balance
+            : _getTokenBalance(balanceToken, msg.sender);
 
         SingleSwap memory singleSwap = SingleSwap({
             poolId: poolId,
