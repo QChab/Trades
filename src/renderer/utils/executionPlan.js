@@ -4,8 +4,8 @@ import { ethers } from 'ethers';
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
-const balancerEncoderAddress = '0x8329b276c8a4f55EDe7D8B24d1c8C73f6E97c525';
-const uniswapEncoderAddress = '0x62B186AE7AfD24cD9acdEdE1D8b253259440295C';  // V4 with correct action codes
+const balancerEncoderAddress = '0x3D4941A71EaAB93c864F6984C0b25d48ff4585df';
+const uniswapEncoderAddress = '0x4E9448fEed1E0209934bddc8b912D2a16D778BBe';  // V4 with correct action codes
 
 /**
  * Create execution plan for the selected route
@@ -227,9 +227,7 @@ export function createEncoderExecutionPlan(
     if (step.expectedOutput || step.output) {
       const expectedOut = step.expectedOutput || step.output || BigNumber.from(0);
       // Apply slippage: minAmount = expectedAmount * (100 - slippagePercent) / 100
-      console.log(expectedOut.toString())
       minAmountOut = expectedOut.mul(Math.floor((100 - slippagePercent) * 100)).div(10000);
-      console.log(minAmountOut.toString())
     } else {
       // For intermediate hops, we don't enforce a minimum output (use 0)
       // since they use all balance from the previous step anyway
@@ -256,18 +254,8 @@ export function createEncoderExecutionPlan(
         tickSpacing = pool.poolKey.tickSpacing;
         hooks = pool.poolKey.hooks;
 
-        // Log the actual pool key from SDK
-        console.log(`\n   🔍 Uniswap V4 Pool Key from SDK:`);
-        console.log(`      Currency0: ${currency0}`);
-        console.log(`      Currency1: ${currency1}`);
-        console.log(`      Fee: ${fee}`);
-        console.log(`      TickSpacing: ${tickSpacing}`);
-        console.log(`      Hooks: ${hooks}`);
-        console.log(`      Pool Address: ${pool.address || 'N/A'}`);
-
         // Determine swap direction: zeroForOne = true if inputToken is currency0
         zeroForOne = inputTokenAddress.toLowerCase() === currency0.toLowerCase();
-        console.log(`      ZeroForOne: ${zeroForOne} (inputToken: ${inputTokenAddress})`);
       } else {
         // Fallback for V3 pools (shouldn't happen if using V4)
         throw new Error('Uniswap pool missing poolKey data - V4 pools required');
@@ -298,15 +286,6 @@ export function createEncoderExecutionPlan(
         const selector = ethers.utils.id('encodeUseAllBalanceSwap(address,address,address,uint256,uint8)').slice(0, 10);
         const fullEncoderData = selector + encoderCalldata.slice(2);
         encoderData.push(fullEncoderData);
-
-        console.log(`\n   📝 Balancer Encoder Data (encodeUseAllBalanceSwap):`);
-        console.log(`      Selector: ${selector}`);
-        console.log(`      Pool: ${poolId}`);
-        console.log(`      TokenIn: ${inputTokenAddress}`);
-        console.log(`      TokenOut: ${outputTokenAddress}`);
-        console.log(`      MinAmountOut: ${minAmountOut.toString()}`);
-        console.log(`      WrapOp: ${step.wrapOperation || 0}`);
-        console.log(`      Full Data: ${fullEncoderData}`);
       } else {
         // Regular swap with exact amount
         const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
@@ -324,15 +303,6 @@ export function createEncoderExecutionPlan(
         const selector = ethers.utils.id('encodeSingleSwap(address,address,address,uint256,uint256)').slice(0, 10);
         const fullEncoderData = selector + encoderCalldata.slice(2);
         encoderData.push(fullEncoderData);
-
-        console.log(`\n   📝 Balancer Encoder Data (encodeSingleSwap):`);
-        console.log(`      Selector: ${selector}`);
-        console.log(`      Pool: ${poolId}`);
-        console.log(`      TokenIn: ${inputTokenAddress}`);
-        console.log(`      TokenOut: ${outputTokenAddress}`);
-        console.log(`      InputAmount: ${inputAmount.toString()}`);
-        console.log(`      MinAmountOut: ${minAmountOut.toString()}`);
-        console.log(`      Full Data: ${fullEncoderData}`);
       }
     } else if (step.protocol === 'uniswap') {
       encoderTargets.push(uniswapEncoderAddress);
@@ -354,19 +324,6 @@ export function createEncoderExecutionPlan(
         const selector = ethers.utils.id('encodeUseAllBalanceSwap(((address,address,uint24,int24,address),bool,uint256,uint8,address))').slice(0, 10);
         const fullEncoderData = selector + encoderCalldata.slice(2);
         encoderData.push(fullEncoderData);
-
-        console.log(`\n   📝 Uniswap V4 Encoder Data (encodeUseAllBalanceSwap):`);
-        console.log(`      Selector: ${selector}`);
-        console.log(`      Currency0: ${currency0}`);
-        console.log(`      Currency1: ${currency1}`);
-        console.log(`      Fee: ${fee}`);
-        console.log(`      TickSpacing: ${tickSpacing}`);
-        console.log(`      Hooks: ${hooks}`);
-        console.log(`      ZeroForOne: ${zeroForOne}`);
-        console.log(`      MinAmountOut: ${minAmountOut.toString()}`);
-        console.log(`      WrapOp: ${step.wrapOperation || 0}`);
-        console.log(`      TokenIn: ${inputTokenAddress}`);
-        console.log(`      Full Data: ${fullEncoderData}`);
       } else {
         // Regular swap with exact amount
         // V4 signature: encodeSingleSwap((PoolKey,bool,uint256,uint256,address))
@@ -384,19 +341,6 @@ export function createEncoderExecutionPlan(
         const selector = ethers.utils.id('encodeSingleSwap(((address,address,uint24,int24,address),bool,uint256,uint256,address))').slice(0, 10);
         const fullEncoderData = selector + encoderCalldata.slice(2);
         encoderData.push(fullEncoderData);
-
-        console.log(`\n   📝 Uniswap V4 Encoder Data (encodeSingleSwap):`);
-        console.log(`      Selector: ${selector}`);
-        console.log(`      Currency0: ${currency0}`);
-        console.log(`      Currency1: ${currency1}`);
-        console.log(`      Fee: ${fee}`);
-        console.log(`      TickSpacing: ${tickSpacing}`);
-        console.log(`      Hooks: ${hooks}`);
-        console.log(`      ZeroForOne: ${zeroForOne}`);
-        console.log(`      InputAmount: ${inputAmount.toString()}`);
-        console.log(`      MinAmountOut: ${minAmountOut.toString()}`);
-        console.log(`      TokenIn: ${inputTokenAddress}`);
-        console.log(`      Full Data: ${fullEncoderData}`);
       }
     }
   });
@@ -599,17 +543,12 @@ export function shouldUseAllBalance(step, executionPlan) {
  */
 function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = null) {
   console.log(`\n📐 Normalizing route type "${route.type}" to pool execution structure...`);
-  console.log(`   Received inputAmount param: ${inputAmount ? inputAmount.toString() : 'null/undefined'}`);
-
   // Simple single-path routes (balancer-path-1, uniswap-path-1, etc.)
   if (route.type && (route.type.startsWith('balancer-path-') || route.type.startsWith('uniswap-path-'))) {
     const path = route.paths && route.paths[0];
     if (!path) {
       throw new Error(`Route ${route.type} missing paths array`);
     }
-
-    console.log(`   path.inputAmount: ${path.inputAmount ? path.inputAmount.toString() : 'undefined'}`);
-    console.log(`   route.inputAmount: ${route.inputAmount ? route.inputAmount.toString() : 'undefined'}`);
 
     // Determine the input amount from multiple sources (use ?? for BigNumber safety)
     const firstHopInputAmount = inputAmount ?? path.inputAmount ?? route.inputAmount;
@@ -620,7 +559,6 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
     if (route.protocol === 'balancer') {
       // Balancer single path - could be multi-hop
       if (path.path && path.path.hops) {
-        console.log(`   Balancer path.path.hops:`, JSON.stringify(path.path.hops, null, 2));
         path.path.hops.forEach((hop, hopIndex) => {
           // For Balancer V3, the pool address IS the pool ID
           const balancerPoolId = hop.poolAddress || hop.poolData?.address || hop.poolData?.id || '';
@@ -635,10 +573,8 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
 
             if (poolExpectsWETH && userSendsETH) {
               wrapOp = 1; // Wrap ETH to WETH before swap
-              console.log(`   🔄 Pool expects WETH but user sends ETH - setting wrapOperation: 1 (wrap before)`);
             } else if (poolExpectsETH && userSendsWETH) {
               wrapOp = 3; // Unwrap WETH to ETH before swap
-              console.log(`   🔄 Pool expects ETH but user sends WETH - setting wrapOperation: 3 (unwrap before)`);
             }
           }
 
@@ -790,10 +726,8 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
 
           if (poolExpectsWETH && userSendsETH) {
             wrapOp = 1; // Wrap ETH to WETH before swap
-            console.log(`   🔄 Leg ${legIndex}: Pool expects WETH but user sends ETH - setting wrapOperation: 1`);
           } else if (poolExpectsETH && userSendsWETH) {
             wrapOp = 3; // Unwrap WETH to ETH before swap
-            console.log(`   🔄 Leg ${legIndex}: Pool expects ETH but user sends WETH - setting wrapOperation: 3`);
           }
         }
 

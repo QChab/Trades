@@ -268,7 +268,7 @@
                 class="swap-button"
                 @click="isSwapButtonDisabled=true; triggerTrade()"
               >
-                {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : `Swap ($${((tradeSummary?.gasLimit || 300000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) })`}}
+                {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : `Swap ($${displayedGasCostUsd})`}}
               </button>
             </div>
             <div v-else>
@@ -969,7 +969,37 @@ export default {
       };
     });
 
-    // Helper: get a user’s token‐balance as a string with 5 decimals
+    // Computed gas cost for swap button display
+    // Applies 1.5x multiplier for WalletBundler trades with multiple pools
+    const displayedGasCostUsd = computed(() => {
+      const baseGasLimit = tradeSummary?.gasLimit || 300000;
+      let gasLimit = baseGasLimit;
+
+      // For WalletBundler (contract mode), apply 1.5x multiplier if multiple pools
+      if (tradeSummary?.protocol === 'WalletBundler') {
+        // Count pools from execution plan or pool structure
+        let poolCount = 0;
+
+        if (tradeSummary?.executionPlan?.executionSteps) {
+          poolCount = tradeSummary.executionPlan.executionSteps.length;
+        } else if (tradeSummary?.rawData?.bestRoute?.poolExecutionStructure?.levels) {
+          // Count pools from poolExecutionStructure
+          tradeSummary.rawData.bestRoute.poolExecutionStructure.levels.forEach(level => {
+            poolCount += level.pools.length;
+          });
+        }
+
+        // Apply 1.5x multiplier if more than 1 pool
+        if (poolCount > 1) {
+          gasLimit = Math.floor(baseGasLimit * 1.5);
+        }
+      }
+
+      const gasCostUsd = (gasLimit * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2);
+      return gasCostUsd;
+    });
+
+    // Helper: get a user's token‐balance as a string with 5 decimals
     // Helper: get current market price for display in pending orders
     const getCurrentMarketPrice = (fromToken, toToken, shouldInvert) => {
       if (!fromToken?.address || !toToken?.address) {
@@ -1564,8 +1594,7 @@ export default {
       // Odos
       if (tradeSummary.protocol === 'Odos') {
         // For Odos, we need the router address from the assembled transaction
-        // This will be available in trades[0].rawData
-        if (localTrades && localTrades.length > 0 && localTrades[0].rawData) {
+        if (localTrades && localTrades.length > 0) {
           // Store Odos router address for later approval use
           odosRouterAddress.value = null;
 
@@ -1573,15 +1602,19 @@ export default {
           // For now, we'll fetch it to check allowance
           try {
             const trade = localTrades[0];
-            if (!trade.rawData.pathId) {
-              console.error('Missing pathId for Odos allowance check');
+
+            // pathId is at the top level of the trade object (from quoteAggregator)
+            if (!trade.pathId) {
+              console.error('Missing pathId for Odos allowance check', trade);
               needsToApprove.value = false;
               return;
             }
 
+            console.log(`Checking Odos allowance with pathId: ${trade.pathId}`);
+
             // Get assembled transaction to get router address
             const assembled = await getOdosAssemble({
-              pathId: trade.rawData.pathId,
+              pathId: trade.pathId,
               userAddr: senderDetails.value.address,
               simulate: false
             });
@@ -1786,105 +1819,13 @@ export default {
         return parsed;
       };
 
-      // Calculate all percentage amounts and filter out nulls
-      const percentageAmounts = {
-        10: calculatePercentageAmount(10),
-        15: calculatePercentageAmount(15),
-        20: calculatePercentageAmount(20),
-        25: calculatePercentageAmount(25),
-        30: calculatePercentageAmount(30),
-        35: calculatePercentageAmount(35),
-        40: calculatePercentageAmount(40),
-        45: calculatePercentageAmount(45),
-        50: calculatePercentageAmount(50),
-        55: calculatePercentageAmount(55),
-        60: calculatePercentageAmount(60),
-        65: calculatePercentageAmount(65),
-        70: calculatePercentageAmount(70),
-        75: calculatePercentageAmount(75),
-        80: calculatePercentageAmount(80),
-        85: calculatePercentageAmount(85),
-        90: calculatePercentageAmount(90),
-        93: calculatePercentageAmount(93),
-        95: calculatePercentageAmount(95),
-        97: calculatePercentageAmount(97),
-        98: calculatePercentageAmount(98),
-        99: calculatePercentageAmount(99)
-      };
-
       const [
         bestTrades,
-        bestTrades10,
-        bestTrades15,
-        bestTrades20,
-        bestTrades25,
-        bestTrades30,
-        bestTrades35,
-        bestTrades40,
-        bestTrades45,
-        bestTrades50,
-        bestTrades55,
-        bestTrades60,
-        bestTrades65,
-        bestTrades70,
-        bestTrades75,
-        bestTrades80,
-        bestTrades85,
-        bestTrades90,
-        bestTrades93,
-        bestTrades95,
-        bestTrades97,
-        bestTrades98,
-        bestTrades99
       ] = await Promise.all([
         selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, fromAmtRaw),
-        percentageAmounts[10] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[10]) : Promise.resolve(null),
-        percentageAmounts[15] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[15]) : Promise.resolve(null),
-        percentageAmounts[20] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[20]) : Promise.resolve(null),
-        percentageAmounts[25] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[25]) : Promise.resolve(null),
-        percentageAmounts[30] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[30]) : Promise.resolve(null),
-        percentageAmounts[35] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[35]) : Promise.resolve(null),
-        percentageAmounts[40] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[40]) : Promise.resolve(null),
-        percentageAmounts[45] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[45]) : Promise.resolve(null),
-        percentageAmounts[50] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[50]) : Promise.resolve(null),
-        percentageAmounts[55] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[55]) : Promise.resolve(null),
-        percentageAmounts[60] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[60]) : Promise.resolve(null),
-        percentageAmounts[65] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[65]) : Promise.resolve(null),
-        percentageAmounts[70] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[70]) : Promise.resolve(null),
-        percentageAmounts[75] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[75]) : Promise.resolve(null),
-        percentageAmounts[80] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[80]) : Promise.resolve(null),
-        percentageAmounts[85] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[85]) : Promise.resolve(null),
-        percentageAmounts[90] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[90]) : Promise.resolve(null),
-        percentageAmounts[93] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[93]) : Promise.resolve(null),
-        percentageAmounts[95] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[95]) : Promise.resolve(null),
-        percentageAmounts[97] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[97]) : Promise.resolve(null),
-        percentageAmounts[98] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[98]) : Promise.resolve(null),
-        percentageAmounts[99] ? selectBestPath(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], pools, percentageAmounts[99]) : Promise.resolve(null),
       ])
 
       const tradesByPercent = {
-        10: processBestTrades(bestTrades10, _newFrom, _newTo),
-        15: processBestTrades(bestTrades15, _newFrom, _newTo),
-        20: processBestTrades(bestTrades20, _newFrom, _newTo),
-        25: processBestTrades(bestTrades25, _newFrom, _newTo),
-        30: processBestTrades(bestTrades30, _newFrom, _newTo),
-        35: processBestTrades(bestTrades35, _newFrom, _newTo),
-        40: processBestTrades(bestTrades40, _newFrom, _newTo),
-        45: processBestTrades(bestTrades45, _newFrom, _newTo),
-        50: processBestTrades(bestTrades50, _newFrom, _newTo),
-        55: processBestTrades(bestTrades55, _newFrom, _newTo),
-        60: processBestTrades(bestTrades60, _newFrom, _newTo),
-        65: processBestTrades(bestTrades65, _newFrom, _newTo),
-        70: processBestTrades(bestTrades70, _newFrom, _newTo),
-        75: processBestTrades(bestTrades75, _newFrom, _newTo),
-        80: processBestTrades(bestTrades80, _newFrom, _newTo),
-        85: processBestTrades(bestTrades85, _newFrom, _newTo),
-        90: processBestTrades(bestTrades90, _newFrom, _newTo),
-        93: processBestTrades(bestTrades93, _newFrom, _newTo),
-        95: processBestTrades(bestTrades95, _newFrom, _newTo),
-        97: processBestTrades(bestTrades97, _newFrom, _newTo),
-        98: processBestTrades(bestTrades98, _newFrom, _newTo),
-        99: processBestTrades(bestTrades99, _newFrom, _newTo),
         100: processBestTrades(bestTrades, _newFrom, _newTo),
       }
 

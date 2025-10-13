@@ -38,12 +38,6 @@ export async function getQuoteUniswap({
   getTradesUniswapFn
 }) {
   try {
-    console.log('📊 Fetching Uniswap quote...');
-    console.log(`  From: ${fromToken.symbol} (${fromToken.address})`);
-    console.log(`  To: ${toToken.symbol} (${toToken.address})`);
-    console.log(`  Amount: ${amount}`);
-    console.log(`  Using ${uniswapPools ? uniswapPools.length : 0} pre-fetched Uniswap pools`);
-
     // Call the provided getTradesUniswap function with pools
     const result = await getTradesUniswapFn(
       fromToken.address,
@@ -51,9 +45,7 @@ export async function getQuoteUniswap({
       amount,
       uniswapPools // Pass the pre-fetched pools
     );
-
-    console.log(`  Result type: ${typeof result}, value:`, result);
-
+    
     if (!result || result === 'no swap found' || result === 'outdated') {
       console.log(`  ⚠️ Uniswap: No valid result (${result})`);
       return null;
@@ -61,7 +53,6 @@ export async function getQuoteUniswap({
 
     // Extract 100% trades
     const trades100 = result[100];
-    console.log(`  trades100:`, trades100);
 
     if (!trades100 || !trades100.validTrades || trades100.validTrades.length === 0) {
       console.log(`  ⚠️ Uniswap: No valid trades in result[100]`);
@@ -81,7 +72,7 @@ export async function getQuoteUniswap({
     };
 
   } catch (error) {
-    console.error('❌ Uniswap quote error:', error.message);
+    console.log(`  ⚠️ Uniswap quote error: ${error.message}`);
     return null;
   }
 }
@@ -102,8 +93,6 @@ export async function getQuoteBalancer({
   getTradesBalancerFn
 }) {
   try {
-    console.log('📊 Fetching Balancer quote...');
-
     // Call the provided getTradesBalancer function
     const result = await getTradesBalancerFn(
       fromToken.address,
@@ -114,6 +103,7 @@ export async function getQuoteBalancer({
     );
 
     if (!result || !result.outputAmount) {
+      console.log(`  ⚠️ Balancer: No valid result`);
       return null;
     }
 
@@ -131,7 +121,7 @@ export async function getQuoteBalancer({
     };
 
   } catch (error) {
-    console.error('❌ Balancer quote error:', error.message);
+    console.log(`  ⚠️ Balancer quote error: ${error.message}`);
     return null;
   }
 }
@@ -148,9 +138,6 @@ export async function getQuoteWalletBundler({
   uniswapPools
 }) {
   try {
-    console.log('📊 Fetching WalletBundler (cross-DEX) quote...');
-    console.log(`  Using ${uniswapPools ? uniswapPools.length : 0} pre-fetched Uniswap pools`);
-
     const mixedResult = await useMixedUniswapBalancer({
       tokenInObject: fromToken,
       tokenOutObject: toToken,
@@ -167,7 +154,10 @@ export async function getQuoteWalletBundler({
     }
 
     const route = mixedResult.bestRoute;
-    const gasEstimate = route.estimatedGas || 500000;
+
+    // Calculate dynamic gas estimate based on route composition
+    // Base: 50k, Uniswap pool: +100k, Balancer pool: +200k
+    const gasEstimate = calculateWalletBundlerGas(route);
 
     return {
       protocol: 'WalletBundler',
@@ -190,6 +180,57 @@ export async function getQuoteWalletBundler({
 }
 
 /**
+ * Calculate gas estimate for WalletBundler based on route composition
+ * Formula: 50k base + 100k per Uniswap pool + 200k per Balancer pool
+ */
+function calculateWalletBundlerGas(route) {
+  const BASE_GAS = 50000;
+  const UNISWAP_POOL_GAS = 80000;
+  const BALANCER_POOL_GAS = 150000;
+
+  let uniswapPools = 0;
+  let balancerPools = 0;
+
+  // Use poolExecutionStructure if available (optimized routes)
+  // This contains only the pools that will actually be executed, not all evaluated pools
+  if (route.poolExecutionStructure && route.poolExecutionStructure.levels) {
+    route.poolExecutionStructure.levels.forEach(level => {
+      level.pools.forEach(pool => {
+        if (pool.protocol === 'uniswap') {
+          uniswapPools += 1;
+        } else if (pool.protocol === 'balancer') {
+          balancerPools += 1;
+        }
+      });
+    });
+  }
+  // Fallback: check if route has paths array (single path routes)
+  else if (route.paths && Array.isArray(route.paths)) {
+    route.paths.forEach(path => {
+      if (path.protocol === 'uniswap') {
+        uniswapPools += 1;
+      } else if (path.protocol === 'balancer') {
+        if (path.path && path.path.hops) {
+          balancerPools += path.path.hops.length;
+        } else {
+          balancerPools += 1;
+        }
+      }
+    });
+  }
+
+  let gasEstimate = BASE_GAS + (uniswapPools * UNISWAP_POOL_GAS) + (balancerPools * BALANCER_POOL_GAS);
+  
+  if (uniswapPools + balancerPools > 1) {
+    gasEstimate = gasEstimate * 0.6; // we decrease because the goal is to favorize more pools to avoid arbitrage
+  }
+
+  console.log(`  ⛽ Gas estimate: ${gasEstimate} (base: ${BASE_GAS} + ${uniswapPools} Uniswap pools + ${balancerPools} Balancer pools)`);
+
+  return gasEstimate;
+}
+
+/**
  * Get quote from Odos aggregator
  * Queries Odos API for best cross-DEX route
  */
@@ -200,8 +241,6 @@ export async function getQuoteOdos({
   senderAddress
 }) {
   try {
-    console.log('📊 Fetching Odos quote...');
-
     const quote = await getOdosQuote({
       fromToken,
       toToken,
@@ -217,9 +256,17 @@ export async function getQuoteOdos({
       return null;
     }
 
+    // Apply 0.15% Odos protocol fee deduction
+    const ODOS_FEE_BPS = 15; // 0.15% = 15 basis points
+    const outputAmountAfterFee = quote.toTokenAmount
+      .mul(10000 - ODOS_FEE_BPS)
+      .div(10000);
+
+    const feeAmount = quote.toTokenAmount.sub(outputAmountAfterFee);
+
     return {
       protocol: 'Odos',
-      outputAmount: quote.toTokenAmount,
+      outputAmount: outputAmountAfterFee,
       gasEstimate: quote.estimatedGas || 300000,
       trades: [quote],
       rawData: quote,
@@ -236,29 +283,35 @@ export async function getQuoteOdos({
 /**
  * Determine which protocols are allowed based on wallet mode
  *
+ * IMPORTANT: Uniswap and Balancer are ALWAYS queried for redundancy and comparison.
+ * The wallet mode only adds additional aggregator protocols on top.
+ *
  * Modes:
- * - undefined/null: All protocols (Uniswap, Balancer, WalletBundler, Odos)
- * - "contract": Only WalletBundler
- * - "odos": Only Odos (aggregator)
- * - "odos & contract": Odos and WalletBundler
+ * - undefined/null: Base protocols + WalletBundler + Odos (all 4)
+ * - "contract": Base protocols + WalletBundler (Uniswap, Balancer, WalletBundler)
+ * - "odos": Base protocols + Odos (Uniswap, Balancer, Odos)
+ * - "odos & contract": All 4 protocols (Uniswap, Balancer, WalletBundler, Odos)
  */
 export function getAllowedProtocols(walletMode) {
   const mode = walletMode?.toLowerCase() || '';
 
+  // Always include base protocols
+  const baseProtocols = ['Uniswap', 'Balancer'];
+
   if (mode === 'contract') {
-    return ['WalletBundler'];
+    return [...baseProtocols, 'WalletBundler'];
   }
 
   if (mode === 'odos') {
-    return ['Odos'];
+    return [...baseProtocols, 'Odos'];
   }
 
   if (mode.includes('odos') && mode.includes('contract')) {
-    return ['WalletBundler', 'Odos'];
+    return [...baseProtocols, 'WalletBundler', 'Odos'];
   }
 
   // Default: All 4 protocols for redundancy
-  return ['Uniswap', 'Balancer', 'WalletBundler', 'Odos'];
+  return [...baseProtocols, 'WalletBundler', 'Odos'];
 }
 
 /**
@@ -461,6 +514,12 @@ export function selectBestQuote(quotes, toToken, ethPrice, gasPrice) {
  */
 function calculateGasCostInToken(gasEstimate, toToken, ethPrice, gasPrice) {
   if (!gasEstimate || !ethPrice || !gasPrice || !toToken.price) {
+    console.warn(`⚠️ Missing parameters for gas calculation:`, {
+      hasGasEstimate: !!gasEstimate,
+      hasEthPrice: !!ethPrice,
+      hasGasPrice: !!gasPrice,
+      hasTokenPrice: !!toToken.price
+    });
     return BigNumber.from(0);
   }
 
@@ -468,17 +527,8 @@ function calculateGasCostInToken(gasEstimate, toToken, ethPrice, gasPrice) {
     // Gas cost in wei = gasEstimate * gasPrice
     const gasCostWei = BigNumber.from(gasEstimate).mul(BigNumber.from(gasPrice));
 
-    // Convert to USD value using BigNumber to avoid precision loss
-    // gasCostUsd = (gasCostWei * ethPrice) / 1e18
-    // We use integer arithmetic: multiply by (ethPrice * 1e6) then divide by 1e24
+    // Scale prices to avoid floating point
     const ethPriceScaled = Math.floor(ethPrice * 1e6); // Scale ETH price to integer
-    const gasCostUsdScaled = gasCostWei
-      .mul(BigNumber.from(ethPriceScaled))
-      .div(BigNumber.from('1000000000000000000000000')); // 1e24 = 1e18 * 1e6
-
-    // Convert USD to token amount
-    // tokenAmount = (gasCostUsd * 10^decimals) / tokenPrice
-    // Use scaled arithmetic to maintain precision
     const tokenPriceScaled = Math.floor(toToken.price * 1e6); // Scale token price to integer
 
     if (tokenPriceScaled === 0) {
@@ -486,11 +536,25 @@ function calculateGasCostInToken(gasEstimate, toToken, ethPrice, gasPrice) {
       return BigNumber.from(0);
     }
 
+    // Calculate gas cost in output token using one formula to avoid precision loss
+    // Formula: gasCostInToken = (gasCostWei * ethPrice * 10^decimals) / (1e18 * tokenPrice)
+    // With scaling: = (gasCostWei * ethPriceScaled * 10^decimals) / (tokenPriceScaled * 1e18)
+    // Note: The 1e6 scaling factors cancel out (both numerator and denominator have 1e6)
+
     const decimalsMultiplier = BigNumber.from(10).pow(toToken.decimals);
-    const gasCostInToken = gasCostUsdScaled
-      .mul(decimalsMultiplier)
-      .mul(BigNumber.from(1e6)) // Account for tokenPrice scaling
-      .div(BigNumber.from(tokenPriceScaled));
+
+    // Numerator = gasCostWei * ethPriceScaled * decimalsMultiplier
+    const numerator = gasCostWei
+      .mul(BigNumber.from(ethPriceScaled))
+      .mul(decimalsMultiplier);
+
+    // Denominator = tokenPriceScaled * 1e18 (wei conversion only, scaling factors cancel)
+    const denominator = BigNumber.from(tokenPriceScaled)
+      .mul(BigNumber.from('1000000000000000000')); // 1e18
+
+    const gasCostInToken = numerator.div(denominator);
+
+    console.log(`   Gas cost: ${ethers.utils.formatUnits(gasCostInToken, toToken.decimals)} ${toToken.symbol}`);
 
     return gasCostInToken;
   } catch (error) {

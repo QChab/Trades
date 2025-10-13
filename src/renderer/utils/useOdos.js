@@ -271,13 +271,6 @@ export async function getOdosQuote({
     );
 
     console.log(`✅ Odos quote: ${outputFormatted} ${toToken.symbol}`);
-    if (quote.estimatedGas) {
-      console.log(`   Estimated gas: ${quote.estimatedGas.toLocaleString()}`);
-    }
-    if (quote.priceImpact !== undefined) {
-      console.log(`   Price impact: ${quote.priceImpact}%`);
-    }
-    console.log(`   PathId: ${quote.pathId}`);
 
     return quote;
 
@@ -321,7 +314,7 @@ export async function getOdosAssemble({
 
     const result = await fetchOdosAPI(endpoint, 'POST', requestBody);
 
-    console.log('Raw Odos assemble response:', JSON.stringify(result, null, 2));
+    // console.log('Raw Odos assemble response:', JSON.stringify(result, null, 2));
 
     // Validate critical fields
     if (!result.transaction) {

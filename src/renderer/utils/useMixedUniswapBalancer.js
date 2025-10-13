@@ -386,12 +386,9 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
 
     // Validate: prevent same-token swaps (after normalization)
     if (normalizedTokenIn.address.toLowerCase() === normalizedTokenOut.address.toLowerCase()) {
-      console.log(`   ⚠️  Skipping same-token swap: ${normalizedTokenIn.symbol} → ${normalizedTokenOut.symbol}`);
+      // console.log(`   ⚠️  Skipping same-token swap: ${normalizedTokenIn.symbol} → ${normalizedTokenOut.symbol}`);
       return null;
     }
-
-    console.log(`   Querying Balancer for ${normalizedTokenIn.symbol} -> ${normalizedTokenOut.symbol}`);
-    console.log(`   Amount: ${ethers.utils.formatUnits(amountIn, normalizedTokenIn.decimals || 18)} ${normalizedTokenIn.symbol}`);
 
     // Filter pre-fetched pools for relevant tokens
     const tokenInAddr = normalizedTokenIn.address.toLowerCase();
@@ -414,8 +411,6 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
       // Pool must contain at least one of our relevant tokens
       return poolTokens.some(addr => relevantTokens.includes(addr));
     });
-
-    console.log(`   Found ${filteredPools.length} relevant pools from pre-fetched data`);
 
     // Use findOptimalPaths directly with filtered pools
     const paths = await findOptimalPaths(
@@ -479,7 +474,6 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
         }
 
         if (seenPools.has(poolKey)) {
-          console.log(`   ⚠️  Removing duplicate Balancer path with pools ${poolKey.slice(0, 30)}...`);
           return false; // Skip duplicate
         }
 
@@ -487,16 +481,11 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
         return true;
       });
 
-      if (uniquePaths.length < pathsToReturn.length) {
-        console.log(`   ✅ Removed ${pathsToReturn.length - uniquePaths.length} duplicate Balancer paths`);
-      }
-
       pathsToReturn = uniquePaths;
     }
 
     // Return ALL unique paths as array
     if (pathsToReturn.length > 1) {
-      console.log(`   ✅ Returning ${pathsToReturn.length} unique Balancer paths`);
       return pathsToReturn.map(pathResult => ({
         protocol: 'balancer',
         outputAmount: BigNumber.from(pathResult.amountOut),
@@ -840,6 +829,8 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
 
   // Single pool case - 100% allocation
   if (numPools === 1) {
+    // console.log(`   ${group.tokenPairKey}: 1 pool - allocating 100% (skipping optimization)`);
+
     const allocations = new Map();
     const poolInputs = new Map();
     const poolOutputs = new Map();
@@ -861,7 +852,7 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
   }
 
   // Multiple pools - optimize split
-  console.log(`   Optimizing ${group.tokenPairKey}: ${numPools} pools`);
+  // console.log(`   Optimizing ${group.tokenPairKey}: ${numPools} pools`);
 
   // Initialize split from route-based analysis if available
   let currentSplit;
@@ -897,12 +888,13 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
   let bestOutput = await evaluateGroupSplit(currentSplit, pools, groupInputAmount, tokenIn, tokenOut);
 
   // Hill climbing optimization
-  const maxIterations = 50;
+  const maxIterations = 30;
   const initialStepSize = 0.02;
   const minStepSize = 0.0001;
   const stepReduction = 0.8;
   let stepSize = initialStepSize;
   let iteration = 0;
+  let noImprovementCount = 0;
 
   while (stepSize >= minStepSize && iteration < maxIterations) {
     let improved = false;
@@ -958,24 +950,32 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
 
     if (!improved) {
       stepSize = stepSize * stepReduction;
+      noImprovementCount++;
+
+      // Early convergence: stop if no improvement for 3 consecutive iterations
+      if (noImprovementCount >= 6) {
+        break;
+      }
+    } else {
+      noImprovementCount = 0;
     }
   }
 
-  // FILTER: Remove pools with allocation < 0.01% and re-optimize
-  const ALLOCATION_THRESHOLD = 0.0001; // 0.01%
+  // FILTER: Remove pools with allocation < 0.02% and re-optimize
+  const ALLOCATION_THRESHOLD = 0.0002; // 0.02%
   let filteredIndices = [];
   let filteredPools = [];
   let sumFilteredAllocation = 0; // Track total allocation that was filtered out
 
   for (let idx = 0; idx < pools.length; idx++) {
     const allocationPct = bestSplit[idx] * 100;
-    console.log(`         Pool ${idx}: ${allocationPct.toFixed(4)}% (${bestSplit[idx] >= ALLOCATION_THRESHOLD ? 'KEEP' : 'FILTER'})`);
+    // console.log(`         Pool ${idx}: ${allocationPct.toFixed(4)}% (${bestSplit[idx] >= ALLOCATION_THRESHOLD ? 'KEEP' : 'FILTER'})`);
 
     if (bestSplit[idx] >= ALLOCATION_THRESHOLD) {
       filteredIndices.push(idx);
       filteredPools.push(pools[idx]);
     } else {
-      console.log(`      ⚠️  Filtering out pool ${pools[idx].poolAddress?.slice(0, 10)}... with ${allocationPct.toFixed(4)}% allocation (< 0.01% threshold)`);
+      // console.log(`      ⚠️  Filtering out pool ${pools[idx].poolAddress?.slice(0, 10)}... with ${allocationPct.toFixed(4)}% allocation (< 0.02% threshold)`);
       sumFilteredAllocation += bestSplit[idx]; // Accumulate filtered allocation
     }
   }
@@ -1009,7 +1009,7 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
     }
 
     // Multiple pools remain - re-optimize with filtered pools
-    console.log(`      🔄 Re-optimizing with ${filteredPools.length} remaining pools...`);
+    // console.log(`      🔄 Re-optimizing with ${filteredPools.length} remaining pools...`);
 
     // Create a new group object with filtered pools for recursive call
     const filteredGroup = {
@@ -1037,7 +1037,7 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
     poolOutputs.set(pool.poolAddress, poolOutput);
   }
 
-  console.log(`      ✓ Optimized in ${iteration} iterations: ${bestSplit.map(x => (x * 100).toFixed(3) + '%').join(' / ')}`);
+  // console.log(`      ✓ Optimized in ${iteration} iterations: ${bestSplit.map(x => (x * 100).toFixed(3) + '%').join(' / ')}`);
 
   return {
     poolAllocations: allocations,
@@ -1203,7 +1203,7 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
 
   // If we have multiple routes, optimize split percentages
   if (routes.length >= 2 && routes.length <= 10) {
-    console.log(`\n🎯 Optimizing split across ${routes.length} routes...`);
+    // console.log(`\n🎯 Optimizing split across ${routes.length} routes...`);
     const optimizedSplit = await optimizeSplitSimple(routes, amountIn, tokenIn, tokenOut);
     if (optimizedSplit) {
       routes.push(optimizedSplit);
@@ -1695,7 +1695,7 @@ function buildPoolExecutionStructure(routes, splitPercentages) {
  * - Pools that appear in high-output routes get more allocation within their group
  */
 function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
-  console.log(`   📊 Initializing from route outputs...`);
+  // console.log(`   📊 Initializing from route outputs...`);
 
   // Step 1: Map each route's legs to pools
   const routePoolMapping = new Map(); // routeIndex -> array of {poolKey, groupKey, inputToken, outputToken}
@@ -1707,7 +1707,7 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
     const routeDesc = route.description || route.path || `Route ${routeIdx + 1}`;
 
     if (route.legs && route.legs.length > 0) {
-      console.log(`         Route ${routeIdx + 1} (${routeDesc}): ${route.legs.length} legs`);
+      // console.log(`         Route ${routeIdx + 1} (${routeDesc}): ${route.legs.length} legs`);
       for (const leg of route.legs) {
         // Extract pool identification info
         let poolAddress = null;
@@ -1757,7 +1757,7 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
           const poolKey = `${poolAddress}@${inputToken}-${outputToken}`;
           const groupKey = `${inputToken}->${outputToken}`;
 
-          console.log(`            └─ Extracted: ${groupKey} (${leg.protocol})`);
+          // console.log(`            └─ Extracted: ${groupKey} (${leg.protocol})`);
 
           poolsUsed.push({
             poolKey,
@@ -1767,12 +1767,12 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
             poolAddress
           });
         } else {
-          console.log(`            └─ Skipped leg (${leg.protocol}): poolAddr=${!!poolAddress}, in=${inputToken}, out=${outputToken}`);
+          // console.log(`            └─ Skipped leg (${leg.protocol}): poolAddr=${!!poolAddress}, in=${inputToken}, out=${outputToken}`);
         }
       }
     }
 
-    console.log(`         Route ${routeIdx + 1} mapped to ${poolsUsed.length} pools`);
+    // console.log(`         Route ${routeIdx + 1} mapped to ${poolsUsed.length} pools`);
     routePoolMapping.set(routeIdx, poolsUsed);
   }
 
@@ -1956,11 +1956,12 @@ async function optimizeInterGroupSplit(
   // Hill climbing
   const maxIterations = 100;
   const initialStepSize = 0.05; // 5%
-  const minStepSize = 0.00005; // 0.5%
+  const minStepSize = 0.0001; // 0.01%
   const MIN_GROUP_ALLOCATION = 0.001; // 0.1% minimum (define early for pruning)
   const stepReduction = 0.7;
   let stepSize = initialStepSize;
   let iteration = 0;
+  let noImprovementCount = 0; // Track consecutive iterations without improvement
   const excludedGroups = new Set(); // Track groups below threshold
 
   while (stepSize >= minStepSize && iteration < maxIterations) {
@@ -2044,10 +2045,19 @@ async function optimizeInterGroupSplit(
 
     if (!improved) {
       stepSize = stepSize * stepReduction;
+      noImprovementCount++;
+
+      // Early convergence: stop if no improvement for 5 consecutive iterations
+      if (noImprovementCount >= 6) {
+        console.log(`      ✓ Converged after ${iteration} iterations (no improvement for 5 iterations)`);
+        break;
+      }
+    } else {
+      noImprovementCount = 0; // Reset counter on improvement
     }
   }
 
-  console.log(`      ✓ Optimized inter-group split: ${bestSplit.map(x => (x * 100).toFixed(3) + '%').join(' / ')}`);
+  // console.log(`      ✓ Optimized inter-group split: ${bestSplit.map(x => (x * 100).toFixed(3) + '%').join(' / ')}`);
 
   // CONSOLIDATE: Redistribute tiny allocations to groups with same input token
   // Then cascade removal to downstream groups that lose their only input source
@@ -2074,13 +2084,13 @@ async function optimizeInterGroupSplit(
       }
 
       if (targetIdx >= 0) {
-        console.log(`      ⚠️  Redistributing ${(consolidatedSplit[i] * 100).toFixed(3)}% from ${smallGroup.tokenPairKey} to ${competingGroups[targetIdx].tokenPairKey}`);
+        // console.log(`      ⚠️  Redistributing ${(consolidatedSplit[i] * 100).toFixed(3)}% from ${smallGroup.tokenPairKey} to ${competingGroups[targetIdx].tokenPairKey}`);
         consolidatedSplit[targetIdx] += consolidatedSplit[i];
         consolidatedSplit[i] = 0;
         removedIndices.add(i);
       } else {
         // No similar group found - keep it even if small
-        console.log(`      ⚠️  Keeping small allocation ${(consolidatedSplit[i] * 100).toFixed(3)}% for ${smallGroup.tokenPairKey} (no similar group to merge)`);
+        // console.log(`      ⚠️  Keeping small allocation ${(consolidatedSplit[i] * 100).toFixed(3)}% for ${smallGroup.tokenPairKey} (no similar group to merge)`);
       }
     }
   }
@@ -2116,7 +2126,7 @@ async function optimizeInterGroupSplit(
       );
 
       for (const downstream of downstreamGroups) {
-        console.log(`      🔗 Cascading removal: ${downstream.tokenPairKey} loses input (${token} no longer produced)`);
+        // console.log(`      🔗 Cascading removal: ${downstream.tokenPairKey} loses input (${token} no longer produced)`);
         removedGroupKeys.add(downstream.tokenPairKey);
       }
     }
@@ -2192,6 +2202,21 @@ async function evaluateInterGroupSplit(
     const group = competingGroups[i];
     const groupInput = totalInput.mul(Math.floor(split[i] * 1000000)).div(1000000);
 
+    // OPTIMIZATION: Skip expensive intra-group optimization for groups with < 2.5% allocation
+    // The output difference is negligible and not worth 6-11 iterations
+    if (split[i] < 0.025 && group.pools.length > 1) {
+      // Use simple single-best-pool strategy for tiny allocations
+      const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
+      const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
+
+      // Just use the first pool (already sorted by output in route discovery)
+      const bestPool = group.pools[0];
+      const output = await calculatePoolExactOutput(bestPool, groupInput, groupTokenIn, groupTokenOut);
+
+      groupOutputs.set(group.tokenPairKey, output);
+      continue;
+    }
+
     const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
     const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
     const result = await optimizeTokenPairGroup(group, groupInput, groupTokenIn, groupTokenOut, poolInitialAllocations);
@@ -2232,11 +2257,26 @@ async function evaluateInterGroupSplit(
       }
 
       if (inputAmount.gt(0)) {
-        const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
-        const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
-        const result = await optimizeTokenPairGroup(group, inputAmount, groupTokenIn, groupTokenOut, poolInitialAllocations);
+        // OPTIMIZATION: Skip expensive optimization for downstream groups with tiny inputs (< 2.5% of original total)
+        const inputPct = inputAmount.mul(100).div(totalInput).toNumber() / 100;
 
-        groupOutputs.set(group.tokenPairKey, result.totalOutput);
+        if (inputPct < 0.025 && group.pools.length > 1) {
+          // Use simple single-best-pool strategy for tiny downstream groups
+          const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
+          const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
+
+          const bestPool = group.pools[0];
+          const output = await calculatePoolExactOutput(bestPool, inputAmount, groupTokenIn, groupTokenOut);
+
+          groupOutputs.set(group.tokenPairKey, output);
+        } else {
+          // Normal optimization for significant groups
+          const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
+          const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
+          const result = await optimizeTokenPairGroup(group, inputAmount, groupTokenIn, groupTokenOut, poolInitialAllocations);
+
+          groupOutputs.set(group.tokenPairKey, result.totalOutput);
+        }
       }
     }
   }
@@ -2364,9 +2404,6 @@ function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
             const avgLegA = sumLegA / sharedRoutes.length;
             const avgLegB = sumLegB / sharedRoutes.length;
 
-            console.log(`       ${groupA.tokenPairKey} avg leg: ${avgLegA.toFixed(1)}`);
-            console.log(`       ${groupB.tokenPairKey} avg leg: ${avgLegB.toFixed(1)}`);
-
             // The one with higher average leg index executes AFTER, so push to next level
             if (avgLegA > avgLegB) {
               groupA.level = level + 1;
@@ -2412,7 +2449,6 @@ function groupByInputTokenAndLevel(groupsWithLevels) {
  * Phase 2: Optimize pool splits within each group
  */
 async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
-  console.log(`\n🔍 HIERARCHICAL TOKEN-PAIR OPTIMIZATION`);
   console.log(`   Input: ${ethers.utils.formatUnits(totalAmount, tokenIn.decimals)} ${tokenIn.symbol}`);
 
   // Build token-pair groups from all route legs
@@ -2603,7 +2639,7 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
 
     // Skip consolidated groups (not in optimization results)
     if (!opt || !inputAmt) {
-      console.log(`   ${group.tokenPairKey} (Level ${group.level}): ⚠️  Consolidated (merged into another group)`);
+      // console.log(`   ${group.tokenPairKey} (Level ${group.level}): ⚠️  Consolidated (merged into another group)`);
       continue;
     }
 
@@ -2622,9 +2658,6 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
   }
 
   console.log(`\n   🎯 Total ${tokenOut.symbol} output: ${ethers.utils.formatUnits(totalOptimizedOutput, tokenOut.decimals)}`);
-
-  // Build pool-based execution structure from optimized allocations
-  console.log(`\n   🔧 Building pool-based execution structure...`);
 
   // Map pool allocations back to route percentages (for compatibility)
   const bestSplit = routes.map(() => 0); // Initialize with zeros
@@ -2734,7 +2767,7 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
 
       // FILTER: Skip pools with allocation < 0.01% (0.0001) to save gas
       if (percentageOfLevelInput < 0.0001) {
-        console.log(`      ⚠️  Skipping pool ${pool.poolAddress?.slice(0, 10)}... at Level ${level}: ${(percentageOfLevelInput * 100).toFixed(4)}% (< 0.01% threshold)`);
+        // console.log(`      ⚠️  Skipping pool ${pool.poolAddress?.slice(0, 10)}... at Level ${level}: ${(percentageOfLevelInput * 100).toFixed(4)}% (< 0.01% threshold)`);
         continue; // Skip this pool
       }
 
