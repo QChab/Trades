@@ -112,8 +112,8 @@
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/WalletBundler.sol": {
-      "lastModificationDate": 1760328363225,
-      "contentHash": "923f0fe1ca9203f3b322b20facaa2e55",
+      "lastModificationDate": 1760332968843,
+      "contentHash": "1b0358b452cd06efe97365f79a2e5935",
       "sourceName": "contracts/WalletBundler.sol",
       "solcConfig": {
         "version": "0.8.20",

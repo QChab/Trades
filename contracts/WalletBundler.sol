@@ -25,7 +25,7 @@ contract WalletBundler {
     address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3 Router
     address private constant BALANCER_VAULT = 0xbA1333333333a1BA1108E8412f11850A5C319bA9; // Balancer V3 Vault
     address private constant BUNDLER_REGISTRY = 0x4df4B688d6F7954F6F53787B2e2778720BaB5d28; // Well-known registry
-    uint48 private constant EXPIRATION_OFFSET = 281474976710655; // 50 years from 2020
+    uint48 private constant EXPIRATION_OFFSET = 281474976710655; // MAx uint48
     uint256 private constant APPROVAL_THRESHOLD = 1e45; // Gas-optimized approval check threshold
 
     error Unauthorized();
@@ -209,9 +209,7 @@ contract WalletBundler {
                 _unwrapWETH(inputAmount);
             }
 
-            // ----------------------------------------------------------
-            // CRITICAL: Ensure we have enough tokenIn by converting ETH<->WETH if needed
-            // ----------------------------------------------------------
+            // Ensure we have enough tokenIn by converting ETH<->WETH if needed
             if (tokenIn == address(0)) {
                 // Step needs ETH - check if we have enough
                 uint256 ethBalance = self.balance;
@@ -240,50 +238,47 @@ contract WalletBundler {
             // Ensure approval for the input token to the target protocol
             // ----------------------------------------------------------
             if (tokenIn != address(0)) {
-                if (target == UNIVERSAL_ROUTER) {
-                    // Uniswap V4: Uses Permit2 approval system (NOT signed permits)
-                    // Smart contracts can call approve() but cannot sign permit messages
-                    // Only check Permit2→UniversalRouter (decrements), Token→Permit2 with max uint256 never decrements
-                    uint256 permit2Allowance;
-                    address contractAddr = self;
+                // Both Uniswap V4 and Balancer V3 use Permit2 approval system
+                // Smart contracts can call approve() but cannot sign permit messages
+
+                // Determine the actual spender for Permit2
+                // Uniswap: Universal Router pulls tokens via Permit2
+                // Balancer: Vault pulls tokens via Permit2 (not Router!)
+                // address permit2Spender = target == BALANCER_ROUTER ? BALANCER_VAULT : target;
+                // address permit2Spender = target == BALANCER_ROUTER ? BALANCER_VAULT : target;
+
+                uint256 permit2Allowance;
+                address contractAddr = self;
+                assembly {
+                    let ptr := mload(0x40)
+                    // Store allowance(address,address,address) selector
+                    mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
+                    mstore(add(ptr, 0x04), contractAddr)  // owner (this contract)
+                    mstore(add(ptr, 0x24), tokenIn)       // tokenIn
+                    mstore(add(ptr, 0x44), target) // spender
+
+                    let success := staticcall(gas(), PERMIT2, ptr, 0x64, ptr, 0x60)
+                    if success {
+                        permit2Allowance := mload(ptr) // First return value is uint160 amount
+                    }
+                }
+
+                if (permit2Allowance < APPROVAL_THRESHOLD) {
+                    // Approve both Token→Permit2 and Permit2→Spender
+                    _approve(tokenIn, PERMIT2);  // Token → Permit2 (max uint256, never decrements)
+
+                    // Approve Permit2 → Spender (uint160 max, does decrement)
                     assembly {
                         let ptr := mload(0x40)
-                        // Store allowance(address,address,address) selector
-                        mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
-                        mstore(add(ptr, 0x04), contractAddr) // owner (this contract)
-                        mstore(add(ptr, 0x24), tokenIn)     // tokenIn
-                        mstore(add(ptr, 0x44), UNIVERSAL_ROUTER) // spender
+                        // Store approve(address,address,uint160,uint48) selector
+                        mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
+                        mstore(add(ptr, 0x04), tokenIn)                // tokenIn
+                        mstore(add(ptr, 0x24), target)         // spender (Vault for Balancer, Router for Uniswap)
+                        mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
+                        mstore(add(ptr, 0x64), EXPIRATION_OFFSET) // expiration
 
-                        let success := staticcall(gas(), PERMIT2, ptr, 0x64, ptr, 0x60)
-                        if success {
-                            permit2Allowance := mload(ptr) // First return value is uint160 amount
-                        }
-                    }
-
-                    if (permit2Allowance < APPROVAL_THRESHOLD) {
-                        // Approve both Token→Permit2 and Permit2→UniversalRouter
-                        _approve(tokenIn, PERMIT2);  // Token → Permit2 (max uint256, never decrements)
-
-                        // Approve Permit2 → UniversalRouter (uint160 max, does decrement)
-                        assembly {
-                            let ptr := mload(0x40)
-                            // Store approve(address,address,uint160,uint48) selector
-                            mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
-                            mstore(add(ptr, 0x04), tokenIn)                // tokenIn
-                            mstore(add(ptr, 0x24), UNIVERSAL_ROUTER)     // spender
-                            mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
-                            mstore(add(ptr, 0x64), add(timestamp(), EXPIRATION_OFFSET)) // expiration
-
-                            let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
-                            if iszero(success) { revert(0, 0) }
-                        }
-                    }
-                } else if (target == BALANCER_ROUTER) {
-                    // Balancer V3: Does NOT use Permit2 - requires direct VAULT approval
-                    // Router calls Vault.unlock() which transfers tokens directly from this contract
-                    uint256 vaultAllowance = _getAllowance(tokenIn, BALANCER_VAULT);
-                    if (vaultAllowance < APPROVAL_THRESHOLD) {
-                        _approve(tokenIn, BALANCER_VAULT);
+                        let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
+                        if iszero(success) { revert(0, 0) }
                     }
                 }
             }

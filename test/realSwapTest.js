@@ -12,22 +12,17 @@ const TEST_PARAMS = {
     symbol: 'ETH',
     decimals: 18
   },
-  // tokenOutObject: {
-  //   address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // ONE
-  //   symbol: 'ONE',
-  //   decimals: 18
-  // },
-  // tokenOutObject: {
-  //   address: '0xf1c9acdc66974dfb6decb12aa385b9cd01190e38', // osETH
-  //   symbol: 'osETH',
-  //   decimals: 18
-  // },
   tokenOutObject: {
-    address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
-    symbol: 'AAVE',
+    address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // osETH
+    symbol: 'ONE',
     decimals: 18
   },
-  amountIn: '0.00001', // In human-readable format, not wei
+  // tokenOutObject: {
+  //   address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
+  //   symbol: 'AAVE',
+  //   decimals: 18
+  // },
+  amountIn: '0.00000010', // In human-readable format, not wei
   slippageTolerance: 0.5 // 0.5%
 };
 
@@ -55,46 +50,46 @@ describe("Real Swap Integration Test", function () {
     console.log("Test Wallet:", wallet.address);
 
     // Check balance for input token
-    let balance;
-    const amountInWei = ethers.utils.parseUnits(
-      TEST_PARAMS.amountIn,
-      TEST_PARAMS.tokenInObject.decimals
-    );
+    // let balance;
+    // const amountInWei = ethers.utils.parseUnits(
+    //   TEST_PARAMS.amountIn,
+    //   TEST_PARAMS.tokenInObject.decimals
+    // );
 
-    if (TEST_PARAMS.tokenInObject.address === ethers.constants.AddressZero) {
-      // ETH balance
-      balance = await wallet.getBalance();
-      console.log(`${TEST_PARAMS.tokenInObject.symbol} Balance:`, ethers.utils.formatEther(balance), TEST_PARAMS.tokenInObject.symbol);
+    // if (TEST_PARAMS.tokenInObject.address === ethers.constants.AddressZero) {
+    //   // ETH balance
+    //   balance = await wallet.getBalance();
+    //   console.log(`${TEST_PARAMS.tokenInObject.symbol} Balance:`, ethers.utils.formatEther(balance), TEST_PARAMS.tokenInObject.symbol);
 
-      if (balance.lt(amountInWei)) {
-        throw new Error(
-          `Insufficient ${TEST_PARAMS.tokenInObject.symbol} balance. ` +
-          `Need ${TEST_PARAMS.amountIn} ${TEST_PARAMS.tokenInObject.symbol}, ` +
-          `have ${ethers.utils.formatEther(balance)} ${TEST_PARAMS.tokenInObject.symbol}`
-        );
-      }
-    } else {
-      // ERC20 token balance
-      const tokenContract = new ethers.Contract(
-        TEST_PARAMS.tokenInObject.address,
-        ["function balanceOf(address) view returns (uint256)"],
-        provider
-      );
-      balance = await tokenContract.balanceOf(wallet.address);
-      console.log(
-        `${TEST_PARAMS.tokenInObject.symbol} Balance:`,
-        ethers.utils.formatUnits(balance, TEST_PARAMS.tokenInObject.decimals),
-        TEST_PARAMS.tokenInObject.symbol
-      );
+    //   if (balance.lt(amountInWei)) {
+    //     throw new Error(
+    //       `Insufficient ${TEST_PARAMS.tokenInObject.symbol} balance. ` +
+    //       `Need ${TEST_PARAMS.amountIn} ${TEST_PARAMS.tokenInObject.symbol}, ` +
+    //       `have ${ethers.utils.formatEther(balance)} ${TEST_PARAMS.tokenInObject.symbol}`
+    //     );
+    //   }
+    // } else {
+    //   // ERC20 token balance
+    //   const tokenContract = new ethers.Contract(
+    //     TEST_PARAMS.tokenInObject.address,
+    //     ["function balanceOf(address) view returns (uint256)"],
+    //     provider
+    //   );
+    //   balance = await tokenContract.balanceOf(wallet.address);
+    //   console.log(
+    //     `${TEST_PARAMS.tokenInObject.symbol} Balance:`,
+    //     ethers.utils.formatUnits(balance, TEST_PARAMS.tokenInObject.decimals),
+    //     TEST_PARAMS.tokenInObject.symbol
+    //   );
 
-      if (balance.lt(amountInWei)) {
-        throw new Error(
-          `Insufficient ${TEST_PARAMS.tokenInObject.symbol} balance. ` +
-          `Need ${TEST_PARAMS.amountIn} ${TEST_PARAMS.tokenInObject.symbol}, ` +
-          `have ${ethers.utils.formatUnits(balance, TEST_PARAMS.tokenInObject.decimals)} ${TEST_PARAMS.tokenInObject.symbol}`
-        );
-      }
-    }
+    //   if (balance.lt(amountInWei)) {
+    //     throw new Error(
+    //       `Insufficient ${TEST_PARAMS.tokenInObject.symbol} balance. ` +
+    //       `Need ${TEST_PARAMS.amountIn} ${TEST_PARAMS.tokenInObject.symbol}, ` +
+    //       `have ${ethers.utils.formatUnits(balance, TEST_PARAMS.tokenInObject.decimals)} ${TEST_PARAMS.tokenInObject.symbol}`
+    //     );
+    //   }
+    // }
 
     // Initialize BundlerManager
     console.log("\n📦 Initializing BundlerManager...");
@@ -146,7 +141,7 @@ describe("Real Swap Integration Test", function () {
       provider: provider,
       slippageTolerance: TEST_PARAMS.slippageTolerance,
       maxHops: 2,
-      useUniswap: true,
+      useUniswap: false,
       useBalancer: true
     });
 
