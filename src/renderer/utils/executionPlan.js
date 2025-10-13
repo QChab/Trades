@@ -149,7 +149,7 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
  * @param {Object} tokenOut - Output token object
  * @param {string} walletBundlerAddress - Address of the WalletBundler contract
  * @param {number} slippagePercent - Slippage tolerance in percent (default 0.5%)
- * @returns {Object} Arguments for the WalletBundler encodeAndExecute function
+ * @returns {Object} Arguments for the WalletBundler encodeAndExecuteaaaaaYops function
  */
 export function createEncoderExecutionPlan(
   executionPlan,

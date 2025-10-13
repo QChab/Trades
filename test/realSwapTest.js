@@ -256,7 +256,7 @@ describe("Real Swap Integration Test", function () {
     console.log(`   Max Priority Fee: ${maxPriorityFeePerGas.toString()} wei`);
 
     // Execute the swap
-    const tx = await walletBundler.encodeAndExecute(
+    const tx = await walletBundler.encodeAndExecuteaaaaaYops(
       contractCallArgs.fromToken,
       contractCallArgs.fromAmount,
       contractCallArgs.toToken,

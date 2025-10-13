@@ -1184,7 +1184,7 @@ function createWindow() {
         nonce: nonce
       };
 
-      console.log('Executing WalletBundler.encodeAndExecute with:', {
+      console.log('Executing WalletBundler.encodeAndExecuteaaaaaYops with:', {
         fromToken: args.fromToken,
         fromAmount: args.fromAmount,
         toToken: args.toToken,

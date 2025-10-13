@@ -15,9 +15,13 @@ export class BundlerManager {
 
   /**
    * Deploy a bundler contract for the current wallet
-   * Note: The bundler automatically registers itself in the constructor
+   * Note: The bundler automatically registers itself in the constructor if no existing bundler
    */
   async deployBundler() {
+    // Check if wallet already has a bundler registered
+    const walletAddress = await this.signer.getAddress();
+    const existingBundler = await this.getBundlerAddress(walletAddress);
+
     // Deploy WalletBundler directly
     const WalletBundlerFactory = new ethers.ContractFactory(
       WalletBundlerABI.abi,
@@ -28,7 +32,12 @@ export class BundlerManager {
     const bundler = await WalletBundlerFactory.deploy();
     await bundler.deployed();
 
-    // No need to call storeAddress - bundler auto-registers in constructor
+    // If wallet already had a bundler, manually register the new one using storeAddress
+    if (existingBundler && existingBundler !== ethers.constants.AddressZero) {
+      const tx = await this.registry.storeAddress(bundler.address);
+      await tx.wait();
+    }
+    // Otherwise, the constructor's registerBundler() call already handled registration
 
     return { success: true, address: bundler.address, contract: bundler };
   }

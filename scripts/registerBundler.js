@@ -24,7 +24,7 @@ async function main() {
 
   // Contract addresses (from deployment)
   const BUNDLER_REGISTRY_ADDRESS = '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28';
-  const WALLET_BUNDLER_ADDRESS = '0x4E0706d7b13D34bBF718f07143Edd48B0F635E22';
+  const WALLET_BUNDLER_ADDRESS = '0x98B3f744ABD07BD3FbEcf42084Db8ab273Cc30FC';
 
   console.log("BundlerRegistry:", BUNDLER_REGISTRY_ADDRESS);
   console.log("WalletBundler:", WALLET_BUNDLER_ADDRESS);
