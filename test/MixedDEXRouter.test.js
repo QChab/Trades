@@ -7,7 +7,7 @@ const { ethers } = hre;
 // Leave as null to deploy fresh contracts
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x0e62874e8879b4762000b9F2A66aCBf23EEB2626',
-  uniswapEncoder: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+  uniswapEncoder: '0x3a853550bf1d7a2b82202c2fF5C035a72E4f9f4F',
   balancerEncoder: '0x412B71CDDcBc8A16c9E1aEA5A74F8000b9a0303F',
   walletBundler: '0xAd82ebB0Acc03E39810034A1f554E114bC810727'
 };
@@ -157,12 +157,12 @@ describe("Mixed DEX Router Integration Test", function () {
   });
 
   describe("Registry Integration", function () {
-    it("Should store and read bundler address", async function () {
-      await bundlerRegistry.storeAddress(walletBundler.address);
-
+    it("Should verify bundler auto-registered on deployment", async function () {
+      // WalletBundler automatically registers itself in constructor
+      // So we should be able to read the bundler address immediately
       const stored = await bundlerRegistry.readAddress(owner.address);
       expect(stored).to.equal(walletBundler.address);
-      console.log("✓ Registry storage working");
+      console.log("✓ Bundler auto-registration working");
     });
   });
 

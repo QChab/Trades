@@ -24,7 +24,7 @@ const TEST_PARAMS = {
 // ===== DEPLOYED CONTRACT ADDRESSES =====
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x0e62874e8879b4762000b9F2A66aCBf23EEB2626',
-  uniswapEncoder: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+  uniswapEncoder: '0x3a853550bf1d7a2b82202c2fF5C035a72E4f9f4F',  // V4 with struct params
   balancerEncoder: '0x412B71CDDcBc8A16c9E1aEA5A74F8000b9a0303F'
 };
 

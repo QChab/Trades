@@ -38,8 +38,8 @@
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/BundlerRegistry.sol": {
-      "lastModificationDate": 1758207443489,
-      "contentHash": "8e41bf49b6af10ee9c630a047f97c519",
+      "lastModificationDate": 1760318761352,
+      "contentHash": "5d0d274526a51335f2a5a171392b08c4",
       "sourceName": "contracts/BundlerRegistry.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -70,12 +70,13 @@
         "^0.8.0"
       ],
       "artifacts": [
-        "BundlerRegistry"
+        "BundlerRegistry",
+        "IWalletBundler"
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/UniswapEncoder.sol": {
-      "lastModificationDate": 1760317779431,
-      "contentHash": "585e9008845e946cad76ab4460c74816",
+      "lastModificationDate": 1760319677820,
+      "contentHash": "7a6a8b8163d7945a90ae32f385ed2bc4",
       "sourceName": "contracts/UniswapEncoder.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -110,8 +111,8 @@
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/WalletBundler.sol": {
-      "lastModificationDate": 1760311430750,
-      "contentHash": "f3640cc05b878ff6ad32dd61803d80d5",
+      "lastModificationDate": 1760319167491,
+      "contentHash": "d9c0f3b298bbee1b615bf13bd5a39228",
       "sourceName": "contracts/WalletBundler.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -142,6 +143,7 @@
         "^0.8.19"
       ],
       "artifacts": [
+        "IBundlerRegistry",
         "IPermit2",
         "WalletBundler"
       ]

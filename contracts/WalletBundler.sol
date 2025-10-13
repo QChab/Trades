@@ -5,6 +5,10 @@ interface IPermit2 {
     function approve(address token, address spender, uint160 amount, uint48 expiration) external;
 }
 
+interface IBundlerRegistry {
+    function registerBundler() external;
+}
+
 /**
  * @title WalletBundler
  * @notice Gas-optimized standalone bundler contract for MEV-protected multi-DEX trading
@@ -20,6 +24,7 @@ contract WalletBundler {
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
     address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3 Router
     address private constant BALANCER_VAULT = 0xbA1333333333a1BA1108E8412f11850A5C319bA9; // Balancer V3 Vault
+    address private constant BUNDLER_REGISTRY = 0xb14E00d68ad58BC64DfaDd6C3a3822d21FA6478F; // Well-known registry
     uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
     uint256 private constant APPROVAL_THRESHOLD = 1e45; // Gas-optimized approval check threshold
 
@@ -30,10 +35,14 @@ contract WalletBundler {
         if (msg.sender != owner) revert Unauthorized();
         _;
     }
-    
+
     constructor() {
         owner = msg.sender;
         self = address(this);
+
+        // Register this bundler in the registry
+        // The registry will verify ownership by calling owner() on this contract
+        IBundlerRegistry(BUNDLER_REGISTRY).registerBundler();
     }
     
     /**

@@ -5,7 +5,7 @@ const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
 const balancerEncoderAddress = '0x412B71CDDcBc8A16c9E1aEA5A74F8000b9a0303F';
-const uniswapEncoderAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+const uniswapEncoderAddress = '0x3a853550bf1d7a2b82202c2fF5C035a72E4f9f4F';  // V4 with struct params
 
 /**
  * Create execution plan for the selected route
@@ -256,8 +256,18 @@ export function createEncoderExecutionPlan(
         tickSpacing = pool.poolKey.tickSpacing;
         hooks = pool.poolKey.hooks;
 
+        // Log the actual pool key from SDK
+        console.log(`\n   🔍 Uniswap V4 Pool Key from SDK:`);
+        console.log(`      Currency0: ${currency0}`);
+        console.log(`      Currency1: ${currency1}`);
+        console.log(`      Fee: ${fee}`);
+        console.log(`      TickSpacing: ${tickSpacing}`);
+        console.log(`      Hooks: ${hooks}`);
+        console.log(`      Pool Address: ${pool.address || 'N/A'}`);
+
         // Determine swap direction: zeroForOne = true if inputToken is currency0
         zeroForOne = inputTokenAddress.toLowerCase() === currency0.toLowerCase();
+        console.log(`      ZeroForOne: ${zeroForOne} (inputToken: ${inputTokenAddress})`);
       } else {
         // Fallback for V3 pools (shouldn't happen if using V4)
         throw new Error('Uniswap pool missing poolKey data - V4 pools required');

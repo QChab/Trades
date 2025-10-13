@@ -9,14 +9,15 @@ pragma solidity ^0.8.19;
 contract UniswapEncoder {
     // Uniswap Universal Router address
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
+    address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // Gas optimization: constant WETH
     uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
 
     // Command code for Universal Router V4 swaps
     bytes private constant COMMANDS = hex"10";  // V4_SWAP command
 
     // V4 Action codes - hardcoded as constant bytes
-    // [SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL] = [0x00, 0x09, 0x0a]
-    bytes private constant ACTIONS = hex"00090a";
+    // [SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL] = [0x06, 0x0c, 0x0f]
+    bytes private constant ACTIONS = hex"060c0f";
 
     // Empty hookData (used in all swaps)
     bytes private constant EMPTY_HOOK_DATA = hex"";
@@ -76,9 +77,7 @@ contract UniswapEncoder {
 
         // Param 2: TAKE_ALL - currency and minAmount to send
         address currencyOut = swapParams.zeroForOne ? swapParams.poolKey.currency1 : swapParams.poolKey.currency0;
-        if (currencyOut == address(0)) {
-            currencyOut = address(0);  // Native ETH
-        }
+        // Gas optimization: removed redundant if check (currencyOut is already set correctly)
         params[2] = abi.encode(currencyOut, swapParams.minAmountOut);
 
         // Encode inputs as [actions, params]
@@ -114,7 +113,7 @@ contract UniswapEncoder {
             balanceToken = address(0);
         } else if (swapParams.wrapOp == 3) {
             // Will unwrap WETH to ETH before swap, so query WETH balance
-            balanceToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // WETH
+            balanceToken = WETH; // Gas optimization: use constant
         }
 
         // Get the actual balance (ETH or token)
@@ -139,9 +138,7 @@ contract UniswapEncoder {
 
         // Param 2: TAKE_ALL - currency and minAmount to send
         address currencyOut = swapParams.zeroForOne ? swapParams.poolKey.currency1 : swapParams.poolKey.currency0;
-        if (currencyOut == address(0)) {
-            currencyOut = address(0);  // Native ETH
-        }
+        // Gas optimization: removed redundant if check (currencyOut is already set correctly)
         params[2] = abi.encode(currencyOut, swapParams.minAmountOut);
 
         // Encode inputs as [actions, params]

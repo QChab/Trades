@@ -14,7 +14,8 @@ export class BundlerManager {
   }
 
   /**
-   * Deploy a bundler contract for the current wallet and register it
+   * Deploy a bundler contract for the current wallet
+   * Note: The bundler automatically registers itself in the constructor
    */
   async deployBundler() {
     // Deploy WalletBundler directly
@@ -27,9 +28,7 @@ export class BundlerManager {
     const bundler = await WalletBundlerFactory.deploy();
     await bundler.deployed();
 
-    // Register the bundler address in the registry
-    const registerTx = await this.registry.storeAddress(bundler.address);
-    await registerTx.wait();
+    // No need to call storeAddress - bundler auto-registers in constructor
 
     return { success: true, address: bundler.address, contract: bundler };
   }

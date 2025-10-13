@@ -2,10 +2,21 @@ import hre from "hardhat";
 const { ethers } = hre;
 
 /**
- * Register an existing WalletBundler address in the BundlerRegistry
+ * DEPRECATED: This script is no longer needed!
+ *
+ * WalletBundler now automatically registers itself in the BundlerRegistry
+ * during deployment (in its constructor). This script can be used only if
+ * you need to manually re-register for some reason.
+ *
+ * To deploy a new WalletBundler that auto-registers:
+ *   npx hardhat run scripts/deployBundler.js --network mainnet
  */
 async function main() {
-  console.log("\n📝 Registering WalletBundler in BundlerRegistry");
+  console.log("\n⚠️  WARNING: This script is DEPRECATED!");
+  console.log("WalletBundler now auto-registers on deployment.");
+  console.log("Use this only if you need to manually update registration.\n");
+
+  console.log("📝 Manually Registering WalletBundler in BundlerRegistry");
   console.log("===============================================\n");
 
   const [deployer] = await ethers.getSigners();
@@ -52,8 +63,8 @@ async function main() {
   console.log(`  Base Fee: ${ethers.utils.formatUnits(baseFee, "gwei")} gwei`);
   console.log(`  Max Fee: ${ethers.utils.formatUnits(maxFeePerGas, "gwei")} gwei`);
 
-  // Store the bundler address
-  console.log("\n📤 Storing bundler address...");
+  // Store the bundler address (manual override - usually not needed)
+  console.log("\n📤 Manually storing bundler address...");
   const tx = await registry.storeAddress(WALLET_BUNDLER_ADDRESS, {
     maxFeePerGas: maxFeePerGas,
     maxPriorityFeePerGas: priorityFee
