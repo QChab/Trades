@@ -103,10 +103,15 @@ contract BalancerEncoder {
             mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000)
             mstore(add(ptr, 0x04), account)
 
-            let success := staticcall(gas(), token, ptr, 0x24, ptr, 0x20)
+            // Use separate memory location for output (ptr + 0x40 = 64 bytes after input)
+            let outPtr := add(ptr, 0x40)
+            let success := staticcall(gas(), token, ptr, 0x24, outPtr, 0x20)
             if iszero(success) { revert(0, 0) }
 
-            tokenBalance := mload(ptr)
+            // Verify we actually got return data (protects against non-existent contracts)
+            if iszero(returndatasize()) { revert(0, 0) }
+
+            tokenBalance := mload(outPtr)
         }
     }
 }
