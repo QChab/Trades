@@ -104,11 +104,16 @@ contract WalletBundler {
             // Store balanceOf(address) selector
             mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000)
             mstore(add(ptr, 0x04), account)
-            
-            let success := staticcall(gas(), token, ptr, 0x24, ptr, 0x20)
+
+            // Use separate memory location for output (ptr + 0x40 = 64 bytes after input)
+            let outPtr := add(ptr, 0x40)
+            let success := staticcall(gas(), token, ptr, 0x24, outPtr, 0x20)
             if iszero(success) { revert(0, 0) }
-            
-            tokenBalance := mload(ptr)
+
+            // Verify we actually got return data (protects against non-existent contracts)
+            if iszero(returndatasize()) { revert(0, 0) }
+
+            tokenBalance := mload(outPtr)
         }
     }
     
@@ -257,9 +262,11 @@ contract WalletBundler {
                     mstore(add(ptr, 0x24), tokenIn)       // tokenIn
                     mstore(add(ptr, 0x44), target) // spender
 
-                    let success := staticcall(gas(), PERMIT2, ptr, 0x64, ptr, 0x60)
+                    // Use separate memory location for output (ptr + 0x80 = 128 bytes after input)
+                    let outPtr := add(ptr, 0x80)
+                    let success := staticcall(gas(), PERMIT2, ptr, 0x64, outPtr, 0x60)
                     if success {
-                        permit2Allowance := mload(ptr) // First return value is uint160 amount
+                        permit2Allowance := mload(outPtr) // First return value is uint160 amount
                     }
                 }
 
@@ -340,9 +347,11 @@ contract WalletBundler {
             mstore(add(ptr, 0x04), contractAddr) // owner (this contract)
             mstore(add(ptr, 0x24), spender)   // spender
 
-            let success := staticcall(gas(), token, ptr, 0x44, ptr, 0x20)
+            // Use separate memory location for output
+            let outPtr := add(ptr, 0x60)
+            let success := staticcall(gas(), token, ptr, 0x44, outPtr, 0x20)
             if success {
-                allowance := mload(ptr)
+                allowance := mload(outPtr)
             }
         }
     }
