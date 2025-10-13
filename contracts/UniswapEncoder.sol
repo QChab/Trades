@@ -12,95 +12,107 @@ contract UniswapEncoder {
     uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
 
     // Command code for Universal Router V4 swaps
-    uint8 private constant V4_SWAP = 0x10;
+    bytes private constant COMMANDS = hex"10";  // V4_SWAP command
 
-    struct ExactInputSingleParams {
-        address tokenIn;
-        address tokenOut;
+    // V4 Action codes - hardcoded as constant bytes
+    // [SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL] = [0x00, 0x09, 0x0a]
+    bytes private constant ACTIONS = hex"00090a";
+
+    // Empty hookData (used in all swaps)
+    bytes private constant EMPTY_HOOK_DATA = hex"";
+
+    // V4 PoolKey structure
+    struct PoolKey {
+        address currency0;
+        address currency1;
         uint24 fee;
-        address recipient;
-        uint256 amountIn;
-        uint256 amountOutMinimum;
-        uint160 sqrtPriceLimitX96;
+        int24 tickSpacing;
+        address hooks;
     }
 
-    struct ExactInputParams {
-        bytes path;
-        address recipient;
+    // Swap parameters for single swap
+    struct SingleSwapParams {
+        PoolKey poolKey;
+        bool zeroForOne;
         uint256 amountIn;
-        uint256 amountOutMinimum;
+        uint256 minAmountOut;
+        address tokenIn;
+    }
+
+    // Swap parameters for use-all-balance swap
+    struct UseAllBalanceParams {
+        PoolKey poolKey;
+        bool zeroForOne;
+        uint256 minAmountOut;
+        uint8 wrapOp;
+        address tokenIn;
     }
 
     /**
      * @notice Encode a single swap on Uniswap V4
-     * @param tokenIn Address of input token
-     * @param tokenOut Address of output token
-     * @param fee Pool fee tier (500, 3000, 10000 for 0.05%, 0.3%, 1%)
-     * @param amountIn Amount of input tokens
-     * @param minAmountOut Minimum acceptable output
+     * @param swapParams Struct containing all swap parameters
      * @return target The Universal Router address
-     * @return callData The encoded swap call
-     * @return inputAmount The actual amount to be used (for wrap/unwrap operations)
-     * @return tokenIn The tokenIn address
+     * @return callData The encoded V4 swap call
+     * @return inputAmount The actual amount to be used
+     * @return _tokenIn The tokenIn address (echo back)
      */
     function encodeSingleSwap(
-        address tokenIn,
-        address tokenOut,
-        uint24 fee,
-        uint256 amountIn,
-        uint256 minAmountOut
-    ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
-        bytes memory commands = abi.encodePacked(V4_SWAP);
+        SingleSwapParams calldata swapParams
+    ) external pure returns (address target, bytes memory callData, uint256 inputAmount, address _tokenIn) {
+        // Build params array
+        bytes[] memory params = new bytes[](3);
 
-        ExactInputSingleParams memory params = ExactInputSingleParams({
-            tokenIn: tokenIn,
-            tokenOut: tokenOut,
-            fee: fee,
-            recipient: msg.sender,  // Always the calling WalletBundler
-            amountIn: amountIn,
-            amountOutMinimum: minAmountOut,
-            sqrtPriceLimitX96: 0
-        });
+        // Param 0: Swap parameters
+        params[0] = abi.encode(
+            swapParams.poolKey,
+            swapParams.zeroForOne,
+            uint128(swapParams.amountIn),
+            uint128(swapParams.minAmountOut),
+            EMPTY_HOOK_DATA
+        );
 
+        // Param 1: SETTLE_ALL - currency and amount to pull
+        params[1] = abi.encode(swapParams.tokenIn, swapParams.amountIn);
+
+        // Param 2: TAKE_ALL - currency and minAmount to send
+        address currencyOut = swapParams.zeroForOne ? swapParams.poolKey.currency1 : swapParams.poolKey.currency0;
+        if (currencyOut == address(0)) {
+            currencyOut = address(0);  // Native ETH
+        }
+        params[2] = abi.encode(currencyOut, swapParams.minAmountOut);
+
+        // Encode inputs as [actions, params]
         bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(params);
+        inputs[0] = abi.encode(ACTIONS, params);
 
         callData = abi.encodeWithSignature(
             "execute(bytes,bytes[],uint256)",
-            commands,
+            COMMANDS,
             inputs,
             EXPIRATION_OFFSET
         );
 
-        return (UNIVERSAL_ROUTER, callData, amountIn, tokenIn);
+        return (UNIVERSAL_ROUTER, callData, swapParams.amountIn, swapParams.tokenIn);
     }
 
     /**
-     * @notice Encode a swap using all available balance
+     * @notice Encode a swap using all available balance (V4)
      * @dev For intermediate hops that should use entire balance
-     * @param tokenIn Address of input token (address(0) for ETH)
-     * @param tokenOut Address of output token
-     * @param fee Pool fee tier
-     * @param minAmountOut Minimum acceptable output (can be 0)
-     * @param wrapOp Wrap operation: 0=none, 1=wrap ETH before, 3=unwrap WETH before
+     * @param swapParams Struct containing all swap parameters
      * @return target The Universal Router address
      * @return callData The encoded swap with actual balance
      * @return inputAmount Returns the actual balance amount
-     * @return tokenIn The tokenIn address
+     * @return _tokenIn The tokenIn address
      */
     function encodeUseAllBalanceSwap(
-        address tokenIn,
-        address tokenOut,
-        uint24 fee,
-        uint256 minAmountOut,
-        uint8 wrapOp
-    ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
+        UseAllBalanceParams calldata swapParams
+    ) external view returns (address target, bytes memory callData, uint256 inputAmount, address _tokenIn) {
         // Determine which balance to query based on wrap operation
-        address balanceToken = tokenIn;
-        if (wrapOp == 1) {
+        address balanceToken = swapParams.tokenIn;
+        if (swapParams.wrapOp == 1) {
             // Will wrap ETH to WETH before swap, so query ETH balance
             balanceToken = address(0);
-        } else if (wrapOp == 3) {
+        } else if (swapParams.wrapOp == 3) {
             // Will unwrap WETH to ETH before swap, so query WETH balance
             balanceToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // WETH
         }
@@ -110,27 +122,40 @@ contract UniswapEncoder {
             ? msg.sender.balance
             : _getTokenBalance(balanceToken, msg.sender);
 
-        ExactInputSingleParams memory params = ExactInputSingleParams({
-            tokenIn: tokenIn,
-            tokenOut: tokenOut,
-            fee: fee,
-            recipient: msg.sender,  // Always the calling WalletBundler
-            amountIn: actualBalance, // Use actual balance instead of max marker
-            amountOutMinimum: minAmountOut,
-            sqrtPriceLimitX96: 0
-        });
+        // Build params array
+        bytes[] memory params = new bytes[](3);
 
+        // Param 0: Swap parameters
+        params[0] = abi.encode(
+            swapParams.poolKey,
+            swapParams.zeroForOne,
+            uint128(actualBalance),
+            uint128(swapParams.minAmountOut),
+            EMPTY_HOOK_DATA
+        );
+
+        // Param 1: SETTLE_ALL - currency and amount to pull
+        params[1] = abi.encode(balanceToken, actualBalance);
+
+        // Param 2: TAKE_ALL - currency and minAmount to send
+        address currencyOut = swapParams.zeroForOne ? swapParams.poolKey.currency1 : swapParams.poolKey.currency0;
+        if (currencyOut == address(0)) {
+            currencyOut = address(0);  // Native ETH
+        }
+        params[2] = abi.encode(currencyOut, swapParams.minAmountOut);
+
+        // Encode inputs as [actions, params]
         bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(params);
+        inputs[0] = abi.encode(ACTIONS, params);
 
         callData = abi.encodeWithSignature(
             "execute(bytes,bytes[],uint256)",
-            abi.encodePacked(V4_SWAP),
+            COMMANDS,
             inputs,
             EXPIRATION_OFFSET
         );
 
-        return (UNIVERSAL_ROUTER, callData, actualBalance, tokenIn);
+        return (UNIVERSAL_ROUTER, callData, actualBalance, swapParams.tokenIn);
     }
 
     /**

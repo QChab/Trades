@@ -235,7 +235,6 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn, pre
     // Validate: prevent same-token swaps
     const normalizeAddress = (addr) => addr === ETH_ADDRESS ? WETH_ADDRESS : addr.toLowerCase();
     if (normalizeAddress(tokenInObject.address) === normalizeAddress(tokenOutObject.address)) {
-      console.log(`   ⚠️  Skipping same-token swap: ${tokenInObject.symbol} → ${tokenOutObject.symbol}`);
       return null;
     }
 
@@ -291,11 +290,8 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn, pre
     const allPaths = [];
     
     for (const variant of pathVariants) {
-      console.log(`[selectBestPath] Finding trades for ${variant.tokenIn.symbol} → ${variant.tokenOut.symbol} with ${variant.tokenIn.address.slice(0,10)} -> ${variant.tokenOut.address.slice(0,10)}`);
-
       // Use pre-fetched pools (already includes bulk + specific pairs)
       const pools = prefetchedPools;
-      console.log(`   Using ${pools.length} pre-fetched pools for routing`);
 
       if (pools.length > 0) {
         const trades = await uniswap.selectBestPath(variant.tokenIn, variant.tokenOut, pools, amountIn);
@@ -331,10 +327,6 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn, pre
           return true;
         });
 
-        if (uniqueTrades.length < trades.length) {
-          console.log(`   ✅ Removed ${trades.length - uniqueTrades.length} duplicate pools for ${variant.tokenIn.symbol} → ${variant.tokenOut.symbol}`);
-        }
-
         // Multiple unique trades - add each as separate route for optimization
         if (uniqueTrades.length > 1) {
           console.log(`   ✓ Found ${uniqueTrades.length} unique Uniswap routes`);
@@ -344,9 +336,7 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn, pre
             const inputAmount = BigNumber.from(trade.inputAmount.quotient.toString());
             const outputAmount = BigNumber.from(trade.outputAmount.quotient.toString());
 
-            console.log(`      Route ${i + 1}: ${ethers.utils.formatUnits(outputAmount, variant.tokenOut.decimals)} ${variant.tokenOut.symbol}`);
-            console.log(`              Input: ${ethers.utils.formatUnits(inputAmount, variant.tokenIn.decimals)} ${variant.tokenIn.symbol}`);
-            console.log(`              Path: ${path}`);
+            console.log(`      Route ${i + 1}: ${ethers.utils.formatUnits(inputAmount, variant.tokenIn.decimals)} ${variant.tokenIn.symbol} -> ${ethers.utils.formatUnits(outputAmount, variant.tokenOut.decimals)} ${variant.tokenOut.symbol}`);
 
             return {
               protocol: 'uniswap',
@@ -371,9 +361,7 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn, pre
             const path = trade.swaps[0].route.currencyPath.map(c => c.symbol).join(' → ');
 
             console.log(`   ✓ Found 1 Uniswap route`);
-            console.log(`      Output: ${ethers.utils.formatUnits(outputAmount, variant.tokenOut.decimals)} ${variant.tokenOut.symbol}`);
-            console.log(`      Input: ${ethers.utils.formatUnits(inputAmount, variant.tokenIn.decimals)} ${variant.tokenIn.symbol}`);
-            console.log(`      Path: ${path}`);
+            console.log(`      ${ethers.utils.formatUnits(inputAmount, variant.tokenIn.decimals)} ${variant.tokenIn.symbol} -> ${ethers.utils.formatUnits(outputAmount, variant.tokenOut.decimals)} ${variant.tokenOut.symbol}`);
 
             return {
               protocol: 'uniswap',
@@ -2482,7 +2470,6 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
 
   // Calculate total output (sum of final-level group outputs)
   let totalOptimizedOutput = BigNumber.from(0);
-  const finalGroups = groupsWithLevels.filter(g => g.outputToken === tokenOut.symbol);
 
   // Build token decimals lookup for proper display formatting
   const tokenDecimals = {

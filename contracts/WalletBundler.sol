@@ -262,8 +262,8 @@ contract WalletBundler {
             // ----------------
             uint256 callValue = tokenIn == address(0) ? inputAmount : 0;
             (bool success, bytes memory returnData) = target.call{value: callValue}(callData);
-            results[i] = success;
             if (!success) revert CallFailed();
+            results[i] = success;
 
             // Decode the output amount from return data
             uint256 outputAmount;

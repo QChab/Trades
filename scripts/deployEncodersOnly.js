@@ -51,77 +51,20 @@ async function main() {
   console.log(`   Gas cost: ${ethers.utils.formatEther(uniswapGasCost)} ETH\n`);
 
   // Deploy BalancerEncoder
-  console.log("2️⃣  Deploying BalancerEncoder...");
-  const BalancerEncoder = await ethers.getContractFactory("BalancerEncoder");
-  const balancerEncoder = await BalancerEncoder.deploy(gasParams);
-  await balancerEncoder.deployed();
-  console.log(`   ✓ BalancerEncoder deployed: ${balancerEncoder.address}`);
+  // console.log("2️⃣  Deploying BalancerEncoder...");
+  // const BalancerEncoder = await ethers.getContractFactory("BalancerEncoder");
+  // const balancerEncoder = await BalancerEncoder.deploy(gasParams);
+  // await balancerEncoder.deployed();
+  // console.log(`   ✓ BalancerEncoder deployed: ${balancerEncoder.address}`);
 
-  const balancerReceipt = await balancerEncoder.deployTransaction.wait();
-  const balancerGasCost = balancerReceipt.gasUsed.mul(balancerReceipt.effectiveGasPrice);
-  console.log(`   Gas used: ${balancerReceipt.gasUsed.toString()}`);
-  console.log(`   Gas cost: ${ethers.utils.formatEther(balancerGasCost)} ETH\n`);
-
-  // Calculate total costs
-  const totalGasCost = uniswapGasCost.add(balancerGasCost);
-  const totalGasUsed = uniswapReceipt.gasUsed.add(balancerReceipt.gasUsed);
-
-  console.log("=========================================");
-  console.log("📊 Deployment Summary");
-  console.log("=========================================\n");
-  console.log("Contract Addresses:");
-  console.log(`  UniswapEncoder:   ${uniswapEncoder.address}`);
-  console.log(`  BalancerEncoder:  ${balancerEncoder.address}\n`);
-
-  console.log("Gas Statistics:");
-  console.log(`  Total Gas Used:   ${totalGasUsed.toString()}`);
-  console.log(`  Total Gas Cost:   ${ethers.utils.formatEther(totalGasCost)} ETH`);
-  console.log(`  Average Gas Price: ${ethers.utils.formatUnits(totalGasCost.mul(1e9).div(totalGasUsed), "gwei")} gwei\n`);
-
-  // Save addresses to file
-  const deploymentInfo = {
-    network: "mainnet",
-    timestamp: new Date().toISOString(),
-    deployer: deployer.address,
-    gasPrice: {
-      baseFee: ethers.utils.formatUnits(baseFee, "gwei"),
-      priorityFee: ethers.utils.formatUnits(priorityFee, "gwei"),
-      maxFee: ethers.utils.formatUnits(maxFeePerGas, "gwei")
-    },
-    contracts: {
-      UniswapEncoder: {
-        address: uniswapEncoder.address,
-        gasUsed: uniswapReceipt.gasUsed.toString(),
-        gasCost: ethers.utils.formatEther(uniswapGasCost)
-      },
-      BalancerEncoder: {
-        address: balancerEncoder.address,
-        gasUsed: balancerReceipt.gasUsed.toString(),
-        gasCost: ethers.utils.formatEther(balancerGasCost)
-      }
-    },
-    totalGasUsed: totalGasUsed.toString(),
-    totalGasCost: ethers.utils.formatEther(totalGasCost)
-  };
-
-  const fs = await import('fs');
-  fs.writeFileSync(
-    'encoders-deployment.json',
-    JSON.stringify(deploymentInfo, null, 2)
-  );
-  console.log("✓ Deployment info saved to encoders-deployment.json\n");
+  // const balancerReceipt = await balancerEncoder.deployTransaction.wait();
+  // const balancerGasCost = balancerReceipt.gasUsed.mul(balancerReceipt.effectiveGasPrice);
+  // console.log(`   Gas used: ${balancerReceipt.gasUsed.toString()}`);
+  // console.log(`   Gas cost: ${ethers.utils.formatEther(balancerGasCost)} ETH\n`);
 
   console.log("=========================================");
   console.log("✅ Encoders deployed successfully!");
   console.log("=========================================\n");
-
-  console.log("⚠️  NEXT STEPS:");
-  console.log("1. Update executionPlan.js with new encoder addresses:");
-  console.log(`   const balancerEncoderAddress = '${balancerEncoder.address}';`);
-  console.log(`   const uniswapEncoderAddress = '${uniswapEncoder.address}';`);
-  console.log("\n2. Update test files if needed (realSwapTest.js, etc.)");
-  console.log("\n3. Run integration test to verify:");
-  console.log("   npx hardhat test test/realSwapTest.js --network mainnet\n");
 }
 
 main()

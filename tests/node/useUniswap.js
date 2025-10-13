@@ -490,9 +490,7 @@ export function useUniswapV4() {
     try {
       if (!pools.length) return []
 
-      console.log(`[selectBestPath] Finding trades for ${tokenA.symbol} → ${tokenB.symbol} with ${pools.length} pools`);
       trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 1, maxNumResults: 8 });
-      console.log(`[selectBestPath] Found ${trades ? trades.length : 0} trades`);
 
       // Sort trades by output amount (descending) to get best routes first
       trades.sort((a, b) => {
@@ -524,8 +522,6 @@ export function useUniswapV4() {
           nonConflictingTrades.push(trade);
         }
       }
-
-      console.log(`[selectBestPath] Returning ${nonConflictingTrades.length} non-conflicting routes for optimization`);
 
       // Return all non-conflicting trades for multi-route optimization
       if (nonConflictingTrades.length > 1) {

@@ -67,19 +67,11 @@ contract BalancerEncoder {
         uint8 wrapOp
     ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
         // Determine which balance to query based on wrap operation
-        address balanceToken = tokenIn;
+        uint256 actualBalance;
         if (wrapOp == 1) {
             // Will wrap ETH to WETH before swap, so query ETH balance
-            balanceToken = address(0);
-        } else if (wrapOp == 3) {
-            // Will unwrap WETH to ETH before swap, so query WETH balance
-            balanceToken = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // WETH
+            actualBalance = msg.sender.balance;
         }
-
-        // Get the actual token balance
-        uint256 actualBalance = balanceToken == address(0)
-            ? msg.sender.balance
-            : _getTokenBalance(balanceToken, msg.sender);
 
         callData = abi.encodeWithSignature(
             "swapSingleTokenExactIn(address,address,address,uint256,uint256,uint256,bool,bytes)",
@@ -89,7 +81,7 @@ contract BalancerEncoder {
             actualBalance,
             minAmountOut,
             DEADLINE,
-            false,
+            false,  // wethIsEth
             "" // empty userData
         );
 

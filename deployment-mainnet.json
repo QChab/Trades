@@ -14,17 +14,17 @@
       "gasCost": "0.00003602018670564"
     },
     "UniswapEncoder": {
-      "address": "0x4B748Ed83A186E214696487E5686fB1B5bD19932",
+      "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
       "gasUsed": "393473",
       "gasCost": "0.000073273905443945"
     },
     "BalancerEncoder": {
-      "address": "0x0156BB9cCeF37D3d1b9a3CB52b9b4BC26dA1563e",
+      "address": "0x412B71CDDcBc8A16c9E1aEA5A74F8000b9a0303F",
       "gasUsed": "380149",
       "gasCost": "0.000076681914437282"
     },
     "WalletBundler": {
-      "address": "0x987fEa58BcF4Af945836dEE2405e0Aba1814b3d0",
+      "address": "0xAd82ebB0Acc03E39810034A1f554E114bC810727",
       "gasUsed": "836403",
       "gasCost": "0.000261952856506086"
     }

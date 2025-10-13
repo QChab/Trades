@@ -559,6 +559,8 @@ async function enrichPoolData(pools, provider) {
       // Use cached pool data or detect if not cached
       const poolData = await getPoolData(poolAddress, provider, pool);
       
+      if (poolData.poolType === 'ConstantProduct') continue;
+
       enrichedPools.push({
         ...pool,
         poolType: poolData.poolType,
@@ -1104,7 +1106,7 @@ export function calculateSwapOutput(amountIn, balanceIn, balanceOut, swapFee, po
   const oneEther = ethers.utils.parseEther('1');
   const amountInAfterFee = amountIn.mul(oneEther.sub(feeValue)).div(oneEther);
 
-  if (poolType === 'WeightedPool') {
+  if (poolType === 'WeightedPool' || poolType === 'ConstantProduct') {
     // Exact Balancer weighted pool formula:
     // outAmount = balanceOut * (1 - (balanceIn / (balanceIn + inAmount * (1 - fee)))^(weightIn/weightOut))
 
@@ -1147,11 +1149,20 @@ export function calculateSwapOutput(amountIn, balanceIn, balanceOut, swapFee, po
     return balanceOut.gt(newBalanceOut) ? balanceOut.sub(newBalanceOut) : ethers.BigNumber.from(0);
     
   } else {
-    // Constant product (x * y = k) - default
-    const product = balanceIn.mul(balanceOut);
+    // Constant product (50/50 weighted) - use weighted formula with square root
+    // ConstantProduct pools are 50/50 weighted, so we need power calculations
+    // Formula: outAmount = balanceOut * (1 - (balanceIn / (balanceIn + inAmount))^(50/50))
+    const wi = 50;
+    const wo = 50;
+
     const newBalanceIn = balanceIn.add(amountInAfterFee);
-    const newBalanceOut = product.div(newBalanceIn);
-    return balanceOut.gt(newBalanceOut) ? balanceOut.sub(newBalanceOut) : ethers.BigNumber.from(0);
+    const ratio = balanceIn.mul(oneEther).div(newBalanceIn);
+
+    // Use exact power calculation for ratio^(50/50)
+    const ratioPower = calculateExactPower(ratio, wi, wo);
+    const oneMinus = oneEther.sub(ratioPower);
+
+    return balanceOut.mul(oneMinus).div(oneEther);
   }
 }
 
