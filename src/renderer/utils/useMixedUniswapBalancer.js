@@ -1170,6 +1170,10 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
         protocol: 'balancer',
         totalOutput: balPath.outputAmount,
         paths: [balPath],
+        legs: [{
+          ...balPath,  // Spread all properties (includes path, outputAmount, etc.)
+          protocol: 'balancer'  // Ensure protocol is set
+        }],
         description: `Balancer path ${index + 1} (${balPath.hops} hops)`
       });
     });
