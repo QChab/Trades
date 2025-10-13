@@ -2268,11 +2268,12 @@ export default {
           }
 
           // Create encoder-based execution plan
+          // Note: slippage.value is in basis points (70 = 0.7%), but createEncoderExecutionPlan expects percentage
           const encoderPlan = createEncoderExecutionPlan(
             trade.executionPlan,
             currentTradeSummary.fromToken,
             currentTradeSummary.toToken,
-            slippage.value
+            slippage.value / 100  // Convert basis points to percentage (70 → 0.7)
           );
 
           // Get bundler contract address for this wallet
