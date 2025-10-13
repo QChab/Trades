@@ -2445,7 +2445,15 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
   });
 
   // Assign execution levels
-  const groupsWithLevels = assignLevelsToGroups(tokenPairGroups, tokenIn.symbol);
+  let groupsWithLevels = assignLevelsToGroups(tokenPairGroups, tokenIn.symbol);
+
+  // CRITICAL: Remove backwards routes that consume the target output token
+  // Example: For ETH→ONE, remove ONE→ETH (trades away our target)
+  const beforeFilterCount = groupsWithLevels.length;
+  groupsWithLevels = groupsWithLevels.filter(g => g.inputToken !== tokenOut.symbol);
+  if (groupsWithLevels.length < beforeFilterCount) {
+    console.log(`\n🚫 Filtered out ${beforeFilterCount - groupsWithLevels.length} backwards route(s) that consume target token ${tokenOut.symbol}`);
+  }
 
   console.log(`\n📋 Execution Levels:`);
   const maxLevel = Math.max(...groupsWithLevels.map(g => g.level));
@@ -2681,16 +2689,22 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
   });
 
   // Build result with calculated outputs for each split (keep for compatibility)
-  const splits = await Promise.all(normalizedSplit.map(async (pct, index) => {
-    const amount = totalAmount.mul(Math.floor(pct * 1000000)).div(1000000);
-    const output = await calculateRouteExactOutput(routes[index], amount, tokenIn, tokenOut);
+  // Filter out routes that were removed (backwards routes)
+  const validRoutesWithSplits = normalizedSplit
+    .map((pct, index) => ({ pct, index, route: routes[index] }))
+    .filter(item => item.pct > 0 && item.route && item.route.totalOutput);
+
+  const splits = await Promise.all(validRoutesWithSplits.map(async (item) => {
+    const amount = totalAmount.mul(Math.floor(item.pct * 1000000)).div(1000000);
+    const output = await calculateRouteExactOutput(item.route, amount, tokenIn, tokenOut);
 
     return {
-      route: routes[index],
-      percentage: pct,
+      route: item.route,
+      protocol: item.route.protocol || 'mixed',  // ADD: protocol property for display
+      percentage: item.pct,
       amount: amount,
       output: output,
-      description: routes[index].description || routes[index].path || `Route ${index + 1}`
+      description: item.route.description || item.route.path || `Route ${item.index + 1}`
     };
   }));
 

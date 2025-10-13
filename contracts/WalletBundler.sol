@@ -60,10 +60,33 @@ contract WalletBundler {
             mstore(add(ptr, 0x04), from)   // sender
             mstore(add(ptr, 0x24), to)     // recipient
             mstore(add(ptr, 0x44), amount) // amount
-            
+
             let success := call(gas(), token, 0, ptr, 0x64, ptr, 0x20)
             if iszero(success) { revert(0, 0) }
-            
+
+            // Check return value (some tokens return false instead of reverting)
+            let returnValue := mload(ptr)
+            if iszero(returnValue) { revert(0, 0) }
+        }
+    }
+
+    /**
+     * @dev Internal assembly function to transfer ERC20 tokens (contract's own tokens)
+     * @param token Token contract address
+     * @param to Recipient address
+     * @param amount Amount to transfer
+     */
+    function _transferToken(address token, address to, uint256 amount) private {
+        assembly {
+            let ptr := mload(0x40)
+            // Store transfer(address,uint256) selector
+            mstore(ptr, 0xa9059cbb00000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), to)     // recipient
+            mstore(add(ptr, 0x24), amount) // amount
+
+            let success := call(gas(), token, 0, ptr, 0x44, ptr, 0x20)
+            if iszero(success) { revert(0, 0) }
+
             // Check return value (some tokens return false instead of reverting)
             let returnValue := mload(ptr)
             if iszero(returnValue) { revert(0, 0) }
@@ -109,7 +132,7 @@ contract WalletBundler {
         if (token == address(0)) {
             _sendETH(owner, self.balance);
         } else {
-            _transferFromToken(token, self, owner, _getTokenBalance(token, self));
+            _transferToken(token, owner, _getTokenBalance(token, self));
         }
     }
     
@@ -298,7 +321,7 @@ contract WalletBundler {
         if (toToken == address(0)) {
             _sendETH(owner, self.balance);
         } else {
-            _transferFromToken(toToken, self, owner, _getTokenBalance(toToken, self));
+            _transferToken(toToken, owner, _getTokenBalance(toToken, self));
         }
     }
 

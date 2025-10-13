@@ -514,7 +514,25 @@ async function discoverV3Pools(tokenA, tokenB, provider) {
     }
     
     const allPools = response.data.data.pools || [];
-    
+
+    // DEBUG: Check if osETH pool is in raw results
+    const osETH = '0xf1c9acdc66974dfb6decb12aa385b9cd01190e38'.toLowerCase();
+    const osETHPools = allPools.filter(p =>
+      p.tokens.some(t => t.address.toLowerCase() === osETH)
+    );
+    if (osETHPools.length > 0) {
+      console.log(`📍 Found ${osETHPools.length} pool(s) containing osETH in raw results:`);
+      osETHPools.forEach(p => {
+        console.log(`   - ${p.address}: ${p.name}`);
+        console.log(`     Tokens: ${p.tokens.map(t => t.symbol || t.address.slice(0,6)).join(', ')}`);
+        console.log(`     Total balance: ${p.tokens.reduce((sum, t) => sum + parseFloat(t.balance || '0'), 0)}`);
+      });
+    } else {
+      console.log(`❌ No osETH pools found in subgraph results`);
+      console.log(`   Query searched for: ${searchTokens.slice(0,3).join(', ')}...`);
+      console.log(`   Total pools returned: ${allPools.length}`);
+    }
+
     // Filter out pools with insufficient liquidity
     const validPools = allPools.filter(pool => {
       const totalBalance = pool.tokens.reduce((sum, token) => {

@@ -12,26 +12,21 @@ const TEST_PARAMS = {
     symbol: 'ETH',
     decimals: 18
   },
-  tokenOutObject: {
-    address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // ONE
-    symbol: 'ONE',
-    decimals: 18
-  },
+  // tokenOutObject: {
+  //   address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // ONE
+  //   symbol: 'ONE',
+  //   decimals: 18
+  // },
   // tokenOutObject: {
   //   address: '0xf1c9acdc66974dfb6decb12aa385b9cd01190e38', // osETH
   //   symbol: 'osETH',
   //   decimals: 18
   // },
-  // tokenInObject: {
-  //   address: '0x0000000000000000000000000000000000000000', // ETH
-  //   symbol: 'ETH',
-  //   decimals: 18
-  // },
-  // tokenOutObject: {
-  //   address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
-  //   symbol: 'AAVE',
-  //   decimals: 18
-  // },
+  tokenOutObject: {
+    address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
+    symbol: 'AAVE',
+    decimals: 18
+  },
   amountIn: '0.00001', // In human-readable format, not wei
   slippageTolerance: 0.5 // 0.5%
 };
