@@ -4,8 +4,8 @@ import { ethers } from 'ethers';
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
-const balancerEncoderAddress = '0x412B71CDDcBc8A16c9E1aEA5A74F8000b9a0303F';
-const uniswapEncoderAddress = '0x3a853550bf1d7a2b82202c2fF5C035a72E4f9f4F';  // V4 with struct params
+const balancerEncoderAddress = '0x8329b276c8a4f55EDe7D8B24d1c8C73f6E97c525';
+const uniswapEncoderAddress = '0x62B186AE7AfD24cD9acdEdE1D8b253259440295C';  // V4 with correct action codes
 
 /**
  * Create execution plan for the selected route

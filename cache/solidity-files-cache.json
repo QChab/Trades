@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/qch/MyTech/SecDev/Trades/contracts/BalancerEncoder.sol": {
-      "lastModificationDate": 1760318043210,
-      "contentHash": "f170a9bbadfad618db14f88d81a29e6d",
+      "lastModificationDate": 1760320561709,
+      "contentHash": "235a9297b602755f63bca89df9e08ff7",
       "sourceName": "contracts/BalancerEncoder.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -34,7 +34,8 @@
         "^0.8.19"
       ],
       "artifacts": [
-        "BalancerEncoder"
+        "BalancerEncoder",
+        "IBalancerRouter"
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/BundlerRegistry.sol": {
@@ -75,8 +76,8 @@
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/UniswapEncoder.sol": {
-      "lastModificationDate": 1760319677820,
-      "contentHash": "7a6a8b8163d7945a90ae32f385ed2bc4",
+      "lastModificationDate": 1760320189598,
+      "contentHash": "e79bbae3d13dcaec7973f2b279c8f9c6",
       "sourceName": "contracts/UniswapEncoder.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -111,8 +112,8 @@
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/WalletBundler.sol": {
-      "lastModificationDate": 1760319167491,
-      "contentHash": "d9c0f3b298bbee1b615bf13bd5a39228",
+      "lastModificationDate": 1760320247979,
+      "contentHash": "17a29a1dd639791b2d63ac18f859da69",
       "sourceName": "contracts/WalletBundler.sol",
       "solcConfig": {
         "version": "0.8.20",

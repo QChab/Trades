@@ -10,7 +10,7 @@ contract UniswapEncoder {
     // Uniswap Universal Router address
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
     address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // Gas optimization: constant WETH
-    uint48 private constant EXPIRATION_OFFSET = 1577836800; // 50 years from 2020
+    uint48 private constant EXPIRATION_OFFSET = 281474976710655; // Max uint48
 
     // Command code for Universal Router V4 swaps
     bytes private constant COMMANDS = hex"10";  // V4_SWAP command

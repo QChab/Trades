@@ -13,10 +13,25 @@ const TEST_PARAMS = {
     decimals: 18
   },
   tokenOutObject: {
-    address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
-    symbol: 'AAVE',
+    address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // ONE
+    symbol: 'ONE',
     decimals: 18
   },
+  // tokenOutObject: {
+  //   address: '0xf1c9acdc66974dfb6decb12aa385b9cd01190e38', // osETH
+  //   symbol: 'osETH',
+  //   decimals: 18
+  // },
+  // tokenInObject: {
+  //   address: '0x0000000000000000000000000000000000000000', // ETH
+  //   symbol: 'ETH',
+  //   decimals: 18
+  // },
+  // tokenOutObject: {
+  //   address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
+  //   symbol: 'AAVE',
+  //   decimals: 18
+  // },
   amountIn: '0.00001', // In human-readable format, not wei
   slippageTolerance: 0.5 // 0.5%
 };
@@ -24,8 +39,8 @@ const TEST_PARAMS = {
 // ===== DEPLOYED CONTRACT ADDRESSES =====
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x0e62874e8879b4762000b9F2A66aCBf23EEB2626',
-  uniswapEncoder: '0x3a853550bf1d7a2b82202c2fF5C035a72E4f9f4F',  // V4 with struct params
-  balancerEncoder: '0x412B71CDDcBc8A16c9E1aEA5A74F8000b9a0303F'
+  uniswapEncoder: '0x62B186AE7AfD24cD9acdEdE1D8b253259440295C',  // V4 with correct action codes
+  balancerEncoder: '0x8329b276c8a4f55EDe7D8B24d1c8C73f6E97c525'
 };
 
 describe("Real Swap Integration Test", function () {

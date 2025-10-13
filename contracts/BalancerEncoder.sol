@@ -6,6 +6,20 @@ pragma solidity ^0.8.19;
  * @notice Encodes Balancer V3 swap calls via Router
  * @dev Stateless encoder that can be deployed once and used by all WalletBundler instances
  */
+
+interface IBalancerRouter {
+    function swapSingleTokenExactIn(
+        address pool,
+        address tokenIn,
+        address tokenOut,
+        uint256 exactAmountIn,
+        uint256 minAmountOut,
+        uint256 deadline,
+        bool wethIsEth,
+        bytes calldata userData
+    ) external returns (uint256);
+}
+
 contract BalancerEncoder {
     // Balancer V3 Router address (simple Router, not BatchRouter)
     address private constant ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2;
@@ -31,16 +45,9 @@ contract BalancerEncoder {
         uint256 minAmountOut
     ) external pure returns (address target, bytes memory callData, uint256 inputAmount, address) {
 
-        callData = abi.encodeWithSignature(
-            "swapSingleTokenExactIn(address,address,address,uint256,uint256,uint256,bool,bytes)",
-            pool,
-            tokenIn,
-            tokenOut,
-            amountIn,
-            minAmountOut,
-            DEADLINE,
-            false, // wethIsEth
-            "" // empty userData
+        callData = abi.encodeCall(
+            IBalancerRouter.swapSingleTokenExactIn,
+            (pool, tokenIn, tokenOut, amountIn, minAmountOut, DEADLINE, false, "")
         );
 
         return (ROUTER, callData, amountIn, tokenIn);
@@ -71,18 +78,13 @@ contract BalancerEncoder {
         if (wrapOp == 1) {
             // Will wrap ETH to WETH before swap, so query ETH balance
             actualBalance = msg.sender.balance;
+        } else {
+            actualBalance = _getTokenBalance(tokenIn, msg.sender);
         }
 
-        callData = abi.encodeWithSignature(
-            "swapSingleTokenExactIn(address,address,address,uint256,uint256,uint256,bool,bytes)",
-            pool,
-            tokenIn,
-            tokenOut,
-            actualBalance,
-            minAmountOut,
-            DEADLINE,
-            false,  // wethIsEth
-            "" // empty userData
+        callData = abi.encodeCall(
+            IBalancerRouter.swapSingleTokenExactIn,
+            (pool, tokenIn, tokenOut, actualBalance, minAmountOut, DEADLINE, false, "")
         );
 
         return (ROUTER, callData, actualBalance, tokenIn);

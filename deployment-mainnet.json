@@ -14,12 +14,12 @@
       "gasCost": "0.00003602018670564"
     },
     "UniswapEncoder": {
-      "address": "0x3a853550bf1d7a2b82202c2fF5C035a72E4f9f4F",
+      "address": "0x62B186AE7AfD24cD9acdEdE1D8b253259440295C",
       "gasUsed": "393473",
       "gasCost": "0.000073273905443945"
     },
     "BalancerEncoder": {
-      "address": "0x412B71CDDcBc8A16c9E1aEA5A74F8000b9a0303F",
+      "address": "0x8329b276c8a4f55EDe7D8B24d1c8C73f6E97c525",
       "gasUsed": "380149",
       "gasCost": "0.000076681914437282"
     },

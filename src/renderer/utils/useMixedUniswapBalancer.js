@@ -1974,17 +1974,35 @@ async function optimizeInterGroupSplit(
   const maxIterations = 100;
   const initialStepSize = 0.05; // 5%
   const minStepSize = 0.00005; // 0.5%
+  const MIN_GROUP_ALLOCATION = 0.001; // 0.1% minimum (define early for pruning)
   const stepReduction = 0.7;
   let stepSize = initialStepSize;
   let iteration = 0;
+  const excludedGroups = new Set(); // Track groups below threshold
 
   while (stepSize >= minStepSize && iteration < maxIterations) {
     let improved = false;
     iteration++;
 
+    // PRUNE: After fine-tuning starts, exclude groups below threshold from optimization
+    if (stepSize < 0.01) { // Only prune after coarse optimization
+      for (let i = 0; i < numGroups; i++) {
+        if (currentSplit[i] < MIN_GROUP_ALLOCATION && !excludedGroups.has(i)) {
+          excludedGroups.add(i);
+          console.log(`      🚫 Excluding ${competingGroups[i].tokenPairKey} (${(currentSplit[i] * 100).toFixed(3)}%) from further optimization`);
+        }
+      }
+    }
+
     outerLoop:
     for (let i = 0; i < numGroups - 1; i++) {
+      // Skip excluded groups
+      if (excludedGroups.has(i)) continue;
+
       for (let j = i + 1; j < numGroups; j++) {
+        // Skip excluded groups
+        if (excludedGroups.has(j)) continue;
+
         // Try moving from i to j
         if (currentSplit[i] >= stepSize) { // Allow 0% minimum
           const testSplit = [...currentSplit];
@@ -2048,19 +2066,104 @@ async function optimizeInterGroupSplit(
 
   console.log(`      ✓ Optimized inter-group split: ${bestSplit.map(x => (x * 100).toFixed(3) + '%').join(' / ')}`);
 
+  // CONSOLIDATE: Redistribute tiny allocations to groups with same input token
+  // Then cascade removal to downstream groups that lose their only input source
+  const consolidatedSplit = [...bestSplit];
+  const removedIndices = new Set();
+
+  // Phase 1: Consolidate tiny groups
+  for (let i = 0; i < numGroups; i++) {
+    if (consolidatedSplit[i] < MIN_GROUP_ALLOCATION && consolidatedSplit[i] > 0) {
+      const smallGroup = competingGroups[i];
+
+      // Find a larger group with same input token to absorb this allocation
+      let targetIdx = -1;
+      let maxAllocation = 0;
+
+      for (let j = 0; j < numGroups; j++) {
+        if (i !== j &&
+            competingGroups[j].inputToken === smallGroup.inputToken &&
+            consolidatedSplit[j] >= MIN_GROUP_ALLOCATION &&
+            consolidatedSplit[j] > maxAllocation) {
+          targetIdx = j;
+          maxAllocation = consolidatedSplit[j];
+        }
+      }
+
+      if (targetIdx >= 0) {
+        console.log(`      ⚠️  Redistributing ${(consolidatedSplit[i] * 100).toFixed(3)}% from ${smallGroup.tokenPairKey} to ${competingGroups[targetIdx].tokenPairKey}`);
+        consolidatedSplit[targetIdx] += consolidatedSplit[i];
+        consolidatedSplit[i] = 0;
+        removedIndices.add(i);
+      } else {
+        // No similar group found - keep it even if small
+        console.log(`      ⚠️  Keeping small allocation ${(consolidatedSplit[i] * 100).toFixed(3)}% for ${smallGroup.tokenPairKey} (no similar group to merge)`);
+      }
+    }
+  }
+
+  // Phase 2: Cascade removal to downstream groups that lost their only input source
+  // Track all removed groups (consolidated + cascaded) for skipping during processing
+  const removedGroupKeys = new Set();
+  for (let i = 0; i < numGroups; i++) {
+    if (removedIndices.has(i)) {
+      removedGroupKeys.add(competingGroups[i].tokenPairKey);
+    }
+  }
+
+  // Mark groups whose output tokens are no longer produced by any non-removed group
+  const removedOutputTokens = new Set();
+  for (let i = 0; i < numGroups; i++) {
+    if (removedIndices.has(i)) {
+      removedOutputTokens.add(competingGroups[i].outputToken);
+    }
+  }
+
+  // For each removed output token, check if there are other groups producing it
+  for (const token of removedOutputTokens) {
+    const hasOtherProducers = competingGroups.some((g, idx) =>
+      !removedIndices.has(idx) && g.outputToken === token
+    );
+
+    if (!hasOtherProducers) {
+      // No other producers - find downstream groups consuming this token in ALL groups
+      const downstreamGroups = allGroupsWithLevels.filter(g =>
+        g.level > competingGroups[0].level &&
+        g.inputToken === token
+      );
+
+      for (const downstream of downstreamGroups) {
+        console.log(`      🔗 Cascading removal: ${downstream.tokenPairKey} loses input (${token} no longer produced)`);
+        removedGroupKeys.add(downstream.tokenPairKey);
+      }
+    }
+  }
+
+  if (removedIndices.size > 0) {
+    console.log(`      ✓ Consolidated split: ${consolidatedSplit.filter((_, i) => !removedIndices.has(i)).map(x => (x * 100).toFixed(3) + '%').join(' / ')}`);
+  }
+
   // Now optimize each group with its allocated input
+  // IMPORTANT: Maintain parallel array structure with competingGroups (null for removed indices)
   const groupOptimizations = [];
   const groupInputs = [];
 
   for (let i = 0; i < numGroups; i++) {
+    if (removedIndices.has(i)) {
+      // Consolidated group - store null placeholders
+      groupInputs.push(BigNumber.from(0));
+      groupOptimizations.push(null);
+      continue;
+    }
+
     const group = competingGroups[i];
-    const groupInput = totalInput.mul(Math.floor(bestSplit[i] * 1000000)).div(1000000);
+    const groupInput = totalInput.mul(Math.floor(consolidatedSplit[i] * 1000000)).div(1000000);
     groupInputs.push(groupInput);
 
     const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
     const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
     const result = await optimizeTokenPairGroup(group, groupInput, groupTokenIn, groupTokenOut, poolInitialAllocations);
-    result.inputPercentage = bestSplit[i];
+    result.inputPercentage = consolidatedSplit[i];
     groupOptimizations.push(result);
   }
 
@@ -2068,7 +2171,8 @@ async function optimizeInterGroupSplit(
     groupOptimizations,
     groupInputs,
     split: bestSplit,
-    totalOutput: bestOutput
+    totalOutput: bestOutput,
+    removedGroupKeys // NEW: Pass cascaded removals up for filtering
   };
 }
 
@@ -2373,16 +2477,21 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
 
   const groupOptimizations = new Map(); // tokenPairKey -> { poolAllocations, totalOutput, inputPercentage }
   const groupInputAmounts = new Map(); // tokenPairKey -> input amount for this group
+  const allRemovedGroupKeys = new Set(); // Track all removed groups (consolidated + cascaded)
 
   // Process each level sequentially (dependencies flow from lower to higher levels)
   for (let level = 0; level <= maxLevel; level++) {
-    const groupsAtLevel = groupsWithLevels.filter(g => g.level === level);
+    // Filter out groups that were removed in previous levels or cascaded
+    const groupsAtLevel = groupsWithLevels.filter(g =>
+      g.level === level && !allRemovedGroupKeys.has(g.tokenPairKey)
+    );
     console.log(`\n🔄 Processing Level ${level}: ${groupsAtLevel.length} group(s)`);
 
-    // Get competing group sets at this level
+    // Get competing group sets at this level (filter out removed groups)
     const competingAtLevel = Array.from(competingGroupSets.entries())
       .filter(([key]) => key.endsWith(`@${level}`))
-      .map(([, groups]) => groups);
+      .map(([, groups]) => groups.filter(g => !allRemovedGroupKeys.has(g.tokenPairKey)))
+      .filter(groups => groups.length > 0); // Remove empty sets
 
     // CRITICAL: Define token decimals lookup OUTSIDE conditionals so it's available for all paths
     const tokenDecimalsLookup = {
@@ -2458,11 +2567,24 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
           poolInitialAllocations
         );
 
-        // Store results for each group
+        // Accumulate removed groups from this optimization
+        if (interGroupResult.removedGroupKeys) {
+          interGroupResult.removedGroupKeys.forEach(key => allRemovedGroupKeys.add(key));
+        }
+
+        // Store results for each group (skip null entries from consolidated groups)
         for (let i = 0; i < competingGroups.length; i++) {
           const group = competingGroups[i];
+          const optimization = interGroupResult.groupOptimizations[i];
+
+          // Skip consolidated/removed groups (marked with null)
+          if (optimization === null) {
+            console.log(`   ⚠️  Skipping consolidated group: ${group.tokenPairKey}`);
+            continue;
+          }
+
           groupInputAmounts.set(group.tokenPairKey, interGroupResult.groupInputs[i]);
-          groupOptimizations.set(group.tokenPairKey, interGroupResult.groupOptimizations[i]);
+          groupOptimizations.set(group.tokenPairKey, optimization);
         }
       }
     }
@@ -2487,6 +2609,13 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
   for (const group of groupsWithLevels) {
     const opt = groupOptimizations.get(group.tokenPairKey);
     const inputAmt = groupInputAmounts.get(group.tokenPairKey);
+
+    // Skip consolidated groups (not in optimization results)
+    if (!opt || !inputAmt) {
+      console.log(`   ${group.tokenPairKey} (Level ${group.level}): ⚠️  Consolidated (merged into another group)`);
+      continue;
+    }
+
     const outputDecimals = tokenDecimals[group.outputToken] || 18;
     console.log(`   ${group.tokenPairKey} (Level ${group.level}):`);
     console.log(`      Input: ${ethers.utils.formatUnits(inputAmt, tokenIn.decimals)} ${group.inputToken}`);
@@ -2512,6 +2641,11 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
   // For each group, distribute its pool allocations to the routes that use those pools
   for (const group of tokenPairGroups) {
     const optimization = groupOptimizations.get(group.tokenPairKey);
+
+    // Skip consolidated groups (not in optimization results)
+    if (!optimization) {
+      continue;
+    }
 
     for (const pool of group.pools) {
       const poolPercentage = optimization.poolAllocations.get(pool.poolAddress);
