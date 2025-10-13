@@ -24,7 +24,7 @@ contract WalletBundler {
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
     address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3 Router
     address private constant BALANCER_VAULT = 0xbA1333333333a1BA1108E8412f11850A5C319bA9; // Balancer V3 Vault
-    address private constant BUNDLER_REGISTRY = 0xb14E00d68ad58BC64DfaDd6C3a3822d21FA6478F; // Well-known registry
+    address private constant BUNDLER_REGISTRY = 0x4df4B688d6F7954F6F53787B2e2778720BaB5d28; // Well-known registry
     uint48 private constant EXPIRATION_OFFSET = 281474976710655; // 50 years from 2020
     uint256 private constant APPROVAL_THRESHOLD = 1e45; // Gas-optimized approval check threshold
 
@@ -40,8 +40,7 @@ contract WalletBundler {
         owner = msg.sender;
         self = address(this);
 
-        // Register this bundler in the registry
-        // The registry will verify ownership by calling owner() on this contract
+        // Register this bundler in the registry, only works if no bundler registered for the user
         IBundlerRegistry(BUNDLER_REGISTRY).registerBundler();
     }
     

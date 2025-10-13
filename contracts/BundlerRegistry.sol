@@ -14,13 +14,12 @@ contract BundlerRegistry {
 
     /**
      * @notice Allows a bundler contract to register itself
-     * @dev Verifies ownership by calling owner() on the bundler contract
-     *      This prevents anyone from registering arbitrary bundlers for other users
+     * @dev  Verifies through tx.origin, can only be set once in that way
      */
     function registerBundler() external {
-        // msg.sender is the bundler contract
-        address bundlerOwner = IWalletBundler(msg.sender).owner();
-        walletToBundler[bundlerOwner] = msg.sender;
+        address bundlerOwner = tx.origin;
+        if (walletToBundler[bundlerOwner] == address(0))
+            walletToBundler[bundlerOwner] = msg.sender;
     }
 
     function readAddress(address wallet) external view returns (address) {

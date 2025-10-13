@@ -228,7 +228,7 @@ export function createEncoderExecutionPlan(
       const expectedOut = step.expectedOutput || step.output || BigNumber.from(0);
       // Apply slippage: minAmount = expectedAmount * (100 - slippagePercent) / 100
       console.log(expectedOut.toString())
-      minAmountOut = expectedOut.mul(Math.floor((100 - 90) * 100)).div(10000);
+      minAmountOut = expectedOut.mul(Math.floor((100 - slippagePercent) * 100)).div(10000);
       console.log(minAmountOut.toString())
     } else {
       // For intermediate hops, we don't enforce a minimum output (use 0)

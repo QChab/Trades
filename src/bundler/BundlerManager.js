@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import WalletBundlerABI from '../../artifacts/contracts/WalletBundler.sol/WalletBundler.json' with { type: "json" };
 import BundlerRegistryABI from '../../artifacts/contracts/BundlerRegistry.sol/BundlerRegistry.json' with { type: "json" };
 
-const REGISTRY_ADDRESS = '0x0e62874e8879b4762000b9F2A66aCBf23EEB2626'; // To be deployed
+const REGISTRY_ADDRESS = '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28'; // To be deployed
 const UNIVERSAL_ROUTER_ADDRESS = '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD';
 const BALANCER_VAULT_ADDRESS = '0xBA12222222228d8Ba445958a75a0704d566BF2C8';
 
