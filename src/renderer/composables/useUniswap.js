@@ -325,23 +325,33 @@ export function useUniswapV4() {
       }
     `;
     const poolsInBetweenQuery = gql`
-      query{
+      query($a: String!, $b: String!) {
         poolsInBetween: pools(
-          where:{
-            token0_in: [
-              "0x0000000000000000000000000000000000000000",
-              "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-              "0xdac17f958d2ee523a2206206994597c13d831ec7",
-              "0x6b175474e89094c44da98b954eedeac495271d0f"
-            ],
-            token1_in: [
-              "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-              "0xdac17f958d2ee523a2206206994597c13d831ec7",
-              "0x6b175474e89094c44da98b954eedeac495271d0f"
-            ],
-            liquidity_not:"0",
+          where: {
+            or: [
+              {
+                token0_in: [
+                  $a,
+                  $b,
+                  "0x0000000000000000000000000000000000000000",
+                  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                  "0xdac17f958d2ee523a2206206994597c13d831ec7",
+                  "0x6b175474e89094c44da98b954eedeac495271d0f"
+                ],
+                liquidity_not: "0"
+              }, {
+                token1_in: [
+                  $a,
+                  $b,
+                  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                  "0xdac17f958d2ee523a2206206994597c13d831ec7",
+                  "0x6b175474e89094c44da98b954eedeac495271d0f"
+                ],
+                liquidity_not: "0"
+              }
+            ]
           },
-          first: 100
+          first: 1000
         ) {
           id feeTier sqrtPrice hooks tick tickSpacing liquidity totalValueLockedUSD
           token0 { id decimals symbol } token1 { id decimals symbol }
@@ -355,7 +365,7 @@ export function useUniswapV4() {
     const [{ poolsDirect }, {poolsOut}, {poolsInBetween}] = await Promise.all([
       request(SUBGRAPH_URL, poolsInQuery, { a: tokenIn, b: tokenOut }),
       request(SUBGRAPH_URL, poolsOutQuery, { a: tokenIn, b: tokenOut }),
-      request(SUBGRAPH_URL, poolsInBetweenQuery, {})
+      request(SUBGRAPH_URL, poolsInBetweenQuery, { a: tokenIn, b: tokenOut })
     ])
   
       // --- 3) Combine and dedupe ---
@@ -427,7 +437,7 @@ export function useUniswapV4() {
     return ticks.sort((a, b) => a.index - b.index);
   }
 
-  async function selectBestPath(tokenInObject, tokenOutObject, pools, rawIn) {
+  async function selectBestPath(tokenInObject, tokenOutObject, pools, rawIn, simpleMultiRoute = false) {
     if (!BigNumber.isBigNumber(rawIn)) {
       throw new Error('[selectBestPath] rawIn must be an ethers.BigNumber');
     }
@@ -437,7 +447,7 @@ export function useUniswapV4() {
     if (pools.length === 0) {
       throw new Error('No swap path found for this');
     }
-    
+
     let trades;
 
     const {tokenA, tokenB } = instantiateTokens(tokenInObject, tokenOutObject);
@@ -446,6 +456,50 @@ export function useUniswapV4() {
     try {
       if (!pools.length) return []
 
+      // Simple multi-route mode: Return multiple 1-hop routes for external optimization
+      if (simpleMultiRoute) {
+        trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 1, maxNumResults: 8 });
+
+        // Sort trades by output amount (descending) to get best routes first
+        trades.sort((a, b) => {
+          const aOut = JSBI.BigInt(a.outputAmount.quotient.toString());
+          const bOut = JSBI.BigInt(b.outputAmount.quotient.toString());
+          return JSBI.greaterThan(bOut, aOut) ? 1 : JSBI.lessThan(bOut, aOut) ? -1 : 0;
+        });
+
+        // Return ALL non-conflicting trades for multi-route optimization
+        const knownPools = {};
+        const nonConflictingTrades = [];
+        for (const trade of trades) {
+          // Allow up to 4 non-conflicting routes for better splitting
+          if (nonConflictingTrades.length >= 4) break;
+
+          let canAddTrade = true;
+          for (const pool of trade.swaps[0].route.pools) {
+            if (knownPools[pool.poolId]) {
+              canAddTrade = false;
+              break;
+            }
+          }
+
+          if (canAddTrade) {
+            for (const pool of trade.swaps[0].route.pools) {
+              knownPools[pool.poolId] = true;
+            }
+            nonConflictingTrades.push(trade);
+          }
+        }
+
+        // Return all non-conflicting trades for multi-route optimization
+        if (nonConflictingTrades.length > 1) {
+          return nonConflictingTrades;
+        }
+
+        // Only single best route found
+        return [trades[0]];
+      }
+
+      // Complex mode: Multi-hop paths with internal split optimization
       trades = await Trade.bestTradeExactIn(pools, amountIn, tokenB, { maxHops: 2, maxNumResults: 8 });
 
       if (trades.length < 2)
@@ -478,7 +532,7 @@ export function useUniswapV4() {
         tokenB
       );
 
-      if (!bestSplit.fraction || bestSplit.fraction > .951) 
+      if (!bestSplit.fraction || bestSplit.fraction > .951)
         return [trades[0]];
 
       const splitOutRaw = bestSplit.output.toString();
@@ -502,9 +556,9 @@ export function useUniswapV4() {
   }
 
   /** Combined helper: find and quote best path, stores price */
-  async function findAndSelectBestPath(tokenInObject, tokenOutObject, amountIn) {
+  async function findAndSelectBestPath(tokenInObject, tokenOutObject, amountIn, simpleMultiRoute = false) {
     const pools = await findPossiblePools(tokenInObject, tokenOutObject);
-    return await selectBestPath(tokenInObject, tokenOutObject, pools, amountIn);
+    return await selectBestPath(tokenInObject, tokenOutObject, pools, amountIn, simpleMultiRoute);
   }
 
   /**
@@ -771,5 +825,6 @@ export function useUniswapV4() {
     findAndSelectBestPath,
     findBestSplitHillClimb,
     executeMixedSwaps,
+    fetchAllUniswapPools,
   };
 }

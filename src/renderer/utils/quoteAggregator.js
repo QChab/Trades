@@ -33,27 +33,38 @@ export async function getQuoteUniswap({
   fromToken,
   toToken,
   amount,
-  pools,
+  uniswapPools,
   tokensByAddresses,
   getTradesUniswapFn
 }) {
   try {
     console.log('📊 Fetching Uniswap quote...');
+    console.log(`  From: ${fromToken.symbol} (${fromToken.address})`);
+    console.log(`  To: ${toToken.symbol} (${toToken.address})`);
+    console.log(`  Amount: ${amount}`);
+    console.log(`  Using ${uniswapPools ? uniswapPools.length : 0} pre-fetched Uniswap pools`);
 
-    // Call the provided getTradesUniswap function
+    // Call the provided getTradesUniswap function with pools
     const result = await getTradesUniswapFn(
       fromToken.address,
       toToken.address,
-      amount
+      amount,
+      uniswapPools // Pass the pre-fetched pools
     );
 
+    console.log(`  Result type: ${typeof result}, value:`, result);
+
     if (!result || result === 'no swap found' || result === 'outdated') {
+      console.log(`  ⚠️ Uniswap: No valid result (${result})`);
       return null;
     }
 
     // Extract 100% trades
     const trades100 = result[100];
+    console.log(`  trades100:`, trades100);
+
     if (!trades100 || !trades100.validTrades || trades100.validTrades.length === 0) {
+      console.log(`  ⚠️ Uniswap: No valid trades in result[100]`);
       return null;
     }
 
@@ -133,18 +144,20 @@ export async function getQuoteWalletBundler({
   fromToken,
   toToken,
   amount,
-  provider
+  provider,
+  uniswapPools
 }) {
   try {
     console.log('📊 Fetching WalletBundler (cross-DEX) quote...');
+    console.log(`  Using ${uniswapPools ? uniswapPools.length : 0} pre-fetched Uniswap pools`);
 
     const mixedResult = await useMixedUniswapBalancer({
       tokenInObject: fromToken,
       tokenOutObject: toToken,
       amountIn: amount,
       provider: toRaw(provider),
-      slippageTolerance: 0.5,
-      maxHops: 3,
+      uniswapPools,
+      slippageTolerance: 0.6,
       useUniswap: true,
       useBalancer: true
     });
@@ -275,7 +288,7 @@ export async function getAllQuotes({
   senderAddress,
   walletMode,
   provider,
-  pools,
+  uniswapPools,
   tokensByAddresses,
   getTradesUniswapFn,
   getTradesBalancerFn
@@ -285,15 +298,17 @@ export async function getAllQuotes({
 
   const TIMEOUT_MS = 30000; // 30 seconds
   const quotePromises = [];
+  const queriedProtocols = []; // Track which protocols are actually queried
 
   if (allowedProtocols.includes('Uniswap') && getTradesUniswapFn) {
+    queriedProtocols.push('Uniswap');
     quotePromises.push(
       withTimeout(
         getQuoteUniswap({
           fromToken,
           toToken,
           amount,
-          pools,
+          uniswapPools,
           tokensByAddresses,
           getTradesUniswapFn
         }),
@@ -301,9 +316,12 @@ export async function getAllQuotes({
         'Uniswap'
       )
     );
+  } else if (allowedProtocols.includes('Uniswap')) {
+    console.log(`  ⚠️ Uniswap: Skipped (getTradesUniswapFn not provided)`);
   }
 
   if (allowedProtocols.includes('Balancer') && getTradesBalancerFn) {
+    queriedProtocols.push('Balancer');
     quotePromises.push(
       withTimeout(
         getQuoteBalancer({
@@ -318,12 +336,21 @@ export async function getAllQuotes({
         'Balancer'
       )
     );
+  } else if (allowedProtocols.includes('Balancer')) {
+    console.log(`  ⚠️ Balancer: Skipped (getTradesBalancerFn not provided)`);
   }
 
   if (allowedProtocols.includes('WalletBundler')) {
+    queriedProtocols.push('WalletBundler');
     quotePromises.push(
       withTimeout(
-        getQuoteWalletBundler({ fromToken, toToken, amount, provider }),
+        getQuoteWalletBundler({
+          fromToken,
+          toToken,
+          amount,
+          provider,
+          uniswapPools
+        }),
         TIMEOUT_MS,
         'WalletBundler'
       )
@@ -331,6 +358,7 @@ export async function getAllQuotes({
   }
 
   if (allowedProtocols.includes('Odos')) {
+    queriedProtocols.push('Odos');
     quotePromises.push(
       withTimeout(
         getQuoteOdos({ fromToken, toToken, amount, senderAddress }),
@@ -340,15 +368,32 @@ export async function getAllQuotes({
     );
   }
 
+  console.log(`📡 Actually querying: ${queriedProtocols.join(', ')}`);
+
   // Execute all queries in parallel with timeout protection
   const results = await Promise.allSettled(quotePromises);
+
+  // Log detailed results for debugging (using correct protocol names)
+  console.log('📊 Quote results:');
+  results.forEach((result, index) => {
+    const protocolName = queriedProtocols[index]; // Use queriedProtocols, not allowedProtocols
+    if (result.status === 'fulfilled') {
+      if (result.value !== null) {
+        console.log(`  ✅ ${protocolName}: Quote received`);
+      } else {
+        console.log(`  ⚠️ ${protocolName}: Returned null (failed or timed out)`);
+      }
+    } else {
+      console.log(`  ❌ ${protocolName}: Promise rejected - ${result.reason?.message || result.reason}`);
+    }
+  });
 
   // Extract successful results
   const quotes = results
     .filter(r => r.status === 'fulfilled' && r.value !== null)
     .map(r => r.value);
 
-  console.log(`✅ Received ${quotes.length} valid quotes from ${allowedProtocols.length} protocols`);
+  console.log(`✅ Received ${quotes.length} valid quotes from ${queriedProtocols.length} queried protocols`);
 
   return quotes;
 }
@@ -412,21 +457,46 @@ export function selectBestQuote(quotes, toToken, ethPrice, gasPrice) {
 
 /**
  * Calculate gas cost in terms of output token
+ * Uses BigNumber arithmetic to avoid overflow with high-decimal tokens
  */
 function calculateGasCostInToken(gasEstimate, toToken, ethPrice, gasPrice) {
   if (!gasEstimate || !ethPrice || !gasPrice || !toToken.price) {
     return BigNumber.from(0);
   }
 
-  // Gas cost in ETH = gasEstimate * gasPrice / 1e18
-  // Gas cost in USD = gasCostInEth * ethPrice
-  // Gas cost in output token = gasCostInUSD / tokenPrice * 10^decimals
-  const gasCostWei = BigNumber.from(gasEstimate).mul(BigNumber.from(gasPrice));
-  const gasCostEth = Number(ethers.utils.formatEther(gasCostWei));
-  const gasCostUsd = gasCostEth * ethPrice;
-  const gasCostInToken = (gasCostUsd / toToken.price) * Math.pow(10, toToken.decimals);
+  try {
+    // Gas cost in wei = gasEstimate * gasPrice
+    const gasCostWei = BigNumber.from(gasEstimate).mul(BigNumber.from(gasPrice));
 
-  return BigNumber.from(Math.ceil(gasCostInToken));
+    // Convert to USD value using BigNumber to avoid precision loss
+    // gasCostUsd = (gasCostWei * ethPrice) / 1e18
+    // We use integer arithmetic: multiply by (ethPrice * 1e6) then divide by 1e24
+    const ethPriceScaled = Math.floor(ethPrice * 1e6); // Scale ETH price to integer
+    const gasCostUsdScaled = gasCostWei
+      .mul(BigNumber.from(ethPriceScaled))
+      .div(BigNumber.from('1000000000000000000000000')); // 1e24 = 1e18 * 1e6
+
+    // Convert USD to token amount
+    // tokenAmount = (gasCostUsd * 10^decimals) / tokenPrice
+    // Use scaled arithmetic to maintain precision
+    const tokenPriceScaled = Math.floor(toToken.price * 1e6); // Scale token price to integer
+
+    if (tokenPriceScaled === 0) {
+      console.warn('Token price is zero, cannot calculate gas cost');
+      return BigNumber.from(0);
+    }
+
+    const decimalsMultiplier = BigNumber.from(10).pow(toToken.decimals);
+    const gasCostInToken = gasCostUsdScaled
+      .mul(decimalsMultiplier)
+      .mul(BigNumber.from(1e6)) // Account for tokenPrice scaling
+      .div(BigNumber.from(tokenPriceScaled));
+
+    return gasCostInToken;
+  } catch (error) {
+    console.error('Error calculating gas cost in token:', error);
+    return BigNumber.from(0);
+  }
 }
 
 export default {

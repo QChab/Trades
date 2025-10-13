@@ -19,7 +19,8 @@ export default defineConfig({
         // Exclude Node.js-only modules used in test files
         'module',
         'url',
-        'path'
+        'path',
+        'fs'
       ],
       // Exclude test files and Node.js-only utilities from build
       input: {

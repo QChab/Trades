@@ -202,8 +202,21 @@ export async function getOdosQuote({
     const srcAddress = normalizeTokenAddress(fromToken.address);
     const dstAddress = normalizeTokenAddress(toToken.address);
 
-    // Convert amount to string if it's a BigNumber
-    const amountStr = ethers.BigNumber.isBigNumber(amount) ? amount.toString() : amount;
+    // Convert amount to raw token units (wei) if needed
+    let amountStr;
+    if (ethers.BigNumber.isBigNumber(amount)) {
+      // Already a BigNumber in wei
+      amountStr = amount.toString();
+    } else if (typeof amount === 'string' && amount.includes('.')) {
+      // Decimal string - convert to raw units
+      amountStr = ethers.utils.parseUnits(amount, fromToken.decimals).toString();
+    } else if (typeof amount === 'number' || (typeof amount === 'string' && parseFloat(amount) < 1)) {
+      // Decimal number - convert to raw units
+      amountStr = ethers.utils.parseUnits(amount.toString(), fromToken.decimals).toString();
+    } else {
+      // Already a string in raw units
+      amountStr = amount.toString();
+    }
 
     const endpoint = '/sor/quote/v2';
 
@@ -307,6 +320,24 @@ export async function getOdosAssemble({
     };
 
     const result = await fetchOdosAPI(endpoint, 'POST', requestBody);
+
+    console.log('Raw Odos assemble response:', JSON.stringify(result, null, 2));
+
+    // Validate critical fields
+    if (!result.transaction) {
+      console.error('Missing transaction in Odos response:', result);
+      throw new Error('Odos API returned invalid response - no transaction field');
+    }
+
+    if (!result.transaction.to) {
+      console.error('Missing "to" address in Odos transaction:', result.transaction);
+      throw new Error('Odos API returned invalid transaction - no "to" address');
+    }
+
+    if (!result.transaction.data) {
+      console.error('Missing calldata in Odos transaction:', result.transaction);
+      throw new Error('Odos API returned invalid transaction - no calldata');
+    }
 
     // Parse and normalize the response
     const assembled = {

@@ -195,7 +195,7 @@
                 id="sender-address"
                 v-model="senderDetails"
               >
-                <option 
+                <option
                   v-for="(address) in addresses" 
                   :key="'sender-' + address.address" 
                   :value="address"
@@ -205,6 +205,7 @@
                 </option>
               </select>
               <select
+                v-if="senderDetails?.address"
                 class="addressMode"
                 id="sender-modes"
                 v-model="senderDetails.mode"
@@ -237,20 +238,20 @@
                 </option>
               </select>
             </div>
-            <div class="deployInfo">
+            <div class="deployInfo" v-if="senderDetails?.address">
               <button
                 v-if="!contractAddress?.[senderDetails?.address]"
+                class="deploy-button"
                 @click="deployBundler"
                 :disabled="isDeploying"
               >
                 {{ isDeploying ? 'Deploying...' : `Deploy ($${deploymentCostUsd})` }}
               </button>
-              <p v-else>
+              <p v-else class="deploy-address">
                 {{ contractAddress?.[senderDetails?.address] }}
-                <span @click="copy(contractAddress?.[senderDetails?.address])">Copy</span>
+                <span class="copy-area" @click="copy(contractAddress?.[senderDetails?.address])">Copy</span> 
               </p>
             </div>
-
           </div>
 
           <p class="details-message">
@@ -261,19 +262,13 @@
             class="swap-buttons"
           >
             <div v-if="!needsToApprove">
-              <p
-                v-if="tradeSummary?.gasLimit"
-                class="details-message"
-              >
-                Gas cost ~ ${{ (tradeSummary.gasLimit * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}
-              </p>
               <button
                 v-if="!needsToApprove"
                 :disabled="!senderDetails?.mode || isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
                 class="swap-button"
                 @click="isSwapButtonDisabled=true; triggerTrade()"
               >
-                {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : 'Swap' }}
+                {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : `Swap ($${((tradeSummary?.gasLimit || 300000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) })`}}
               </button>
             </div>
             <div v-else>
@@ -606,9 +601,8 @@ import deleteImage from '@/../assets/delete.svg';
 import { useUniswapV4 } from '../composables/useUniswap';
 import { useBalancerV3 } from '../composables/useBalancer';
 import { useChainlinkPrice } from '../composables/useChainlinkPrice';
-import { useMixedUniswapBalancer } from '../utils/useMixedUniswapBalancer';
 import { getAllQuotes, selectBestQuote } from '../utils/quoteAggregator.js';
-import { createExecutionPlan, createEncoderExecutionPlan } from '../utils/executionPlan.js';
+import { createEncoderExecutionPlan } from '../utils/executionPlan.js';
 import { getOdosAssemble } from '../utils/useOdos.js';
 import spaceThousands from '../composables/spaceThousands';
 import OrderBookLevels from './OrderBookLevels.vue';
@@ -708,9 +702,9 @@ export default {
       return props.ethPrice || 0;
     });
 
-    // Deployment cost calculation: 844208 gas * gasPrice * ethPrice
+    // Deployment cost calculation
     const deploymentCostUsd = computed(() => {
-      const DEPLOYMENT_GAS = 844208;
+      const DEPLOYMENT_GAS = 1000000;
       const gasPriceWei = props.gasPrice || 0;
       const ethPriceUsd = props.ethPrice || 0;
 
@@ -1262,6 +1256,12 @@ export default {
       // Get wallet mode for protocol filtering
       const walletMode = senderDetails.value.mode;
 
+      // Fetch all Uniswap pools for both tokens
+      console.log('🔍 Fetching Uniswap pools...');
+      const tokenAddresses = Object.keys(tokensByAddresses.value);
+      const uniswapPools = await findPossiblePools(fromToken, toToken);
+      console.log(`✅ Fetched ${uniswapPools ? uniswapPools.length : 0} Uniswap pools`);
+
       // Get quotes from all allowed protocols
       const quotes = await getAllQuotes({
         fromToken,
@@ -1270,7 +1270,7 @@ export default {
         senderAddress: senderAddr,
         walletMode,
         provider: props.provider,
-        pools: pools.value,
+        uniswapPools,
         tokensByAddresses: tokensByAddresses.value,
         getTradesUniswapFn: getTradesUniswap,
         getTradesBalancerFn: getTradesBalancer
@@ -1320,6 +1320,7 @@ export default {
           executionPlan: bestQuote.trades[0]?.executionPlan
         } : null,
         fractionMixed: bestQuote.splits ? Math.round((1 - (bestQuote.splits.find(s => s.protocol === 'balancer')?.percentage || 0)) * 100) : null,
+        pathId: bestQuote.pathId, // For Odos protocol
         fromToken,
         toToken
       };
@@ -1333,14 +1334,12 @@ export default {
         () => toTokenAddress.value,
         () => fromAmount.value,
         () => senderDetails.value,
-        () => shouldUseUniswap.value,
-        () => shouldUseBalancer.value,
-        () => shouldUseUniswapAndBalancer.value,
         () => tabOrder.value,
         () => currentMode.value,
+        () => senderDetails.value?.mode,
       ],
       async (
-        [_newFrom, _newTo, _newAmt, _newSender, shouldUseUniswapValue, shouldUseBalancerValue, shouldUseUniswapAndBalancerValue, tabOrderValue, currentModeValue],
+        [_newFrom, _newTo, _newAmt, _newSender, tabOrderValue, currentModeValue, senderMode],
         [_oldFrom, _oldTo]
       ) => {
         if (tabOrderValue === 'limit') {
@@ -1359,11 +1358,6 @@ export default {
           swapMessage.value = '';
         }
 
-        if (!shouldUseUniswapValue && !shouldUseBalancerValue && !shouldUseUniswapAndBalancerValue) {
-          swapMessage.value = 'Select at least one DEX type'
-          isSwapButtonDisabled.value = true;
-          return
-        }
         if (debounceTimer) clearTimeout(debounceTimer);
         priceFetchingMessage.value = '';
         swapMessage.value = '';
@@ -1435,12 +1429,10 @@ export default {
             tradeSummary.toToken = bestTradeResult.toToken;
             tradeSummary.toTokenAddress = bestTradeResult.toToken.address;
             tradeSummary.gasLimit = bestTradeResult.gasLimit;
-            
+
+            // Note: Split information is now handled internally by the quote aggregator
+            // The bestMixed structure contains the unified result, not separate tradesU/tradesB
             if (bestTradeResult.bestMixed) {
-              tradeSummary.fromAmountU = (_newAmt * bestTradeResult.fractionMixed / 100).toFixed(7);
-              tradeSummary.fromAmountB = (_newAmt - Number(tradeSummary.fromAmountU)).toFixed(7);
-              tradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
-              tradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
               tradeSummary.fraction = bestTradeResult.fractionMixed;
             }
 
@@ -1755,14 +1747,16 @@ export default {
       };
     }
 
-    const getTradesUniswap = async (_newFrom, _newTo, _newAmt) => {
+    const getTradesUniswap = async (_newFrom, _newTo, _newAmt, _pools = null) => {
       // Validate amount is not zero or invalid
       if (!_newAmt || Number(_newAmt) <= 0) {
         console.warn('getTradesUniswap: Invalid amount', _newAmt);
         return 'no swap found';
       }
-      
-      const pools = await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo]);
+
+      // Use pre-fetched pools if provided, otherwise fetch them
+      const pools = _pools || await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo]);
+      console.log(`getTradesUniswap: Using ${_pools ? 'pre-fetched' : 'newly fetched'} pools (${pools.length} total)`);
       
       // FINDING TRADES
       const tokenDecimals = tokensByAddresses.value[_newFrom].decimals;
@@ -2314,30 +2308,59 @@ export default {
         } else if (currentTradeSummary.protocol === 'Odos') {
           // Odos aggregator execution
           const trade = currentTrades[0];
-          if (!trade || !trade.rawData || !trade.rawData.pathId) {
+          if (!trade || !trade.pathId) {
+            console.error('Trade object:', trade);
             throw new Error('Missing pathId for Odos protocol');
           }
 
           // Get assembled transaction data from Odos
           const assembled = await getOdosAssemble({
-            pathId: trade.rawData.pathId,
+            pathId: trade.pathId,
             userAddr: currentTradeSummary.sender.address,
             simulate: false
           });
 
-          if (!assembled || !assembled.transaction) {
-            throw new Error('Failed to assemble Odos transaction');
+          console.log('Odos assembled response:', assembled);
+
+          if (!assembled || !assembled.tx) {
+            console.error('Assembled object:', assembled);
+            throw new Error('Failed to assemble Odos transaction - no tx object');
           }
 
-          // Send Odos transaction
+          if (!assembled.tx.to) {
+            console.error('Assembled tx:', assembled.tx);
+            throw new Error('Failed to assemble Odos transaction - missing "to" address');
+          }
+
+          if (!assembled.tx.data) {
+            console.error('Assembled tx:', assembled.tx);
+            throw new Error('Failed to assemble Odos transaction - missing calldata');
+          }
+
+          console.log('Odos transaction to send:', {
+            to: assembled.tx.to,
+            data: assembled.tx.data?.substring(0, 66) + '...',
+            value: assembled.tx.value || '0',
+            gasLimit: assembled.estimatedGas || assembled.tx.gas
+          });
+
+          // Match the format that Balancer uses (which sendTransaction expects)
           const odosArgs = {
-            to: assembled.transaction.to,
-            data: assembled.transaction.data,
-            value: assembled.transaction.value || '0',
+            contractAddress: assembled.tx.to,  // sendTransaction expects 'contractAddress', not 'to'
+            callData: assembled.tx.data,        // sendTransaction expects 'callData', not 'data'
+            value: assembled.tx.value || '0',
             from: currentTradeSummary.sender.address,
             tradeSummary: JSON.parse(JSON.stringify(currentTradeSummary)),
-            gasLimit: assembled.transaction.gas || trade.gasEstimate || 300000
+            gasLimit: assembled.estimatedGas || assembled.tx.gas || trade.gasEstimate || 300000
           };
+
+          console.log('🚨 FINAL ODOS TRANSACTION (formatted for sendTransaction):', {
+            contractAddress: odosArgs.contractAddress,
+            callData: odosArgs.callData?.substring(0, 66) + '...',
+            value: odosArgs.value,
+            gasLimit: odosArgs.gasLimit,
+            from: odosArgs.from
+          });
 
           const response = await window.electronAPI.sendTransaction(odosArgs);
           if (!response?.success) {
@@ -3386,11 +3409,9 @@ export default {
         };
 
         // Handle mixed trades if applicable
+        // Note: Split information is now handled internally by the quote aggregator
         if (bestTradeResult.bestMixed) {
-          limitOrderTradeSummary.fromAmountU = (Number(amount) * bestTradeResult.fractionMixed / 100).toFixed(7);
-          limitOrderTradeSummary.fromAmountB = (Number(amount) - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
-          limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesU.totalBig, bestTradeResult.toToken.decimals)).toFixed(7);
-          limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(bestTradeResult.bestMixed.tradesB.outputAmount, bestTradeResult.toToken.decimals)).toFixed(7);
+          limitOrderTradeSummary.fraction = bestTradeResult.fractionMixed;
         }
 
 
@@ -4021,11 +4042,9 @@ export default {
           priceLimit: order.priceLimit, // Add priceLimit to enable correct type detection
         };
 
+        // Handle mixed trades if applicable
+        // Note: Split information is now handled internally by the quote aggregator
         if (finalBestTrades.bestMixed) {
-          limitOrderTradeSummary.fromAmountU = (Number(executableAmount) * finalBestTrades.fractionMixed / 100).toFixed(7);
-          limitOrderTradeSummary.fromAmountB = (Number(executableAmount) - Number(limitOrderTradeSummary.fromAmountU)).toFixed(7);
-          limitOrderTradeSummary.toAmountU = Number(ethers.utils.formatUnits(finalBestTrades.bestMixed.tradesU.totalBig, finalBestTrades.toToken.decimals)).toFixed(7);
-          limitOrderTradeSummary.toAmountB = Number(ethers.utils.formatUnits(finalBestTrades.bestMixed.tradesB.outputAmount, finalBestTrades.toToken.decimals)).toFixed(7);
           limitOrderTradeSummary.fraction = finalBestTrades.fractionMixed;
         }
 
@@ -4717,6 +4736,68 @@ export default {
         window.electronAPI.saveWalletMode(senderDetails.value.address, newMode)
       }
     })
+    // Helper function to load contract addresses for all wallets
+    const loadContractAddresses = async (addresses) => {
+      console.log('🔍 Starting to load contract addresses for all wallets...');
+      console.log('Number of addresses to check:', addresses?.length || 0);
+
+      if (!addresses || addresses.length === 0) {
+        console.log('No addresses to process');
+        return;
+      }
+
+      for (const address of addresses) {
+        if (address?.address) {
+          console.log(`\n📍 Processing address: ${address.address}`);
+
+          // First, load saved contract address from settings (fast, offline)
+          console.log(`  ⏳ Calling getContractAddress for ${address.address.slice(0, 10)}...`);
+          const savedContractAddr = await window.electronAPI.getContractAddress(address.address);
+          console.log(`  ✅ getContractAddress returned:`, savedContractAddr || 'null/undefined');
+
+          if (savedContractAddr) {
+            contractAddress[address.address] = savedContractAddr;
+            console.log(`  💾 Loaded saved contract address: ${savedContractAddr.slice(0, 10)}...${savedContractAddr.slice(-10)}`);
+          } else {
+            console.log(`  ⚠️ No saved contract address found in settings`);
+          }
+
+          // Then verify/update from blockchain registry (slower, but authoritative)
+          try {
+            console.log(`  ⏳ Querying blockchain registry with getBundler...`);
+            const result = await window.electronAPI.getBundler(address.address, undefined);
+            console.log(`  ✅ getBundler returned:`, result);
+
+            if (result.success && result.address) {
+              // Update if different from saved value
+              if (contractAddress[address.address] !== result.address) {
+                contractAddress[address.address] = result.address;
+                console.log(`  🔄 Updated contract address from registry: ${result.address.slice(0, 10)}...${result.address.slice(-10)}`);
+              } else {
+                console.log(`  ✓ Registry address matches saved address`);
+              }
+            } else if (result.success && !result.address) {
+              console.log(`  ℹ️ No bundler deployed on-chain for this address`);
+            } else {
+              console.log(`  ❌ getBundler failed:`, result.error || 'unknown error');
+            }
+          } catch (error) {
+            console.error(`  ❌ Exception querying registry for ${address.address}:`, error);
+            // Keep using saved address if registry query fails
+          }
+
+          // Load wallet mode
+          console.log(`  ⏳ Loading wallet mode...`);
+          const mode = await window.electronAPI.getWalletMode(address.address);
+          console.log(`  ✅ Wallet mode:`, mode || 'undefined');
+          address.mode = mode;
+        }
+      }
+
+      console.log('\n🏁 Finished loading contract addresses');
+      console.log('Final contractAddress object:', contractAddress);
+    };
+
     watch(() => tokens.value, (tokensValue) => emit('update:settings', { tokens: [...tokensValue] }), { deep: true });
     watch(() => tokensInRow, () => emit('update:settings', { tokensInRow: [...tokensInRow] }), { deep: true });
     watch(
@@ -4725,6 +4806,8 @@ export default {
         if (addrs && addrs[0]) {
           senderDetails.value = addrs[0];
         }
+        // Load contract addresses when addresses change
+        await loadContractAddresses(addrs);
         generateOrdersFromLevels();
       },
       { immediate: true }
@@ -4763,6 +4846,23 @@ export default {
         }
       }
     );
+    // Watch for sender address changes to load contract address
+    watch(
+      () => senderDetails.value?.address,
+      async (newAddress, oldAddress) => {
+        if (newAddress && newAddress !== oldAddress) {
+          // Load contract address if not already loaded
+          if (!contractAddress[newAddress]) {
+            const savedContractAddr = await window.electronAPI.getContractAddress(newAddress);
+            if (savedContractAddr) {
+              contractAddress[newAddress] = savedContractAddr;
+              console.log(`Loaded contract address for ${newAddress.slice(0, 10)}...: ${savedContractAddr.slice(0, 10)}...`);
+            }
+          }
+        }
+      }
+    );
+
     // Watch for contract address changes for current wallet
     watch(
       () => senderDetails.value?.address ? contractAddress[senderDetails.value.address] : null,
@@ -4829,19 +4929,8 @@ export default {
         outdateOrders.map(o => window.electronAPI.deletePendingOrder(o.id))
       }
 
-      // Load contract addresses from registry for all wallets
-      if (props.addresses && props.addresses.length > 0) {
-        for (const address of props.addresses) {
-          if (address?.address) {
-            const result = await window.electronAPI.getBundler(address.address, undefined);
-            if (result.success && result.address) {
-              contractAddress[address.address] = result.address;
-              const mode = await window.electronAPI.getWalletMode(address.address);
-              address.mode = mode;
-            }
-          }
-        }
-      }
+      // Load contract addresses and wallet modes for all wallets
+      await loadContractAddresses(props.addresses);
 
       stopEthBalanceMonitoring();
     });
@@ -4888,9 +4977,6 @@ export default {
       isFetchingPrice,
       priceFetchingMessage,
       swapMessage,
-      shouldUseUniswap,
-      shouldUseBalancer,
-      shouldUseUniswapAndBalancer,
       priceLimit,
       slippage,
 
@@ -5718,8 +5804,23 @@ input.amount-out {
 }
 
 .deployInfo {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.deploy-button {
   width: 100px;
   margin-left: auto;
   margin-right: auto;
+  display: block;
+}
+
+.deploy-address {
+  text-align: center;
+}
+
+.copy-area:hover {
+  cursor: pointer;
 }
 </style>

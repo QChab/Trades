@@ -23,13 +23,13 @@ const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
  * conversion between them is essentially free (just gas for wrap/unwrap)
  */
 
-export async function useMixedUniswapBalancer({ 
-  tokenInObject, 
-  tokenOutObject, 
-  amountIn, 
-  provider, 
+export async function useMixedUniswapBalancer({
+  tokenInObject,
+  tokenOutObject,
+  amountIn,
+  provider,
+  uniswapPools = null,  // Pre-fetched Uniswap pools (optional)
   slippageTolerance = 0.5,
-  maxHops = 3,
   useUniswap = true,  // New: control whether to use Uniswap
   useBalancer = true  // New: control whether to use Balancer
 }) {
@@ -85,48 +85,27 @@ export async function useMixedUniswapBalancer({
     const uniswap = useUniswapV4();
 
     if (useBalancer || useUniswap) {
-      console.log('📦 Bulk fetching pools for all tokens...');
-
-      // Fetch bulk pools AND specific pair in parallel
-      const [balancerBulk, uniswapBulk, specificPools] = await Promise.all([
-        useBalancer ? fetchAllBalancerPools(allTokens, provider) : Promise.resolve([]),
-        // useUniswap ? uniswap.fetchAllUniswapPools(allTokens) : Promise.resolve([]),
-        Promise.resolve([]),
-        // Fetch specific pools for the direct tokenIn → tokenOut pair
-        useUniswap ? uniswap.findPossiblePools(tokenInObject, tokenOutObject).catch(err => {
+      // Use pre-fetched Uniswap pools if provided, otherwise fetch them
+      if (useUniswap && uniswapPools) {
+        console.log(`📦 Using ${uniswapPools.length} pre-fetched Uniswap pools`);
+        allUniswapPools = uniswapPools;
+      } else if (useUniswap && !uniswapPools) {
+        console.log('📦 Fetching Uniswap pools...');
+        // Fallback: fetch specific pools for the direct tokenIn → tokenOut pair
+        const specificPools = await uniswap.findPossiblePools(tokenInObject, tokenOutObject).catch(err => {
           console.log(`   No specific pools for ${tokenInObject.symbol}→${tokenOutObject.symbol}: ${err.message}`);
           return [];
-        }) : Promise.resolve([])
-      ]);
-
-      allBalancerPools = balancerBulk;
-
-      // Merge and deduplicate Uniswap pools
-      if (useUniswap) {
-        const poolMap = new Map();
-
-        // Add bulk-fetched pools first
-        for (const pool of uniswapBulk) {
-          const poolId = pool.poolId || pool.id;
-          if (poolId) {
-            poolMap.set(poolId, pool);
-          }
-        }
-
-        // Add specific pools (deduplicates automatically)
-        for (const pool of specificPools) {
-          const poolId = pool.poolId || pool.id;
-          if (poolId && !poolMap.has(poolId)) {
-            poolMap.set(poolId, pool);
-          }
-        }
-
-        allUniswapPools = Array.from(poolMap.values());
-        const addedSpecific = allUniswapPools.length - uniswapBulk.length;
-        console.log(`✅ Fetched ${allBalancerPools.length} Balancer pools and ${allUniswapPools.length} Uniswap pools (${uniswapBulk.length} bulk + ${addedSpecific} specific)`);
-      } else {
-        console.log(`✅ Fetched ${allBalancerPools.length} Balancer pools`);
+        });
+        allUniswapPools = specificPools;
       }
+
+      // Fetch Balancer pools
+      if (useBalancer) {
+        console.log('📦 Fetching Balancer pools...');
+        allBalancerPools = await fetchAllBalancerPools(allTokens, provider);
+      }
+
+      console.log(`✅ Using ${allBalancerPools.length} Balancer pools and ${allUniswapPools.length} Uniswap pools`);
     }
 
     // Discover paths based on enabled DEXs
@@ -329,14 +308,14 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn, pre
 
         // Multiple unique trades - add each as separate route for optimization
         if (uniqueTrades.length > 1) {
-          console.log(`   ✓ Found ${uniqueTrades.length} unique Uniswap routes`);
+          // console.log(`   ✓ Found ${uniqueTrades.length} unique Uniswap routes`);
 
           const paths = uniqueTrades.filter(trade => trade && trade.swaps).map((trade, i) => {
             const path = trade.swaps[0].route.currencyPath.map(c => c.symbol).join(' → ');
             const inputAmount = BigNumber.from(trade.inputAmount.quotient.toString());
             const outputAmount = BigNumber.from(trade.outputAmount.quotient.toString());
 
-            console.log(`      Route ${i + 1}: ${ethers.utils.formatUnits(inputAmount, variant.tokenIn.decimals)} ${variant.tokenIn.symbol} -> ${ethers.utils.formatUnits(outputAmount, variant.tokenOut.decimals)} ${variant.tokenOut.symbol}`);
+            // console.log(`      Route ${i + 1}: ${ethers.utils.formatUnits(inputAmount, variant.tokenIn.decimals)} ${variant.tokenIn.symbol} -> ${ethers.utils.formatUnits(outputAmount, variant.tokenOut.decimals)} ${variant.tokenOut.symbol}`);
 
             return {
               protocol: 'uniswap',
@@ -360,8 +339,8 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn, pre
             const outputAmount = BigNumber.from(trade.outputAmount.quotient.toString());
             const path = trade.swaps[0].route.currencyPath.map(c => c.symbol).join(' → ');
 
-            console.log(`   ✓ Found 1 Uniswap route`);
-            console.log(`      ${ethers.utils.formatUnits(inputAmount, variant.tokenIn.decimals)} ${variant.tokenIn.symbol} -> ${ethers.utils.formatUnits(outputAmount, variant.tokenOut.decimals)} ${variant.tokenOut.symbol}`);
+            // console.log(`   ✓ Found 1 Uniswap route`);
+            // console.log(`      ${ethers.utils.formatUnits(inputAmount, variant.tokenIn.decimals)} ${variant.tokenIn.symbol} -> ${ethers.utils.formatUnits(outputAmount, variant.tokenOut.decimals)} ${variant.tokenOut.symbol}`);
 
             return {
               protocol: 'uniswap',
@@ -382,7 +361,7 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn, pre
       }
     }
     
-    console.log(`Found ${allPaths.length} Uniswap paths (including ETH/WETH variants)`);
+    // console.log(`Found ${allPaths.length} Uniswap paths (including ETH/WETH variants)`);
     return allPaths;
 
   } catch (error) {
