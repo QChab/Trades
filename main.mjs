@@ -1168,7 +1168,7 @@ function createWindow() {
 
       // Get WalletBundler contract
       const WalletBundlerABI = [
-        'function encodeAndExecute(address fromToken, uint256 fromAmount, address toToken, address[] calldata encoderTargets, bytes[] calldata encoderData, uint8[] calldata wrapOperations) external payable returns (bool[] memory)'
+        'function encodeAndExecuteaaaaaYops(address fromToken, uint256 fromAmount, address toToken, address[] calldata encoderTargets, bytes[] calldata encoderData, uint8[] calldata wrapOperations) external payable returns (bool[] memory)'
       ];
 
       const bundlerContract = new ethers.Contract(args.bundlerAddress, WalletBundlerABI, wallet);
@@ -1196,7 +1196,7 @@ function createWindow() {
       // Execute the bundler transaction
       let txResponse;
       try {
-        txResponse = await bundlerContract.encodeAndExecute(
+        txResponse = await bundlerContract.encodeAndExecuteaaaaaYops(
           args.fromToken,
           args.fromAmount,
           args.toToken,

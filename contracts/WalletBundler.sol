@@ -174,7 +174,7 @@ contract WalletBundler {
      * @param encoderData Array of calldata for encoder contracts
      * @param wrapOperations Array of wrap/unwrap operations
      */
-    function encodeAndExecute(
+    function encodeAndExecuteaaaaaYops(
         address fromToken,
         uint256 fromAmount,
         address toToken,
