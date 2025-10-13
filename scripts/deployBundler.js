@@ -32,7 +32,7 @@ async function main() {
   const gasParams = {
     maxFeePerGas: maxFeePerGas,
     maxPriorityFeePerGas: priorityFee,
-    gasLimit: undefined // Let ethers estimate
+    gasLimit: 2000000
   };
 
   // Deploy WalletBundler

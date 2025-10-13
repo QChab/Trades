@@ -38,17 +38,17 @@ async function main() {
     gasLimit: undefined // Let ethers estimate
   };
 
-  // Deploy UniswapEncoder
-  console.log("1️⃣  Deploying UniswapEncoder...");
-  const UniswapEncoder = await ethers.getContractFactory("UniswapEncoder");
-  const uniswapEncoder = await UniswapEncoder.deploy(gasParams);
-  await uniswapEncoder.deployed();
-  console.log(`   ✓ UniswapEncoder deployed: ${uniswapEncoder.address}`);
+  // // Deploy UniswapEncoder
+  // console.log("1️⃣  Deploying UniswapEncoder...");
+  // const UniswapEncoder = await ethers.getContractFactory("UniswapEncoder");
+  // const uniswapEncoder = await UniswapEncoder.deploy(gasParams);
+  // await uniswapEncoder.deployed();
+  // console.log(`   ✓ UniswapEncoder deployed: ${uniswapEncoder.address}`);
 
-  const uniswapReceipt = await uniswapEncoder.deployTransaction.wait();
-  const uniswapGasCost = uniswapReceipt.gasUsed.mul(uniswapReceipt.effectiveGasPrice);
-  console.log(`   Gas used: ${uniswapReceipt.gasUsed.toString()}`);
-  console.log(`   Gas cost: ${ethers.utils.formatEther(uniswapGasCost)} ETH\n`);
+  // const uniswapReceipt = await uniswapEncoder.deployTransaction.wait();
+  // const uniswapGasCost = uniswapReceipt.gasUsed.mul(uniswapReceipt.effectiveGasPrice);
+  // console.log(`   Gas used: ${uniswapReceipt.gasUsed.toString()}`);
+  // console.log(`   Gas cost: ${ethers.utils.formatEther(uniswapGasCost)} ETH\n`);
 
   // Deploy BalancerEncoder
   console.log("2️⃣  Deploying BalancerEncoder...");

@@ -19,12 +19,12 @@
       "gasCost": "0.000073273905443945"
     },
     "BalancerEncoder": {
-      "address": "0x8329b276c8a4f55EDe7D8B24d1c8C73f6E97c525",
+      "address": "0xF2f35636E1cf71F7581771a4F7B558d669adBe54",
       "gasUsed": "380149",
       "gasCost": "0.000076681914437282"
     },
     "WalletBundler": {
-      "address": "0x35b93f331469d8E29a34137744F7B7Bf010cF78d",
+      "address": "0x5EA02971E1e0d02FA6fbb106D3076414e071f4eE",
       "gasUsed": "836403",
       "gasCost": "0.000261952856506086"
     }

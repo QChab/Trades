@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/qch/MyTech/SecDev/Trades/contracts/BalancerEncoder.sol": {
-      "lastModificationDate": 1760320561709,
-      "contentHash": "235a9297b602755f63bca89df9e08ff7",
+      "lastModificationDate": 1760335923941,
+      "contentHash": "1a77e56afbeead6e77a13fa53609b062",
       "sourceName": "contracts/BalancerEncoder.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -34,8 +34,7 @@
         "^0.8.19"
       ],
       "artifacts": [
-        "BalancerEncoder",
-        "IBalancerRouter"
+        "BalancerEncoder"
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/BundlerRegistry.sol": {
@@ -112,8 +111,8 @@
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/WalletBundler.sol": {
-      "lastModificationDate": 1760332968843,
-      "contentHash": "1b0358b452cd06efe97365f79a2e5935",
+      "lastModificationDate": 1760335950817,
+      "contentHash": "43cf3134da66a6a45fc06ff60c2ee8ff",
       "sourceName": "contracts/WalletBundler.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -144,6 +143,7 @@
         "^0.8.19"
       ],
       "artifacts": [
+        "IBalancerVault",
         "IBundlerRegistry",
         "IPermit2",
         "WalletBundler"

@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
-const balancerEncoderAddress = '0x8329b276c8a4f55EDe7D8B24d1c8C73f6E97c525';
+const balancerEncoderAddress = '0xF2f35636E1cf71F7581771a4F7B558d669adBe54';
 const uniswapEncoderAddress = '0x62B186AE7AfD24cD9acdEdE1D8b253259440295C';  // V4 with correct action codes
 
 /**

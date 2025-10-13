@@ -30,7 +30,7 @@ const TEST_PARAMS = {
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28',
   uniswapEncoder: '0x62B186AE7AfD24cD9acdEdE1D8b253259440295C',  // V4 with correct action codes
-  balancerEncoder: '0x8329b276c8a4f55EDe7D8B24d1c8C73f6E97c525'
+  balancerEncoder: '0xF2f35636E1cf71F7581771a4F7B558d669adBe54'
 };
 
 describe("Real Swap Integration Test", function () {
@@ -262,7 +262,7 @@ describe("Real Swap Integration Test", function () {
         value: msgValue,
         maxFeePerGas: maxFeePerGas,
         maxPriorityFeePerGas: maxPriorityFeePerGas,
-        // gasLimit: 500000  // Fixed gas limit to skip estimation and see actual error
+        gasLimit: 500000  // Fixed gas limit to skip estimation and see actual error
       }
     );
 

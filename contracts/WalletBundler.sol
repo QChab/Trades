@@ -9,6 +9,23 @@ interface IBundlerRegistry {
     function registerBundler() external;
 }
 
+interface IBalancerVault {
+    enum SwapKind { EXACT_IN, EXACT_OUT }
+
+    struct VaultSwapParams {
+        SwapKind kind;
+        address pool;
+        address tokenIn;
+        address tokenOut;
+        uint256 amountGivenRaw;
+        uint256 limitRaw;
+        bytes userData;
+    }
+
+    function unlock(bytes calldata data) external returns (bytes memory);
+    function swap(VaultSwapParams calldata params) external returns (uint256, uint256, uint256);
+}
+
 /**
  * @title WalletBundler
  * @notice Gas-optimized standalone bundler contract for MEV-protected multi-DEX trading
@@ -238,47 +255,46 @@ contract WalletBundler {
             // Ensure approval for the input token to the target protocol
             // ----------------------------------------------------------
             if (tokenIn != address(0)) {
-                // Both Uniswap V4 and Balancer V3 use Permit2 approval system
-                // Smart contracts can call approve() but cannot sign permit messages
-
-                // Determine the actual spender for Permit2
-                // Uniswap: Universal Router pulls tokens via Permit2
-                // Balancer: Vault pulls tokens via Permit2 (not Router!)
-                // address permit2Spender = target == BALANCER_ROUTER ? BALANCER_VAULT : target;
-                // address permit2Spender = target == BALANCER_ROUTER ? BALANCER_VAULT : target;
-
-                uint256 permit2Allowance;
-                address contractAddr = self;
-                assembly {
-                    let ptr := mload(0x40)
-                    // Store allowance(address,address,address) selector
-                    mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
-                    mstore(add(ptr, 0x04), contractAddr)  // owner (this contract)
-                    mstore(add(ptr, 0x24), tokenIn)       // tokenIn
-                    mstore(add(ptr, 0x44), target) // spender
-
-                    let success := staticcall(gas(), PERMIT2, ptr, 0x64, ptr, 0x60)
-                    if success {
-                        permit2Allowance := mload(ptr) // First return value is uint160 amount
+                if (target == BALANCER_VAULT) {
+                    // Balancer: Use direct Vault approval (no Permit2)
+                    uint256 vaultAllowance = _getAllowance(tokenIn, BALANCER_VAULT);
+                    if (vaultAllowance < APPROVAL_THRESHOLD) {
+                        _approve(tokenIn, BALANCER_VAULT);
                     }
-                }
-
-                if (permit2Allowance < APPROVAL_THRESHOLD) {
-                    // Approve both Token→Permit2 and Permit2→Spender
-                    _approve(tokenIn, PERMIT2);  // Token → Permit2 (max uint256, never decrements)
-
-                    // Approve Permit2 → Spender (uint160 max, does decrement)
+                } else if (target == UNIVERSAL_ROUTER) {
+                    // Uniswap V4: Use Permit2 approval system
+                    uint256 permit2Allowance;
+                    address contractAddr = self;
                     assembly {
                         let ptr := mload(0x40)
-                        // Store approve(address,address,uint160,uint48) selector
-                        mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
-                        mstore(add(ptr, 0x04), tokenIn)                // tokenIn
-                        mstore(add(ptr, 0x24), target)         // spender (Vault for Balancer, Router for Uniswap)
-                        mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
-                        mstore(add(ptr, 0x64), EXPIRATION_OFFSET) // expiration
+                        // Store allowance(address,address,address) selector
+                        mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
+                        mstore(add(ptr, 0x04), contractAddr)  // owner (this contract)
+                        mstore(add(ptr, 0x24), tokenIn)       // tokenIn
+                        mstore(add(ptr, 0x44), target)        // spender (Universal Router)
 
-                        let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
-                        if iszero(success) { revert(0, 0) }
+                        let success := staticcall(gas(), PERMIT2, ptr, 0x64, ptr, 0x60)
+                        if success {
+                            permit2Allowance := mload(ptr)
+                        }
+                    }
+
+                    if (permit2Allowance < APPROVAL_THRESHOLD) {
+                        // Approve Token→Permit2 and Permit2→UniversalRouter
+                        _approve(tokenIn, PERMIT2);
+
+                        assembly {
+                            let ptr := mload(0x40)
+                            // Store approve(address,address,uint160,uint48) selector
+                            mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
+                            mstore(add(ptr, 0x04), tokenIn)
+                            mstore(add(ptr, 0x24), target)  // Universal Router
+                            mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
+                            mstore(add(ptr, 0x64), EXPIRATION_OFFSET)
+
+                            let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
+                            if iszero(success) { revert(0, 0) }
+                        }
                     }
                 }
             }
@@ -360,6 +376,36 @@ contract WalletBundler {
 
             let success := call(gas(), token, 0, ptr, 0x44, 0, 0)
             if iszero(success) { revert(0, 0) }
+        }
+    }
+
+    /**
+     * @notice Balancer Vault unlock callback
+     * @dev Called by Vault during unlock() to execute swap
+     */
+    function unlockCallback(bytes calldata data) external returns (bytes memory) {
+        if (msg.sender != BALANCER_VAULT) revert Unauthorized();
+
+        // Decode swap parameters (encoded by BalancerEncoder)
+        (address pool, address tokenIn, address tokenOut, uint256 amountIn, uint256 minAmountOut)
+            = abi.decode(data, (address, address, address, uint256, uint256));
+
+        // Execute swap through Vault
+        IBalancerVault.VaultSwapParams memory swapParams = IBalancerVault.VaultSwapParams({
+            kind: IBalancerVault.SwapKind.EXACT_IN,
+            pool: pool,
+            tokenIn: tokenIn,
+            tokenOut: tokenOut,
+            amountGivenRaw: amountIn,
+            limitRaw: minAmountOut,
+            userData: ""
+        });
+
+        IBalancerVault(BALANCER_VAULT).swap(swapParams);
+
+        // Return empty bytes efficiently using assembly
+        assembly {
+            return(0x60, 0x20)  // Return 32 bytes of zero (empty dynamic bytes)
         }
     }
 

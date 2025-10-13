@@ -3,39 +3,29 @@ pragma solidity ^0.8.19;
 
 /**
  * @title BalancerEncoder
- * @notice Encodes Balancer V3 swap calls via Router
+ * @notice Encodes Balancer V3 swap calls via direct Vault.unlock()
  * @dev Stateless encoder that can be deployed once and used by all WalletBundler instances
+ *      Bypasses Router for gas optimization (~14k gas saved per swap)
  */
 
-interface IBalancerRouter {
-    function swapSingleTokenExactIn(
-        address pool,
-        address tokenIn,
-        address tokenOut,
-        uint256 exactAmountIn,
-        uint256 minAmountOut,
-        uint256 deadline,
-        bool wethIsEth,
-        bytes calldata userData
-    ) external returns (uint256);
-}
-
 contract BalancerEncoder {
-    // Balancer V3 Router address (simple Router, not BatchRouter)
-    address private constant ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2;
-    uint256 private constant DEADLINE = type(uint256).max; // No deadline
+    // Balancer V3 Vault address
+    address private constant VAULT = 0xbA1333333333a1BA1108E8412f11850A5C319bA9;
+
+    // Pre-computed selector for unlock(bytes) - saves ~300 gas vs abi.encodeWithSignature
+    bytes4 private constant UNLOCK_SELECTOR = 0x2f9e6f5b;
 
     /**
-     * @notice Encode a single swap for Balancer V3 via Router
+     * @notice Encode a single swap for Balancer V3 via direct Vault.unlock()
      * @param pool The pool address to swap through
      * @param tokenIn Address of input token
      * @param tokenOut Address of output token
      * @param amountIn Amount of input tokens
      * @param minAmountOut Minimum acceptable output
-     * @return target The Router contract address
-     * @return callData The encoded swap call
+     * @return target The Vault contract address
+     * @return callData The encoded unlock call with swap data
      * @return inputAmount The actual amount to be used
-     * @return tokenIn The tokenIn address
+     * @return _tokenIn The tokenIn address
      */
     function encodeSingleSwap(
         address pool,
@@ -43,28 +33,29 @@ contract BalancerEncoder {
         address tokenOut,
         uint256 amountIn,
         uint256 minAmountOut
-    ) external pure returns (address target, bytes memory callData, uint256 inputAmount, address) {
+    ) external pure returns (address target, bytes memory callData, uint256 inputAmount, address _tokenIn) {
 
-        callData = abi.encodeCall(
-            IBalancerRouter.swapSingleTokenExactIn,
-            (pool, tokenIn, tokenOut, amountIn, minAmountOut, DEADLINE, false, "")
-        );
+        // Encode swap data for unlock callback
+        bytes memory unlockData = abi.encode(pool, tokenIn, tokenOut, amountIn, minAmountOut);
 
-        return (ROUTER, callData, amountIn, tokenIn);
+        // Encode Vault.unlock(bytes) call with pre-computed selector
+        callData = abi.encodeWithSelector(UNLOCK_SELECTOR, unlockData);
+
+        return (VAULT, callData, amountIn, tokenIn);
     }
 
     /**
-     * @notice Encode a swap using all available balance
+     * @notice Encode a swap using all available balance via direct Vault.unlock()
      * @dev Special function for intermediate hops that use entire balance
      * @param pool The pool address to swap through
      * @param tokenIn Address of input token
      * @param tokenOut Address of output token
      * @param minAmountOut Minimum acceptable output (can be 0 for intermediate)
      * @param wrapOp Wrap operation: 0=none, 1=wrap ETH before, 3=unwrap WETH before
-     * @return target The Router contract address
-     * @return callData The encoded swap call with actual balance
+     * @return target The Vault contract address
+     * @return callData The encoded unlock call with actual balance
      * @return inputAmount Returns the actual balance amount
-     * @return tokenIn Returns the tokenIn
+     * @return _tokenIn Returns the tokenIn
      */
     function encodeUseAllBalanceSwap(
         address pool,
@@ -72,7 +63,7 @@ contract BalancerEncoder {
         address tokenOut,
         uint256 minAmountOut,
         uint8 wrapOp
-    ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
+    ) external view returns (address target, bytes memory callData, uint256 inputAmount, address _tokenIn) {
         // Determine which balance to query based on wrap operation
         uint256 actualBalance;
         if (wrapOp == 1) {
@@ -82,12 +73,13 @@ contract BalancerEncoder {
             actualBalance = _getTokenBalance(tokenIn, msg.sender);
         }
 
-        callData = abi.encodeCall(
-            IBalancerRouter.swapSingleTokenExactIn,
-            (pool, tokenIn, tokenOut, actualBalance, minAmountOut, DEADLINE, false, "")
-        );
+        // Encode swap data for unlock callback
+        bytes memory unlockData = abi.encode(pool, tokenIn, tokenOut, actualBalance, minAmountOut);
 
-        return (ROUTER, callData, actualBalance, tokenIn);
+        // Encode Vault.unlock(bytes) call with pre-computed selector
+        callData = abi.encodeWithSelector(UNLOCK_SELECTOR, unlockData);
+
+        return (VAULT, callData, actualBalance, tokenIn);
     }
 
     /**
