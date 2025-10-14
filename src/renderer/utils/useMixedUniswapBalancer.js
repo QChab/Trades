@@ -600,10 +600,10 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
         let needsWETHToETHConversion = false;
 
         if (intermediate.isETH) {
-          // Balancer outputs WETH, but Uniswap needs ETH
+          // Balancer outputs WETH, needs conversion to ETH for next leg (Uniswap or direct output)
           intermediateForUniswap = { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 };
           needsWETHToETHConversion = true;
-          console.log(`   Converting WETH to ETH for Uniswap leg2`);
+          console.log(`   🔄 Balancer leg1 outputs WETH, will convert to ETH for leg2`);
         }
 
         // Second leg: intermediate -> tokenOut using Balancer output
@@ -1339,13 +1339,13 @@ function buildTokenPairGroups(routes) {
   const tokenPairMap = new Map(); // "TOKEN_A->TOKEN_B" -> array of pool info
 
   routes.forEach((route, routeIndex) => {
-    if (!route.legs || route.legs.length === 0) return;
+    // Handle routes with legs array (multi-leg routes)
+    if (route.legs && route.legs.length > 0) {
+      route.legs.forEach((leg, legIndex) => {
+        let poolInfo = null;
 
-    route.legs.forEach((leg, legIndex) => {
-      let poolInfo = null;
-
-      // Extract pool information from Uniswap leg
-      if (leg.protocol === 'uniswap' && leg.trade) {
+        // Extract pool information from Uniswap leg
+        if (leg.protocol === 'uniswap' && leg.trade) {
         const tradeRoute = leg.trade.route || leg.trade.swaps?.[0]?.route;
         if (tradeRoute && tradeRoute.pools && tradeRoute.pools.length > 0) {
           const pool = tradeRoute.pools[0];
@@ -1444,7 +1444,105 @@ function buildTokenPairGroups(routes) {
           }
         }
       }
-    });
+      });
+    }
+    // Handle simple single-path routes without legs (uniswap-path-1, balancer-path-1)
+    else if (route.paths && route.paths.length > 0) {
+      const path = route.paths[0];
+      let poolInfo = null;
+
+      // Extract pool info from Uniswap path
+      if (route.protocol === 'uniswap' && path.trade) {
+        const tradeRoute = path.trade.route || path.trade.swaps?.[0]?.route;
+        if (tradeRoute && tradeRoute.pools && tradeRoute.pools.length > 0) {
+          const pool = tradeRoute.pools[0];
+          const routePath = tradeRoute.currencyPath || tradeRoute.path;
+          if (routePath && routePath.length >= 2) {
+            const inputToken = routePath[0].symbol.replace(/WETH/g, 'ETH');
+            const outputToken = routePath[routePath.length - 1].symbol.replace(/WETH/g, 'ETH');
+            const poolAddress = pool.address || pool.id || pool.poolId || 'unknown';
+
+            poolInfo = {
+              poolAddress,
+              poolKey: `${poolAddress}@${inputToken}-${outputToken}`,
+              protocol: 'uniswap',
+              inputToken,
+              outputToken,
+              trade: path.trade,
+              routeIndex,
+              legIndex: 0
+            };
+          }
+        }
+      }
+      // Extract pool info from Balancer path
+      else if (route.protocol === 'balancer' && path.path) {
+        const hops = path.path.hops || [];
+        if (hops.length > 0) {
+          const firstHop = hops[0];
+          const lastHop = hops[hops.length - 1];
+
+          let inputToken = 'UNKNOWN';
+          let outputToken = 'UNKNOWN';
+
+          if (firstHop.poolData && firstHop.poolData.tokens) {
+            const tokenInObj = firstHop.poolData.tokens.find(
+              t => t.address.toLowerCase() === firstHop.tokenIn.toLowerCase()
+            );
+            inputToken = tokenInObj?.symbol?.replace(/WETH/g, 'ETH') || 'UNKNOWN';
+          }
+
+          if (lastHop.poolData && lastHop.poolData.tokens) {
+            const tokenOutObj = lastHop.poolData.tokens.find(
+              t => t.address.toLowerCase() === lastHop.tokenOut.toLowerCase()
+            );
+            outputToken = tokenOutObj?.symbol?.replace(/WETH/g, 'ETH') || 'UNKNOWN';
+          }
+
+          const poolAddress = firstHop.poolAddress;
+          poolInfo = {
+            poolAddress,
+            poolKey: `${poolAddress}@${inputToken}-${outputToken}`,
+            poolId: firstHop.poolId,
+            protocol: 'balancer',
+            inputToken,
+            outputToken,
+            path: path.path,
+            routeIndex,
+            legIndex: 0
+          };
+        }
+      }
+
+      // Add pool to tokenPairMap
+      if (poolInfo) {
+        const tokenPairKey = `${poolInfo.inputToken}->${poolInfo.outputToken}`;
+
+        if (!tokenPairMap.has(tokenPairKey)) {
+          tokenPairMap.set(tokenPairKey, []);
+        }
+
+        // Check if this exact pool (by address) is already in the group
+        const existingPool = tokenPairMap.get(tokenPairKey).find(
+          p => p.poolAddress === poolInfo.poolAddress
+        );
+
+        if (!existingPool) {
+          // New unique pool for this token pair
+          tokenPairMap.get(tokenPairKey).push({
+            ...poolInfo,
+            routeIndices: [routeIndex],
+            legIndices: [0]
+          });
+        } else {
+          // Same pool used by multiple routes - track all routes using it
+          if (!existingPool.routeIndices.includes(routeIndex)) {
+            existingPool.routeIndices.push(routeIndex);
+            existingPool.legIndices.push(0);
+          }
+        }
+      }
+    }
   });
 
   // Convert to array of groups
@@ -2813,7 +2911,7 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
         }
       }
 
-      // SECOND: Check if output conversion is needed for consuming level
+      // SECOND: Check if output conversion is needed for consuming level OR final output
       // Only set wrap operation if it wasn't already set by input conversion above
       if (wrapOperation === 0 && isETHOrWETH(pool.outputToken)) {
         // Find all future levels that consume ETH/WETH
@@ -2840,6 +2938,19 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
           }
           else if (pool.protocol === 'uniswap' && needsWETH && !needsETH) {
             wrapOperation = 2; // Wrap ETH to WETH after call (all consumers need WETH)
+          }
+        }
+        // FINAL OUTPUT: If no consuming levels, this is final output to user
+        else {
+          // Balancer outputs WETH but user expects ETH → unwrap after call
+          if (pool.protocol === 'balancer' && pool.outputToken === 'ETH') {
+            wrapOperation = 4; // Unwrap WETH to ETH after call
+            console.log(`      🔄 Level ${level} Balancer final output needs WETH→ETH unwrap (wrapOp=4)`);
+          }
+          // Uniswap outputs ETH but user expects WETH (rare) → wrap after call
+          else if (pool.protocol === 'uniswap' && pool.outputToken === 'WETH') {
+            wrapOperation = 2; // Wrap ETH to WETH after call
+            console.log(`      🔄 Level ${level} Uniswap final output needs ETH→WETH wrap (wrapOp=2)`);
           }
         }
       }

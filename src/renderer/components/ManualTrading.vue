@@ -2396,6 +2396,7 @@ export default {
 
         currentTradeSummary.txId = globalTxs[0]?.hash || null;
         emit('update:trade', { ...currentTradeSummary });
+        return { success: true };
       } catch (error) {
         // If using provided trade summary, update it; otherwise update the reactive one
         const currentTradeSummary = providedTradeSummary || tradeSummary;
@@ -2416,6 +2417,8 @@ export default {
         }
 
         console.error(error);
+
+        return { success: false, error: error.message || String(error) };
       } finally {
         isSwapButtonDisabled.value = false;
       }
@@ -3479,9 +3482,13 @@ export default {
         // Add order information to trade summary for transaction tracking
         limitOrderTradeSummary.orderId = order.id;
         limitOrderTradeSummary.orderSourceLocation = order.sourceLocation;
-        
-        await triggerTrade(bestTradeResult.trades, limitOrderTradeSummary);
-        
+
+        const tradeResult = await triggerTrade(bestTradeResult.trades, limitOrderTradeSummary);
+
+        if (!tradeResult || !tradeResult.success) {
+          throw new Error(tradeResult?.error || 'Trade execution failed');
+        }
+
         return { success: true, executedAmount: amount };
       } catch (error) {
         console.error('Trade execution failed:', error);

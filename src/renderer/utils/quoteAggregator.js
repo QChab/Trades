@@ -321,7 +321,6 @@ export function getAllowedProtocols(walletMode) {
 function withTimeout(promise, timeoutMs, protocolName) {
   const timeoutPromise = new Promise((resolve) => {
     setTimeout(() => {
-      console.warn(`⏰ ${protocolName} quote timed out after ${timeoutMs / 1000}s`);
       resolve(null);
     }, timeoutMs);
   });
