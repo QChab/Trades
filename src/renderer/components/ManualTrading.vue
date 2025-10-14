@@ -249,7 +249,9 @@
               </button>
               <p v-else class="deploy-address">
                 {{ contractAddress?.[senderDetails?.address] }}
-                <span class="copy-area" @click="copy(contractAddress?.[senderDetails?.address])">Copy</span> 
+                <span class="copy-area" @click="copy(contractAddress?.[senderDetails?.address])">
+                  <img :src="copyImage" alt="Copy" />
+                </span>
               </p>
             </div>
           </div>
@@ -268,19 +270,16 @@
                 class="swap-button"
                 @click="isSwapButtonDisabled=true; triggerTrade()"
               >
-                {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : `Swap ($${displayedGasCostUsd})`}}
+                {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : (isSwapButtonDisabled ? 'Swap' : `Swap ($${displayedGasCostUsd})`)}}
               </button>
             </div>
             <div v-else>
-              <p class="details-message">
-                Gas cost ~ ${{ ((tradeSummary.protocol === 'Uniswap' ? 100000 : 100000) * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2) }}
-              </p>
               <button
                 :disabled="!senderDetails?.mode || isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
                 class="swap-button"
                 @click="approveSpending()"
               >
-                {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : 'Approve' }}
+                {{ (isSwapButtonDisabled && trades.length > 0) ? ('Approving ' + tokensByAddresses[fromTokenAddress]?.symbol) : `Approve ($${approveGasCostUsd})` }}
               </button>
             </div>
           </div>
@@ -598,6 +597,7 @@ import chevronDownImage from '@/../assets/chevron-down.svg';
 import reverseImage from '@/../assets/reverse.svg';
 import downArrowImage from '@/../assets/down-arrow.svg';
 import deleteImage from '@/../assets/delete.svg';
+import copyImage from '@/../assets/copy.svg';
 import { useUniswapV4 } from '../composables/useUniswap';
 import { useBalancerV3 } from '../composables/useBalancer';
 import { useChainlinkPrice } from '../composables/useChainlinkPrice';
@@ -999,6 +999,13 @@ export default {
       return gasCostUsd;
     });
 
+    // Computed gas cost for approve button display
+    const approveGasCostUsd = computed(() => {
+      const approveGasLimit = 100000; // Standard approval gas limit
+      const gasCostUsd = (approveGasLimit * props.ethPrice * Number(props.gasPrice) * 1.1 / 1e18).toFixed(2);
+      return gasCostUsd;
+    });
+
     // Helper: get a user's token‐balance as a string with 5 decimals
     // Helper: get current market price for display in pending orders
     const getCurrentMarketPrice = (fromToken, toToken, shouldInvert) => {
@@ -1328,14 +1335,27 @@ export default {
         throw new Error('Invalid parameters for getBestTrades');
       }
 
-      const fromToken = tokensByAddresses.value[fromTokenAddr];
-      const toToken = tokensByAddresses.value[toTokenAddr];
+      let fromToken = tokensByAddresses.value[fromTokenAddr];
+      let toToken = tokensByAddresses.value[toTokenAddr];
 
       if (!fromToken || !toToken) {
         throw new Error('Token not found in tokensByAddresses');
       }
 
+      // CRITICAL FIX: Ensure tokens have their address property
+      // tokensByAddresses indexes by address but token objects may not include .address
+      // Create new objects to avoid Vue reactivity issues with direct modification
+      fromToken = {
+        ...fromToken,
+        address: fromTokenAddr
+      };
+      toToken = {
+        ...toToken,
+        address: toTokenAddr
+      };
+
       console.log('Fetching quotes on exchanges for', fromToken.symbol, '->', toToken.symbol);
+      console.log('Token addresses:', { fromToken: fromToken.address, toToken: toToken.address });
 
       // Get wallet mode for protocol filtering
       // forceWalletMode: undefined = use sender's mode, null = all protocols, specific string = use that mode
@@ -1405,7 +1425,7 @@ export default {
         totalHuman: finalTotalHuman,
         protocol,
         gasLimit: bestQuote.gasEstimate,
-        bestMixed: protocol === 'Contract' ? {
+        bestMixed: (protocol === 'Contract' || protocol === 'WalletBundler') ? {
           outputAmount: bestQuote.outputAmount,
           rawTotalOutput: bestQuote.outputAmount,
           route: bestQuote.trades[0]?.route,
@@ -1529,8 +1549,9 @@ export default {
             }
 
             // Check if approval is needed
+            console.log(`📋 About to check allowances. Protocol: "${bestTradeResult.protocol}", Token: ${_newFrom}`);
             if (_newFrom !== ethers.constants.AddressZero) {
-              await checkAllowances(_newFrom, null, bestTradeResult.trades);
+              await checkAllowances(_newFrom, null, bestTradeResult.trades, bestTradeResult.protocol);
             } else {
               needsToApprove.value = false;
             }
@@ -1555,7 +1576,15 @@ export default {
       }
     );
 
-    const checkAllowances = async (tokenAddress, isUsingUniswap, localTrades) => {
+    const checkAllowances = async (tokenAddress, isUsingUniswap, localTrades, protocol) => {
+      console.log(`🔍 Checking allowances for protocol: "${protocol}" (type: ${typeof protocol})`);
+
+      if (!protocol) {
+        console.error('❌ Protocol is undefined/null - cannot check allowances');
+        needsToApprove.value = false;
+        return;
+      }
+
       if (!senderDetails.value?.address) {
         needsToApprove.value = false;
         return;
@@ -1582,7 +1611,7 @@ export default {
       );
 
       // Uniswap
-      if (tradeSummary.protocol === 'Uniswap') {
+      if (protocol === 'Uniswap') {
         // 1. ERC20.approve(PERMIT2_ADDRESS)
         const permitAllowance = await erc20.allowance(
           senderDetails.value.address,
@@ -1611,7 +1640,7 @@ export default {
       }
 
       // Balancer V3
-      if (tradeSummary.protocol === 'Balancer') {
+      if (protocol === 'Balancer') {
         if (localTrades && localTrades.length > 0) {
           const balancerTradeV3 = localTrades.find(
             t => t.callData && t.contractAddress.toLowerCase() !== BALANCER_VAULT_ADDRESS.toLowerCase()
@@ -1631,10 +1660,13 @@ export default {
       }
 
       // Contract (WalletBundler)
-      if (tradeSummary.protocol === 'Contract') {
+      if (protocol === 'Contract' || protocol === 'WalletBundler') {
+        console.log('✅ Detected Contract/WalletBundler protocol');
         const bundlerAddress = contractAddress[senderDetails.value.address];
+        console.log(`Bundler address for ${senderDetails.value.address}:`, bundlerAddress);
+
         if (!bundlerAddress) {
-          console.error('No bundler contract found for Contract protocol');
+          console.error('❌ No bundler contract found for Contract protocol');
           needsToApprove.value = false;
           return;
         }
@@ -1644,17 +1676,20 @@ export default {
           senderDetails.value.address,
           bundlerAddress
         );
+        console.log(`Current allowance: ${allowance.toString()}`);
 
         if (BigNumber.from(allowance).lt(BigNumber.from('100000000000000000000000000'))) {
+          console.log('✅ Approval needed! Setting needsToApprove = true');
           needsToApprove.value = true;
           return;
         }
+        console.log('✅ Already approved, no approval needed');
         needsToApprove.value = false;
         return;
       }
 
       // Odos
-      if (tradeSummary.protocol === 'Odos') {
+      if (protocol === 'Odos') {
         // For Odos, we need the router address from the assembled transaction
         if (localTrades && localTrades.length > 0) {
           // Store Odos router address for later approval use
@@ -1711,6 +1746,7 @@ export default {
       }
 
       // Default: no approval needed
+      console.log(`⚠️ No protocol match found for: "${protocol}" - falling back to needsToApprove = false`);
       needsToApprove.value = false;
     };
 
@@ -2192,6 +2228,13 @@ export default {
     // ─── triggerTrade(): Execute *all* legs ────
     const triggerTrade = async (providedTrades = null, providedTradeSummary = null) => {
       let globalWarnings;
+
+      // Determine if this is a manual trade or automatic/limit order
+      const isManualTrade = !providedTradeSummary;
+
+      // For automatic/limit orders, preserve the original button state
+      const savedButtonState = !isManualTrade ? isSwapButtonDisabled.value : null;
+
       try {
         swapMessage.value = '';
 
@@ -2263,7 +2306,7 @@ export default {
           }
 
           globalTxs.push(response.tx);
-        } else if (currentTradeSummary.protocol === 'Contract') {
+        } else if (currentTradeSummary.protocol === 'Contract' || currentTradeSummary.protocol === 'WalletBundler') {
           // WalletBundler execution for cross-DEX optimization
           const trade = currentTrades[0];
           if (!trade || !trade.executionPlan) {
@@ -2420,7 +2463,13 @@ export default {
 
         return { success: false, error: error.message || String(error) };
       } finally {
-        isSwapButtonDisabled.value = false;
+        // For manual trading: reset button to false
+        // For automatic/limit orders: restore original button state
+        if (isManualTrade) {
+          isSwapButtonDisabled.value = false;
+        } else {
+          isSwapButtonDisabled.value = savedButtonState;
+        }
       }
     };
 
@@ -2438,9 +2487,17 @@ export default {
     // ─── approveSpending(): Approve ERC20 → Permit2 → Router ───────────────
     const approveSpending = async (localTrades, localTradeSummary) => {
       const activeTradeSummary = localTradeSummary || tradeSummary;
-      
+
+      // Determine if this is a manual trade or automatic/limit order
+      const isManualTrade = !localTradeSummary;
+
+      // For automatic/limit orders, preserve the original button state
+      const savedButtonState = !isManualTrade ? isSwapButtonDisabled.value : null;
+
       try {
-        isSwapButtonDisabled.value = true;
+        if (isManualTrade) {
+          isSwapButtonDisabled.value = true;
+        }
                 
         // Get the correct sender address from the trade summary or fallback to senderDetails
         const senderAddress = activeTradeSummary.sender?.address || senderDetails.value.address;
@@ -2498,7 +2555,7 @@ export default {
           }
         }
         // Contract (WalletBundler)
-        else if (activeTradeSummary.protocol === 'Contract') {
+        else if (activeTradeSummary.protocol === 'Contract' || activeTradeSummary.protocol === 'WalletBundler') {
           const bundlerAddress = contractAddress[senderAddress];
           if (!bundlerAddress) {
             throw new Error('No bundler contract deployed for this wallet. Please deploy first.');
@@ -2536,7 +2593,13 @@ export default {
           swapMessage.value = errorMessage;
         }
       } finally {
-        isSwapButtonDisabled.value = false;
+        // For manual trading: reset button to false
+        // For automatic/limit orders: restore original button state
+        if (isManualTrade) {
+          isSwapButtonDisabled.value = false;
+        } else {
+          isSwapButtonDisabled.value = savedButtonState;
+        }
       }
     };
 
@@ -3271,24 +3334,40 @@ export default {
         if (allExecutionSuccessful && totalExecuted >= order.remainingAmount) {
           order.status = 'completed';
           order.remainingAmount = 0;
+
+          // Reset failure counter on successful completion
+          if (order.automatic) {
+            orderFailureCounters.delete(order.id);
+          }
         } else {
           order.remainingAmount = Math.max(0, order.remainingAmount - totalExecuted);
           order.status = totalExecuted > 0 ? 'partially_filled' : 'failed';
-          
+
+          // Increment failure counter for fully failed automatic orders (no execution)
+          if (order.automatic && totalExecuted === 0 && order.status === 'failed') {
+            const currentCount = orderFailureCounters.get(order.id) || 0;
+            const newCount = currentCount + 1;
+            orderFailureCounters.set(order.id, newCount);
+            console.log(`⚠️ Order ${order.id} failure count: ${newCount}/3 (no execution)`);
+          }
+
           // If partial execution due to price conditions, update level percentage
           if (totalExecuted > 0 && order.automatic && order.sourceLocation) {
+            // Reset failure counter on partial success (order is working, just needs better price)
+            orderFailureCounters.delete(order.id);
+
             const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
             if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
-              const levels = levelType === 'sell' 
-                ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels 
+              const levels = levelType === 'sell'
+                ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels
                 : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
-                
+
               if (levels[levelIndex]) {
                 // Use the order's cumulative executedAmount which tracks all executions
                 const totalExecutedSoFar = order.executedAmount || totalExecuted;
-                
+
                 console.log(`Marking level as partially filled. Executed: ${totalExecutedSoFar}/${order.fromAmount}`);
-                
+
                 // Update the level status to partially filled (keep original percentage)
                 levels[levelIndex].status = 'partially_filled'; // Mark as partially filled, not active
                 levels[levelIndex].partialExecutionDate = new Date().toISOString();
@@ -3338,8 +3417,17 @@ export default {
                 levels[levelIndex].status = 'processing';
               } else if (order.status === 'partially_filled') {
                 levels[levelIndex].status = 'partially_filled';
-              } else {
-                levels[levelIndex].status = 'failed';
+              } else if (order.status === 'failed') {
+                // Check failure counter - only mark as failed after 3 attempts
+                const failureCount = orderFailureCounters.get(order.id) || 0;
+                if (failureCount >= 3) {
+                  levels[levelIndex].status = 'failed';
+                  levels[levelIndex].failureReason = `Failed ${failureCount} times`;
+                  console.log(`⛔ Level ${levelIndex} permanently marked as failed after ${failureCount} attempts`);
+                } else {
+                  // Keep as active to allow retry (don't update status)
+                  console.log(`Level ${levelIndex} keeping active status (failure ${failureCount}/3)`);
+                }
               }
               levels[levelIndex].executionPrice = exactExecutionPrice;
               levels[levelIndex].executionDate = new Date().toISOString();
@@ -3369,7 +3457,36 @@ export default {
         console.error('Multi-address execution failed:', error);
         order.status = 'failed';
         order.completedAt = new Date().toISOString();
-        
+
+        // Increment failure counter for automatic orders
+        if (order.automatic) {
+          const currentCount = orderFailureCounters.get(order.id) || 0;
+          const newCount = currentCount + 1;
+          orderFailureCounters.set(order.id, newCount);
+          console.log(`⚠️ Order ${order.id} failure count: ${newCount}/3 (exception in multi-address execution)`);
+
+          // Update UI level status only if this was the 3rd failure
+          if (order.sourceLocation) {
+            const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+            if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+              const levels = levelType === 'sell'
+                ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels
+                : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+
+              if (levels[levelIndex]) {
+                if (newCount >= 3) {
+                  levels[levelIndex].status = 'failed';
+                  levels[levelIndex].failureReason = `Failed ${newCount} times`;
+                  updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                  console.log(`⛔ Level ${levelIndex} permanently marked as failed after ${newCount} attempts (exception)`);
+                } else {
+                  console.log(`Level ${levelIndex} keeping active status (failure ${newCount}/3, exception)`);
+                }
+              }
+            }
+          }
+        }
+
         // Update database with failed status
         await window.electronAPI.updatePendingOrder({
           ...JSON.parse(JSON.stringify(order)),
@@ -3431,7 +3548,7 @@ export default {
 
         // 🕐 Time the approval process and re-validate if it takes too long
         const approvalStartTime = Date.now();
-        await approveSpending(limitOrderTradeSummary);
+        await approveSpending(null, limitOrderTradeSummary);
         const approvalDuration = (Date.now() - approvalStartTime) / 1000; // Convert to seconds
         
         console.log(`Approval completed in ${approvalDuration.toFixed(2)} seconds`);
@@ -3499,6 +3616,7 @@ export default {
     let isCheckingPendingOrders = false;
     const orderExecutionLocks = new Map(); // Track orders currently being executed
     const locationProcessingTimestamps = new Map(); // Track when orders from each location started processing
+    const orderFailureCounters = new Map(); // Track failure count per order ID (max 3 failures before permanent disable)
     
     async function checkPendingOrdersToTrigger() {
       // Check global pause state first
@@ -3892,6 +4010,32 @@ export default {
     }
 
     async function tryExecutePendingOrder(order, exactExecutionPrice, workingMultiplier) {
+      // Check if this order has failed too many times (max 3 failures for automatic orders)
+      if (order.automatic) {
+        const failureCount = orderFailureCounters.get(order.id) || 0;
+        if (failureCount >= 3) {
+          console.log(`⛔ Order ${order.id} has failed ${failureCount} times, permanently disabled`);
+
+          // Mark order as failed permanently in UI
+          if (order.sourceLocation) {
+            const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+            if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+              const levels = levelType === 'sell'
+                ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels
+                : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+
+              if (levels[levelIndex]) {
+                levels[levelIndex].status = 'failed';
+                levels[levelIndex].failureReason = `Failed ${failureCount} times`;
+                updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+              }
+            }
+          }
+
+          return;
+        }
+      }
+
       // Check if this order is already being executed (lock mechanism)
       if (orderExecutionLocks.has(order.id)) {
         console.log(`Order ${order.id} is already being executed, skipping...`);
@@ -4082,7 +4226,32 @@ export default {
         await executeOrderTrade(order, executableAmount, limitOrderTradeSummary, newRemainingAmount, exactExecutionPrice);
       } catch (error) {
         console.error(`❌ Error executing order ${order.id}:`, error);
-        
+
+        // Increment failure counter for automatic orders
+        if (order.automatic) {
+          const currentCount = orderFailureCounters.get(order.id) || 0;
+          const newCount = currentCount + 1;
+          orderFailureCounters.set(order.id, newCount);
+          console.log(`⚠️ Order ${order.id} failure count: ${newCount}/3`);
+
+          // If this was the 3rd failure, mark as permanently failed
+          if (newCount >= 3 && order.sourceLocation) {
+            const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+            if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+              const levels = levelType === 'sell'
+                ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels
+                : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+
+              if (levels[levelIndex]) {
+                levels[levelIndex].status = 'failed';
+                levels[levelIndex].failureReason = `Failed ${newCount} times`;
+                updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+                console.log(`⛔ Order ${order.id} permanently marked as failed after ${newCount} attempts`);
+              }
+            }
+          }
+        }
+
         // Restore order status on error
         try {
           await window.electronAPI.updatePendingOrder({
@@ -4165,12 +4334,17 @@ export default {
           });
           
           let execution = await executeTradeWithAddress(order, singleAddress, executableAmount);
-          
+
           if (execution.success) {
+            // Reset failure counter on successful execution
+            if (order.automatic) {
+              orderFailureCounters.delete(order.id);
+            }
+
             // Track cumulative executed amount
             if (!order.executedAmount) order.executedAmount = Number(executableAmount);
             else order.executedAmount += Number(executableAmount);
-            
+
             // Check if order is 97.5% or more filled based on cumulative execution
             const originalAmount = Number(order.fromAmount);
             const totalExecutedAmount = order.executedAmount;
@@ -4581,10 +4755,11 @@ export default {
               buyLevel.triggerPrice &&
               buyLevel.balancePercentage &&
               !isNaN(buyLevel.triggerPrice) &&
-              !isNaN(buyLevel.balancePercentage) &&        
+              !isNaN(buyLevel.balancePercentage) &&
               buyLevel.status !== 'processed' &&
               buyLevel.status !== 'pending' &&
               buyLevel.status !== 'processing' &&
+              buyLevel.status !== 'failed' &&
               !existingOrders.has(orderKey)
             ) {
               // For a buy, fromToken is col, toToken is row.token
@@ -4677,6 +4852,7 @@ export default {
               sellLevel.status !== 'processed' &&
               sellLevel.status !== 'pending' &&
               sellLevel.status !== 'processing' &&
+              sellLevel.status !== 'failed' &&
               !existingOrders.has(orderKey)
             ) {
               // For a sell, fromToken is row.token, toToken is col
@@ -5038,6 +5214,7 @@ export default {
       reverseImage,
       downArrowImage,
       deleteImage,
+      copyImage,
 
       // computed
       filteredTokens,
@@ -5047,6 +5224,7 @@ export default {
       spaceThousands: spaceThousandsFn,
       effectivePrice,
       displayedGasCostUsd,
+      approveGasCostUsd,
       deploymentCostUsd,
 
       // methods
@@ -5872,6 +6050,11 @@ input.amount-out {
 
 .deploy-address {
   text-align: center;
+}
+
+.copy-area img{
+  width: 20px;
+  height: 20px;
 }
 
 .copy-area:hover {

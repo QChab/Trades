@@ -57,7 +57,7 @@
               >
             </label>
           </div>
-          <div class="oneinch-api-key-setting">
+          <!-- <div class="oneinch-api-key-setting">
             <label>
               1inch API Key:
               <input
@@ -68,7 +68,7 @@
                 @change="saveOneInchApiKey"
               >
             </label>
-          </div>
+          </div> -->
           <div class="private-rpc-setting">
             <label>
               Private RPC:
