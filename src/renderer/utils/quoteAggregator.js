@@ -287,7 +287,7 @@ export async function getQuoteOdos({
  * The wallet mode only adds additional aggregator protocols on top.
  *
  * Modes:
- * - undefined/null: Base protocols + WalletBundler + Odos (all 4)
+ * - undefined/null: Base protocols (just 2)
  * - "contract": Base protocols + WalletBundler (Uniswap, Balancer, WalletBundler)
  * - "odos": Base protocols + Odos (Uniswap, Balancer, Odos)
  * - "odos & contract": All 4 protocols (Uniswap, Balancer, WalletBundler, Odos)
@@ -311,7 +311,7 @@ export function getAllowedProtocols(walletMode) {
   }
 
   // Default: All 4 protocols for redundancy
-  return [...baseProtocols, 'WalletBundler', 'Odos'];
+  return baseProtocols;
 }
 
 /**

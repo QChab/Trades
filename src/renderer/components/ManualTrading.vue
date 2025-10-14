@@ -3798,10 +3798,10 @@ export default {
             let workingMultiplier = null;
             
             for (const multiplier of testMultipliers) {
-              const testAmount = Number(order.fromAmount) * multiplier;
+              const testAmount = remainingAmount * multiplier;  // FIX: Use remainingAmount, not order.fromAmount
               const testValueUSD = testAmount * fromTokenPrice;
-              
-              console.log(`Order ${order.id}: Testing with ${(multiplier * 100)}% amount ($${testValueUSD.toFixed(2)} worth)`);
+
+              console.log(`Order ${order.id}: Testing with ${(multiplier * 100)}% of remaining amount ($${testValueUSD.toFixed(2)} worth)`);
               
               // Get exact trade execution price by fetching best trades
               // If order has sender (limit order): use sender's wallet mode
