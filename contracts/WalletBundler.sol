@@ -105,20 +105,15 @@ contract WalletBundler {
             mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000)
             mstore(add(ptr, 0x04), account)
 
-            // Call balanceOf - don't specify output location, we'll use returndatacopy
-            let success := staticcall(gas(), token, ptr, 0x24, 0, 0)
-
-            // Check success
+            // Use separate memory location for output (ptr + 0x40 = 64 bytes after input)
+            let outPtr := add(ptr, 0x40)
+            let success := staticcall(gas(), token, ptr, 0x24, outPtr, 0x20)
             if iszero(success) { revert(0, 0) }
 
-            // Verify we got exactly 32 bytes back
-            if iszero(eq(returndatasize(), 0x20)) { revert(0, 0) }
+            // Verify we actually got return data (protects against non-existent contracts)
+            if iszero(returndatasize()) { revert(0, 0) }
 
-            // Copy return data to ptr (safe to reuse since we're done with input)
-            returndatacopy(ptr, 0, 0x20)
-
-            // Load the balance
-            tokenBalance := mload(ptr)
+            tokenBalance := mload(outPtr)
         }
     }
     
@@ -267,19 +262,11 @@ contract WalletBundler {
                     mstore(add(ptr, 0x24), tokenIn)       // tokenIn
                     mstore(add(ptr, 0x44), target) // spender
 
-                    // Call allowance - don't specify output location, we'll use returndatacopy
-                    let success := staticcall(gas(), PERMIT2, ptr, 0x64, 0, 0)
-
-                    // Only proceed if call succeeded
+                    // Use separate memory location for output (ptr + 0x80 = 128 bytes after input)
+                    let outPtr := add(ptr, 0x80)
+                    let success := staticcall(gas(), PERMIT2, ptr, 0x64, outPtr, 0x60)
                     if success {
-                        // Verify we got at least 32 bytes back (Permit2 returns more, but we only need first uint160)
-                        if iszero(lt(returndatasize(), 0x20)) {
-                            // Copy return data to ptr (safe to reuse since we're done with input)
-                            returndatacopy(ptr, 0, 0x20)
-
-                            // Load the allowance (first return value is uint160 amount)
-                            permit2Allowance := mload(ptr)
-                        }
+                        permit2Allowance := mload(outPtr) // First return value is uint160 amount
                     }
                 }
 
@@ -360,20 +347,12 @@ contract WalletBundler {
             mstore(add(ptr, 0x04), contractAddr) // owner (this contract)
             mstore(add(ptr, 0x24), spender)   // spender
 
-            // Call allowance - don't specify output location, we'll use returndatacopy
-            let success := staticcall(gas(), token, ptr, 0x44, 0, 0)
-
-            // Check success
-            if iszero(success) { revert(0, 0) }
-
-            // Verify we got exactly 32 bytes back
-            if iszero(eq(returndatasize(), 0x20)) { revert(0, 0) }
-
-            // Copy return data to ptr (safe to reuse since we're done with input)
-            returndatacopy(ptr, 0, 0x20)
-
-            // Load the allowance
-            allowance := mload(ptr)
+            // Use separate memory location for output
+            let outPtr := add(ptr, 0x60)
+            let success := staticcall(gas(), token, ptr, 0x44, outPtr, 0x20)
+            if success {
+                allowance := mload(outPtr)
+            }
         }
     }
 

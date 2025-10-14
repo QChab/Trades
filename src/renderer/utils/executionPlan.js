@@ -4,8 +4,8 @@ import { ethers } from 'ethers';
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
-const balancerEncoderAddress = '0x3D4941A71EaAB93c864F6984C0b25d48ff4585df';
-const uniswapEncoderAddress = '0x4E9448fEed1E0209934bddc8b912D2a16D778BBe';  // V4 with correct action codes
+const balancerEncoderAddress = '0x155CCfeA3c02deF5D8506dCCe569E94Ff4Facba7';
+const uniswapEncoderAddress = '0x34981aD6A5F65268EF251185334531329020e7FD';  // V4 with correct action codes
 
 /**
  * Create execution plan for the selected route
@@ -276,7 +276,7 @@ export function createEncoderExecutionPlan(
           [
             poolId,  // V3 uses address, not bytes32
             inputTokenAddress,
-            outputTokenAddress,
+            outputTokenAddress === ETH_ADDRESS ? WETH_ADDRESS : outputTokenAddress,
             minAmountOut,
             step.wrapOperation || 0
           ]
@@ -293,7 +293,7 @@ export function createEncoderExecutionPlan(
           [
             poolId,  // V3 uses address, not bytes32
             inputTokenAddress,
-            outputTokenAddress,
+            outputTokenAddress === ETH_ADDRESS ? WETH_ADDRESS : outputTokenAddress,
             inputAmount,
             minAmountOut
           ]

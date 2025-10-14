@@ -4328,7 +4328,7 @@ export default {
           
           if (addressSelection.totalAvailable < executableAmount) {
             console.log(`Insufficient total balance across all addresses. Need: ${executableAmount}, Available: ${addressSelection.totalAvailable}`);
-            return;
+            throw new Error(`Insufficient balance across wallets that support protocol ${limitOrderTradeSummary.protocol}. Need: ${executableAmount}, Available: ${addressSelection.totalAvailable}`);
           }
           
           // Execute multi-address trade asynchronously without blocking main loop

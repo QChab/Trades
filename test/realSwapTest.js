@@ -22,15 +22,15 @@ const TEST_PARAMS = {
   //   symbol: 'AAVE',
   //   decimals: 18
   // },
-  amountIn: '0.001', // In human-readable format, not wei
+  amountIn: '0.000001', // In human-readable format, not wei
   slippageTolerance: 0.5 // 0.5%
 };
 
 // ===== DEPLOYED CONTRACT ADDRESSES =====
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28',
-  uniswapEncoder: '0x4E9448fEed1E0209934bddc8b912D2a16D778BBe',  // V4 with correct action codes
-  balancerEncoder: '0x3D4941A71EaAB93c864F6984C0b25d48ff4585df'
+  uniswapEncoder: '0x34981aD6A5F65268EF251185334531329020e7FD',  // V4 with correct action codes
+  balancerEncoder: '0x155CCfeA3c02deF5D8506dCCe569E94Ff4Facba7'
 };
 
 describe("Real Swap Integration Test", function () {
@@ -243,7 +243,7 @@ describe("Real Swap Integration Test", function () {
     // Get current gas price and set custom gas parameters
     const currentGasPrice = await provider.getGasPrice();
     const maxFeePerGas = currentGasPrice.mul(2); // 2x base gas price
-    const maxPriorityFeePerGas = ethers.BigNumber.from(10000); // 10 wei
+    const maxPriorityFeePerGas = ethers.BigNumber.from(1000000); // 10 wei
 
     console.log(`   Base Gas Price: ${ethers.utils.formatUnits(currentGasPrice, 'gwei')} gwei`);
     console.log(`   Max Fee Per Gas: ${ethers.utils.formatUnits(maxFeePerGas, 'gwei')} gwei`);

@@ -24,7 +24,7 @@ async function main() {
 
   // Contract addresses (from deployment)
   const BUNDLER_REGISTRY_ADDRESS = '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28';
-  const WALLET_BUNDLER_ADDRESS = '0x35b93f331469d8E29a34137744F7B7Bf010cF78d';
+  const WALLET_BUNDLER_ADDRESS = '0xDb0d5062C851407bBCc450b7c9E7505Dc0Fbc38a';
 
   console.log("BundlerRegistry:", BUNDLER_REGISTRY_ADDRESS);
   console.log("WalletBundler:", WALLET_BUNDLER_ADDRESS);
@@ -57,7 +57,7 @@ async function main() {
   console.log("\n⛽ Fetching gas prices...");
   const feeData = await ethers.provider.getFeeData();
   const baseFee = feeData.lastBaseFeePerGas || ethers.BigNumber.from(0);
-  const priorityFee = ethers.BigNumber.from(10);
+  const priorityFee = ethers.BigNumber.from(1000);
   const maxFeePerGas = baseFee.mul(2).add(priorityFee);
 
   console.log(`  Base Fee: ${ethers.utils.formatUnits(baseFee, "gwei")} gwei`);
