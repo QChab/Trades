@@ -982,11 +982,11 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
 
   // If we filtered out any pools, handle redistribution
   if (filteredPools.length < pools.length && filteredPools.length > 0) {
-    console.log(`      🔄 Filtered ${pools.length - filteredPools.length} pool(s) with total ${(sumFilteredAllocation * 100).toFixed(4)}% allocation`);
+    // console.log(`      🔄 Filtered ${pools.length - filteredPools.length} pool(s) with total ${(sumFilteredAllocation * 100).toFixed(4)}% allocation`);
 
     // If only ONE pool remains, give it 100% and stop optimization
     if (filteredPools.length === 1) {
-      console.log(`      ✓ Only 1 pool remaining - allocating 100%`);
+      // console.log(`      ✓ Only 1 pool remaining - allocating 100%`);
 
       const allocations = new Map();
       const poolInputs = new Map();
@@ -1202,9 +1202,22 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
   displayRoutes(routes, tokenOut);
 
   // If we have multiple routes, optimize split percentages
-  if (routes.length >= 2 && routes.length <= 10) {
-    // console.log(`\n🎯 Optimizing split across ${routes.length} routes...`);
-    const optimizedSplit = await optimizeSplitSimple(routes, amountIn, tokenIn, tokenOut);
+  if (routes.length >= 2) {
+    // Filter to top 10 routes if we have too many (avoid combinatorial explosion)
+    let routesToOptimize = routes;
+    if (routes.length > 20) {
+      console.log(`\n🎯 ${routes.length} routes discovered - selecting top 10 by output for optimization...`);
+      routesToOptimize = [...routes].sort((a, b) => {
+        return b.totalOutput.sub(a.totalOutput).gt(0) ? 1 : -1;
+      }).slice(0, 20);
+      console.log(`   ✓ Optimizing splits across top 20 routes (outputs: ${routesToOptimize.map(r =>
+        parseFloat(ethers.utils.formatUnits(r.totalOutput, tokenOut.decimals)).toFixed(1)
+      ).join(', ')} ${tokenOut.symbol})`);
+    } else {
+      console.log(`\n🎯 Optimizing split across ${routes.length} routes...`);
+    }
+
+    const optimizedSplit = await optimizeSplitSimple(routesToOptimize, amountIn, tokenIn, tokenOut);
     if (optimizedSplit) {
       routes.push(optimizedSplit);
     }
@@ -2786,9 +2799,23 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
       const actualInput = (pool.protocol === 'balancer' && pool.inputToken === 'ETH') ? 'WETH' : pool.inputToken;
       const actualOutput = (pool.protocol === 'balancer' && pool.outputToken === 'ETH') ? 'WETH' : pool.outputToken;
 
-      // Check if output conversion is needed for consuming level
-      // Find which level actually consumes this pool's output token
-      if (isETHOrWETH(pool.outputToken)) {
+      // FIRST: Check if INPUT conversion is needed
+      // This applies to ALL levels, not just level 0
+      if (isETHOrWETH(pool.inputToken)) {
+        if (pool.protocol === 'balancer' && pool.inputToken === 'ETH') {
+          // Balancer expects WETH, but input is ETH → wrap before call
+          wrapOperation = 1;
+          console.log(`      🔄 Level ${level} Balancer pool needs ETH→WETH wrap (wrapOp=1)`);
+        } else if (pool.protocol === 'uniswap' && pool.inputToken === 'WETH') {
+          // Uniswap expects ETH, but input is WETH → unwrap before call
+          wrapOperation = 3;
+          console.log(`      🔄 Level ${level} Uniswap pool needs WETH→ETH unwrap (wrapOp=3)`);
+        }
+      }
+
+      // SECOND: Check if output conversion is needed for consuming level
+      // Only set wrap operation if it wasn't already set by input conversion above
+      if (wrapOperation === 0 && isETHOrWETH(pool.outputToken)) {
         // Find all future levels that consume ETH/WETH
         const consumingLevels = tokenPairGroups.filter(g =>
           g.level > level &&

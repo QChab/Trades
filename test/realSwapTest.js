@@ -22,7 +22,7 @@ const TEST_PARAMS = {
   //   symbol: 'AAVE',
   //   decimals: 18
   // },
-  amountIn: '10', // In human-readable format, not wei
+  amountIn: '0.001', // In human-readable format, not wei
   slippageTolerance: 0.5 // 0.5%
 };
 
@@ -243,7 +243,7 @@ describe("Real Swap Integration Test", function () {
     // Get current gas price and set custom gas parameters
     const currentGasPrice = await provider.getGasPrice();
     const maxFeePerGas = currentGasPrice.mul(2); // 2x base gas price
-    const maxPriorityFeePerGas = ethers.BigNumber.from(10); // 10 wei
+    const maxPriorityFeePerGas = ethers.BigNumber.from(10000); // 10 wei
 
     console.log(`   Base Gas Price: ${ethers.utils.formatUnits(currentGasPrice, 'gwei')} gwei`);
     console.log(`   Max Fee Per Gas: ${ethers.utils.formatUnits(maxFeePerGas, 'gwei')} gwei`);

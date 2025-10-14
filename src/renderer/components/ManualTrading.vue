@@ -995,7 +995,7 @@ export default {
         }
       }
 
-      const gasCostUsd = (gasLimit * ethPrice * Number(gasPrice) * 1.1 / 1e18).toFixed(2);
+      const gasCostUsd = (gasLimit * props.ethPrice * Number(props.gasPrice) * 1.1 / 1e18).toFixed(2);
       return gasCostUsd;
     });
 
@@ -1264,11 +1264,65 @@ export default {
       }
     );
 
+    // Helper: Get wallet mode for any address
+    const getWalletModeForAddress = async (address) => {
+      if (!address) return null;
+
+      // Fast path: if it's the current wallet, use cached mode
+      if (address === senderDetails.value.address) {
+        return senderDetails.value.mode || null;
+      }
+
+      // Check if mode is cached in walletModes reactive object
+      if (walletModes[address]) {
+        return walletModes[address];
+      }
+
+      // Otherwise fetch from storage
+      try {
+        const mode = await window.electronAPI.getWalletMode(address);
+        // Cache it for future use
+        if (mode) {
+          walletModes[address] = mode;
+        }
+        return mode || null;
+      } catch (error) {
+        console.error(`Error fetching wallet mode for ${address}:`, error);
+        return null;
+      }
+    };
+
+    // Helper: Check if wallet mode supports a given protocol
+    const walletModeSupportsProtocol = (walletMode, protocol) => {
+      // Normalize inputs
+      const mode = walletMode?.toLowerCase() || '';
+      const proto = protocol?.toLowerCase() || '';
+
+      // null/undefined mode means all protocols allowed
+      if (!mode) return true;
+
+      // Base protocols (Uniswap, Balancer) are always supported
+      if (proto === 'uniswap' || proto === 'balancer') return true;
+
+      // Check specific protocol support
+      if (proto === 'contract' || proto === 'walletbundler') {
+        return mode === 'contract' || mode.includes('contract');
+      }
+
+      if (proto === 'odos') {
+        return mode === 'odos' || mode.includes('odos');
+      }
+
+      // Unknown protocol - allow by default
+      return true;
+    };
+
     const getBestTrades = async (
       fromTokenAddr,
       toTokenAddr,
       amount,
-      senderAddr
+      senderAddr,
+      forceWalletMode = undefined // Optional: override wallet mode (null = all protocols, string = specific mode)
     ) => {
       if (!fromTokenAddr || !toTokenAddr || !amount || amount <= 0) {
         throw new Error('Invalid parameters for getBestTrades');
@@ -1284,7 +1338,15 @@ export default {
       console.log('Fetching quotes on exchanges for', fromToken.symbol, '->', toToken.symbol);
 
       // Get wallet mode for protocol filtering
-      const walletMode = senderDetails.value.mode;
+      // forceWalletMode: undefined = use sender's mode, null = all protocols, specific string = use that mode
+      let walletMode;
+      if (forceWalletMode !== undefined) {
+        walletMode = forceWalletMode;
+        console.log(`Using forced wallet mode: ${walletMode === null ? 'ALL PROTOCOLS' : walletMode}`);
+      } else {
+        walletMode = senderDetails.value.mode;
+        console.log(`Using wallet mode for address ${senderAddr}: ${walletMode || 'ALL PROTOCOLS (no mode set)'}`);
+      }
 
       // Fetch all Uniswap pools for both tokens
       console.log('🔍 Fetching Uniswap pools...');
@@ -2868,25 +2930,28 @@ export default {
     }
 
     // Helper function to find addresses with highest balances for a token
-    function getAddressesWithHighestBalances(tokenAddress, requiredAmount, order = null) {
+    function getAddressesWithHighestBalances(tokenAddress, requiredAmount, order = null, addressList = null) {
       const tokenAddr = tokenAddress.toLowerCase();
       const isETH = tokenAddr === '0x0000000000000000000000000000000000000000' || tokenAddr === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
-      
+
       // Calculate gas reserve for ETH trades (use gas price to estimate)
       const gasReserve = isETH ? calculateGasReserve() : 0;
-      
+
       // Get minimum amount and random mode settings from order if available
       let minimumAmount = 0;
       let isRandomMode = false;
-      
+
       if (order && order.automatic && order.sourceLocation) {
         const { rowIndex, colIndex } = order.sourceLocation;
         const tradingPairConfig = tokensInRow.value?.[rowIndex]?.columns?.[colIndex];
         minimumAmount = tradingPairConfig?.details?.minimumAmount || 0;
         isRandomMode = tradingPairConfig?.details?.isRandomMode || false;
       }
-      
-      const availableAddresses = props.addresses
+
+      // Use provided address list or default to props.addresses
+      const addresses = addressList || props.addresses;
+
+      const availableAddresses = addresses
         .map(address => ({
           ...address,
           balance: address.balances?.[tokenAddr] || 0
@@ -3045,11 +3110,15 @@ export default {
         }
 
         // Get exact execution price from DEX
+        // For limit orders: use the order creator's wallet mode
+        const senderAddr = order?.sender?.address || senderDetails.value.address;
+        const orderCreatorMode = await getWalletModeForAddress(senderAddr);
         let bestTradeResult = await getBestTrades(
           order.fromToken.address,
           order.toToken.address,
           executionAmount.toString(),
-          order?.sender?.address || senderDetails.value.address
+          senderAddr,
+          orderCreatorMode // Use order creator's wallet mode
         );
 
         if (!bestTradeResult || !bestTradeResult.totalHuman) {
@@ -3595,11 +3664,17 @@ export default {
               console.log(`Order ${order.id}: Testing with ${(multiplier * 100)}% amount ($${testValueUSD.toFixed(2)} worth)`);
               
               // Get exact trade execution price by fetching best trades
+              // If order has sender (limit order): use sender's wallet mode
+              // If no sender (automatic order): query all protocols
+              const senderAddr = order?.sender?.address || senderDetails.value.address;
+              const walletMode = order?.sender ? await getWalletModeForAddress(senderAddr) : null;
+
               const bestTradeResult = await getBestTrades(
                 order.fromToken.address,
                 order.toToken.address,
                 testAmount.toString(),
-                order?.sender?.address || senderDetails.value.address
+                senderAddr,
+                walletMode // Use sender's mode for limit orders, null for automatic orders
               );
 
               // Calculate exact execution price using the helper (with small test amount)
@@ -3719,13 +3794,19 @@ export default {
       }
       
       // Get trade result for this amount
+      // If order has sender (limit order): use sender's wallet mode
+      // If no sender (automatic order): query all protocols
       let testResult;
       try {
+        const senderAddr = order?.sender?.address || senderDetails.value.address;
+        const walletMode = order?.sender ? await getWalletModeForAddress(senderAddr) : null;
+
         testResult = await getBestTrades(
           order.fromToken.address,
           order.toToken.address,
           testAmount.toString(),
-          order?.sender?.address || senderDetails.value.address
+          senderAddr,
+          walletMode // Use sender's mode for limit orders, null for automatic orders
         );
       } catch (error) {
         console.error(`Error getting best trades for order ${order.id}:`, error);
@@ -4025,10 +4106,33 @@ export default {
             console.log(`Order ${order.id}: Set processing timestamp for location ${locationKey}`);
           }
           // Multi-address execution for automatic orders
+          // Filter addresses to only those whose mode supports the winning protocol
+          let availableAddresses = props.addresses;
+
+          if (!order.sender) {
+            // Automatic order: filter wallets by protocol support
+            const winningProtocol = limitOrderTradeSummary.protocol;
+            const filteredAddresses = [];
+
+            for (const addr of availableAddresses) {
+              if (!addr?.address) continue;
+              const mode = await getWalletModeForAddress(addr.address);
+              if (walletModeSupportsProtocol(mode, winningProtocol)) {
+                filteredAddresses.push(addr);
+              } else {
+                console.log(`Skipping wallet ${addr.name} (mode: ${mode || 'none'}) - does not support protocol ${winningProtocol}`);
+              }
+            }
+
+            console.log(`Filtered ${filteredAddresses.length}/${availableAddresses.length} wallets that support protocol ${winningProtocol}`);
+            availableAddresses = filteredAddresses;
+          }
+
           const addressSelection = getAddressesWithHighestBalances(
-            order.fromToken.address, 
-            executableAmount, 
-            order
+            order.fromToken.address,
+            executableAmount,
+            order,
+            availableAddresses
           );
           
           if (addressSelection.totalAvailable < executableAmount) {
@@ -4935,6 +5039,7 @@ export default {
       balanceString,
       spaceThousands: spaceThousandsFn,
       effectivePrice,
+      displayedGasCostUsd,
       deploymentCostUsd,
 
       // methods
