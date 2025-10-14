@@ -250,7 +250,8 @@
               <p v-else class="deploy-address">
                 {{ contractAddress?.[senderDetails?.address] }}
                 <span class="copy-area" @click="copy(contractAddress?.[senderDetails?.address])">
-                  <img :src="copyImage" alt="Copy" />
+                  <span v-if="showCopiedText" class="copied-text">Copied</span>
+                  <img v-else :src="copyImage" alt="Copy" />
                 </span>
               </p>
             </div>
@@ -266,16 +267,16 @@
             <div v-if="!needsToApprove">
               <button
                 v-if="!needsToApprove"
-                :disabled="!senderDetails?.mode || isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
+                :disabled="!senderDetails?.address || isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
                 class="swap-button"
                 @click="isSwapButtonDisabled=true; triggerTrade()"
               >
-                {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : (isSwapButtonDisabled ? 'Swap' : `Swap ($${displayedGasCostUsd})`)}}
+                {{ (isSwapButtonDisabled && trades.length > 0 && !isFetchingPrice) ? 'Swapping...' : (!senderDetails?.address || isSwapButtonDisabled || isFetchingPrice || trades.length === 0 ? 'Swap' : `Swap ($${displayedGasCostUsd})`)}}
               </button>
             </div>
             <div v-else>
               <button
-                :disabled="!senderDetails?.mode || isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
+                :disabled="!senderDetails?.address || isSwapButtonDisabled || isFetchingPrice || maxGasPrice < gasPrice || trades.length === 0"
                 class="swap-button"
                 @click="approveSpending()"
               >
@@ -674,6 +675,7 @@ export default {
 
     // Bundler-related state
     const isDeploying = ref(false);
+    const showCopiedText = ref(false);
 
     const tokens = ref([
       { price: 0, address: ethers.constants.AddressZero, symbol: 'ETH', decimals: 18 },
@@ -1305,11 +1307,11 @@ export default {
       const mode = walletMode?.toLowerCase() || '';
       const proto = protocol?.toLowerCase() || '';
 
-      // null/undefined mode means all protocols allowed
-      if (!mode) return true;
-
-      // Base protocols (Uniswap, Balancer) are always supported
+      // Base protocols (Uniswap, Balancer) are always supported by all non-None modes
       if (proto === 'uniswap' || proto === 'balancer') return true;
+
+      // "None" mode (empty string) means wallet should not be used for automatic execution
+      if (!mode || mode === 'none') return false;
 
       // Check specific protocol support
       if (proto === 'contract' || proto === 'walletbundler') {
@@ -1321,7 +1323,8 @@ export default {
       }
 
       // Unknown protocol - allow by default
-      return true;
+      console.error('Unknown protocol in walletModeSupportsProtocol');
+      return false;
     };
 
     const getBestTrades = async (
@@ -3617,6 +3620,18 @@ export default {
     const orderExecutionLocks = new Map(); // Track orders currently being executed
     const locationProcessingTimestamps = new Map(); // Track when orders from each location started processing
     const orderFailureCounters = new Map(); // Track failure count per order ID (max 3 failures before permanent disable)
+
+    /**
+     * Reset failure counter for a specific level
+     * Call this when level is edited or manually reset by user
+     */
+    function resetLevelFailureCounter(rowIndex, colIndex, levelIndex, levelType) {
+      const orderId = `auto_${rowIndex}_${colIndex}_${levelIndex}_${levelType}`;
+      if (orderFailureCounters.has(orderId)) {
+        orderFailureCounters.delete(orderId);
+        console.log(`🔄 Reset failure counter for level ${rowIndex}-${colIndex}-${levelIndex}-${levelType}`);
+      }
+    }
     
     async function checkPendingOrdersToTrigger() {
       // Check global pause state first
@@ -4574,36 +4589,69 @@ export default {
     }
 
     const updateDetailsOrder = (i, j, details) => {
+      // Get previous state to detect user clearing 'failed' status
+      const prevDetails = tokensInRow[i]?.columns?.[j]?.details;
+
+      // Reset failure counters only when user explicitly clears 'failed' status
+      details.buyLevels.forEach((level, k) => {
+        const prevLevel = prevDetails?.buyLevels?.[k];
+        // Reset counter if status was 'failed' and is now being cleared/changed
+        if (prevLevel?.status === 'failed' && level.status !== 'failed') {
+          const orderId = `auto_${i}_${j}_${k}_buy`;
+          if (orderFailureCounters.has(orderId)) {
+            orderFailureCounters.delete(orderId);
+            console.log(`🔄 Reset failure counter for re-enabled level: ${orderId}`);
+          }
+        }
+      });
+
+      details.sellLevels.forEach((level, k) => {
+        const prevLevel = prevDetails?.sellLevels?.[k];
+        // Reset counter if status was 'failed' and is now being cleared/changed
+        if (prevLevel?.status === 'failed' && level.status !== 'failed') {
+          const orderId = `auto_${i}_${j}_${k}_sell`;
+          if (orderFailureCounters.has(orderId)) {
+            orderFailureCounters.delete(orderId);
+            console.log(`🔄 Reset failure counter for re-enabled level: ${orderId}`);
+          }
+        }
+      });
+
       // Clean level data when modified to ensure clean state
       const cleanedDetails = {
         ...details,
-        buyLevels: details.buyLevels.map(level => {
+        buyLevels: details.buyLevels.map((level, levelIndex) => {
           // Remove execution-related properties when level is modified
           const cleanedLevel = { ...level };
           // Only clean if the level is being user-modified (has triggerPrice or balancePercentage changes)
           // AND is not currently in partially_filled status (preserve execution data for partial fills)
-          if ((cleanedLevel.triggerPrice !== undefined || cleanedLevel.balancePercentage !== undefined) 
+          if ((cleanedLevel.triggerPrice !== undefined || cleanedLevel.balancePercentage !== undefined)
               && cleanedLevel.status !== 'partially_filled') {
             delete cleanedLevel.partialExecutionDate;
-            delete cleanedLevel.executedAmount; 
+            delete cleanedLevel.executedAmount;
             delete cleanedLevel.originalPercentage;
             delete cleanedLevel.executionPrice;
             delete cleanedLevel.executionDate;
             delete cleanedLevel.failureReason;
             delete cleanedLevel.lastFailureDate;
             // Never reset processed status - once processed, always processed
+            // But if status was 'failed', reset it to allow retry
             if (cleanedLevel.status === 'processed') {
               // Keep as processed, don't reset
+            } else if (cleanedLevel.status === 'failed') {
+              // Reset failed status to allow retry
+              delete cleanedLevel.status;
+              console.log(`🔄 Reset failed status for buy level ${levelIndex}`);
             }
           }
           return cleanedLevel;
         }),
-        sellLevels: details.sellLevels.map(level => {
+        sellLevels: details.sellLevels.map((level, levelIndex) => {
           // Remove execution-related properties when level is modified
           const cleanedLevel = { ...level };
           // Only clean if the level is being user-modified (has triggerPrice or balancePercentage changes)
           // AND is not currently in partially_filled status (preserve execution data for partial fills)
-          if ((cleanedLevel.triggerPrice !== undefined || cleanedLevel.balancePercentage !== undefined) 
+          if ((cleanedLevel.triggerPrice !== undefined || cleanedLevel.balancePercentage !== undefined)
               && cleanedLevel.status !== 'partially_filled') {
             delete cleanedLevel.partialExecutionDate;
             delete cleanedLevel.executedAmount;
@@ -4612,8 +4660,13 @@ export default {
             delete cleanedLevel.executionDate;
             delete cleanedLevel.failureReason;
             // Never reset processed status - once processed, always processed
+            // But if status was 'failed', reset it to allow retry
             if (cleanedLevel.status === 'processed') {
               // Keep as processed, don't reset
+            } else if (cleanedLevel.status === 'failed') {
+              // Reset failed status to allow retry
+              delete cleanedLevel.status;
+              console.log(`🔄 Reset failed status for sell level ${levelIndex}`);
             }
           }
           return cleanedLevel;
@@ -4643,9 +4696,6 @@ export default {
       // Loop through all addresses
       for (const detail of props.addresses) {
         if (!detail || !detail.address || !detail.balances) continue;
-
-        // Skip addresses with undefined mode for automatic trading
-        if (!detail.mode) continue;
         
         // For each token in the address's balance
         for (const tokenAddr in detail.balances) {
@@ -5188,6 +5238,10 @@ export default {
 
     const copy = (string) => {
       navigator.clipboard.writeText(string);
+      showCopiedText.value = true;
+      setTimeout(() => {
+        showCopiedText.value = false;
+      }, 3000);
     }
 
     return {
@@ -5278,6 +5332,7 @@ export default {
       copy,
       deployBundler,
       isDeploying,
+      showCopiedText,
     };
   }
 };
@@ -6059,5 +6114,15 @@ input.amount-out {
 
 .copy-area:hover {
   cursor: pointer;
+}
+
+.copied-text {
+  display: inline-block;
+  color: #4CAF50;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background-color: rgba(76, 175, 80, 0.1);
 }
 </style>

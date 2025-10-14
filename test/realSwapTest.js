@@ -8,13 +8,13 @@ import { BundlerManager } from '../src/bundler/BundlerManager.js';
 // ===== TEST PARAMETERS =====
 const TEST_PARAMS = {
   tokenInObject: {
-    address: '0x0000000000000000000000000000000000000000', // ETH
-    symbol: 'ETH',
+    address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // ETH
+    symbol: 'ONE',
     decimals: 18
   },
   tokenOutObject: {
-    address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // osETH
-    symbol: 'ONE',
+    address: '0x0000000000000000000000000000000000000000', // osETH
+    symbol: 'ETH',
     decimals: 18
   },
   // tokenOutObject: {
@@ -262,7 +262,7 @@ describe("Real Swap Integration Test", function () {
         value: msgValue,
         maxFeePerGas: maxFeePerGas,
         maxPriorityFeePerGas: maxPriorityFeePerGas,
-        gasLimit: 500000  // Fixed gas limit to skip estimation and see actual error
+        gasLimit: 800000  // Fixed gas limit to skip estimation and see actual error
       }
     );
 
