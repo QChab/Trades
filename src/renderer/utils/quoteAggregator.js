@@ -348,7 +348,7 @@ export async function getAllQuotes({
   const allowedProtocols = getAllowedProtocols(walletMode);
   console.log(`🔍 Querying protocols: ${allowedProtocols.join(', ')}`);
 
-  const TIMEOUT_MS = 30000; // 30 seconds
+  const TIMEOUT_MS = 10000; // 30 seconds
   const quotePromises = [];
   const queriedProtocols = []; // Track which protocols are actually queried
 

@@ -683,8 +683,8 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
             discoverBalancerPaths(intermediateForBalancer, tokenOut, estimatedMaxOutput, provider, prefetchedBalancerPools),
             discoverUniswapPaths(intermediate, tokenOut, estimatedMaxOutput, prefetchedUniswapPools)
           ]);
-        
-        if (balancerLeg2 && balancerLeg2.outputAmount) {
+
+        if (balancerLeg2 && balancerLeg2.length > 0 && balancerLeg2[0].outputAmount) {
           const conversionStep = needsETHToWETHConversion ? ' -> [wrap ETH to WETH]' : '';
           // Create a cross-DEX route for EACH first-leg pool
           uniswapLeg1.forEach((firstLegRoute, i) => {
@@ -693,9 +693,9 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
               protocol: 'mixed',
               legs: [
                 { ...firstLegRoute, protocol: 'uniswap', token: intermediate },
-                { ...balancerLeg2, protocol: 'balancer' }
+                { ...balancerLeg2[0], protocol: 'balancer' }
               ],
-              totalOutput: balancerLeg2.outputAmount,
+              totalOutput: balancerLeg2[0].outputAmount,
               path: `${tokenIn.symbol} -> ${intermediate.symbol} (Uniswap pool ${i + 1})${conversionStep} -> ${tokenOut.symbol} (Balancer)`,
               needsETHToWETHConversion,
               estimatedGas: needsETHToWETHConversion ? 220000 : 200000 // Extra gas for wrap

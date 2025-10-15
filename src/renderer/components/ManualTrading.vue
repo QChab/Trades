@@ -182,7 +182,48 @@
             <div>1 {{ effectivePrice.toSymbol }} = {{ effectivePrice.pricePerToken }} {{ effectivePrice.fromSymbol }} ≈ ${{ effectivePrice.usdValue }}</div>
             <div>1 {{ effectivePrice.fromSymbol }} = {{ effectivePrice.inversedPricePerToken }} {{ effectivePrice.toSymbol }} ≈ ${{ effectivePrice.usdValueInverse }}</div>
           </div>
-          
+
+          <!-- Execution Plan Display -->
+          <div
+            v-if="(tradeSummary.protocol === 'WalletBundler' || tradeSummary.protocol === 'Contract') && tradeSummary?.rawData?.bestRoute?.poolExecutionStructure?.levels"
+            class="execution-plan-container"
+            style="margin-bottom: 10px; padding: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 6px; font-size: 13px; color: #111;"
+          >
+            <div
+              @click="toggleExecutionPlan"
+              style="cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 500; margin-bottom: 6px; text-align: center;"
+            >
+              <span style="margin-right: 6px;">Execution Plan ({{ tradeSummary.rawData.bestRoute.poolExecutionStructure.levels.filter(l => l.pools && l.pools.length > 0).length }} level{{ tradeSummary.rawData.bestRoute.poolExecutionStructure.levels.filter(l => l.pools && l.pools.length > 0).length > 1 ? 's' : '' }})</span>
+              <span style="font-size: 16px;">{{ isExecutionPlanExpanded ? '▼' : '▶' }}</span>
+            </div>
+
+            <div v-if="isExecutionPlanExpanded" style="margin-top: 8px;">
+              <template
+                v-for="(level, levelIdx) in tradeSummary.rawData.bestRoute.poolExecutionStructure.levels"
+                :key="`level-${levelIdx}`"
+              >
+                <div
+                  v-if="level.pools && level.pools.length > 0"
+                  style="margin-bottom: 8px; text-align: center;"
+                >
+                  <div style="font-weight: 500; margin-bottom: 4px; color: #666;">Level {{ levelIdx }}:</div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">
+                    <div
+                      v-for="(pool, poolIdx) in level.pools"
+                      :key="`pool-${levelIdx}-${poolIdx}`"
+                      style="display: inline-flex; align-items: center; padding: 4px 8px; background: rgba(255, 255, 255, 0.8); border-radius: 4px; font-size: 12px;"
+                    >
+                      <span style="font-weight: 500; margin-right: 4px;">{{ pool.protocol }}:</span>
+                      <span>{{ typeof pool.inputToken === 'string' ? pool.inputToken : pool.inputToken?.symbol || 'UNKNOWN' }}→{{ typeof pool.outputToken === 'string' ? pool.outputToken : pool.outputToken?.symbol || 'UNKNOWN' }}</span>
+                      <span style="margin-left: 4px; color: #0066cc;">{{ (pool.percentage * 100).toFixed(3) }}%</span>
+                      <!-- <span v-if="pool.shouldUseAllBalance" style="margin-left: 4px; color: #ff6600; font-size: 10px;">[ALL]</span> -->
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
           <div class="address-form">
             <p>
               <span v-if="tradeSummary.protocol && tabOrder === 'market'">
@@ -866,7 +907,10 @@ export default {
     
     const pendingLimitOrders = ref([]);
     const shouldSwitchTokensForLimit = ref(false);
-    
+
+    // Execution plan display state
+    const isExecutionPlanExpanded = ref(false);
+
     // ETH balance monitoring for insufficient gas errors
     const isInsufficientEthError = ref(false);
     const ethBalanceCheckInterval = ref(null);
@@ -1444,7 +1488,11 @@ export default {
         fractionMixed: bestQuote.splits ? Math.round((1 - (bestQuote.splits.find(s => s.protocol === 'balancer')?.percentage || 0)) * 100) : null,
         pathId: bestQuote.pathId, // For Odos protocol
         fromToken,
-        toToken
+        toToken,
+        rawData: bestQuote.rawData || {
+          bestRoute: bestQuote.trades[0]?.route || null,
+          executionPlan: bestQuote.trades[0]?.executionPlan || null
+        }
       };
     };
 
@@ -1551,6 +1599,7 @@ export default {
             tradeSummary.toToken = bestTradeResult.toToken;
             tradeSummary.toTokenAddress = bestTradeResult.toToken.address;
             tradeSummary.gasLimit = bestTradeResult.gasLimit;
+            tradeSummary.rawData = bestTradeResult.rawData; // Add rawData for execution plan display
 
             // Note: Split information is now handled internally by the quote aggregator
             // The bestMixed structure contains the unified result, not separate tradesU/tradesB
@@ -2199,12 +2248,12 @@ export default {
         // Leaving edit mode - remove invalid tokens
         for (let i = 0; i < tokens.value.length; i++) {
           const token = tokens.value[i];
-          
+
           // Skip empty tokens or ETH
           if (!token.address || token.address === '') {
             continue;
           }
-          
+
           // Check if address is valid (excluding the zero address for ETH)
           if (!ethers.utils.isAddress(token.address) && token.address !== ethers.constants.AddressZero) {
             // Clear invalid token
@@ -2212,9 +2261,13 @@ export default {
             console.log(`Cleared invalid token at index ${i}`);
           }
         }
-        
+
         isEditingTokens.value = false;
       }
+    }
+
+    function toggleExecutionPlan() {
+      isExecutionPlanExpanded.value = !isExecutionPlanExpanded.value;
     }
 
     function deleteToken(index) {
@@ -5393,6 +5446,8 @@ export default {
       findSymbol,
       deleteToken,
       toggleEditingTokens,
+      toggleExecutionPlan,
+      isExecutionPlanExpanded,
       shouldSwitchTokensForLimit,
       setMarketPriceAsLimit,
 
