@@ -194,7 +194,11 @@
               style="cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 500; margin-bottom: 6px; text-align: center;"
             >
               <span style="margin-right: 6px;">Execution Plan ({{ tradeSummary.rawData.bestRoute.poolExecutionStructure.levels.filter(l => l.pools && l.pools.length > 0).length }} level{{ tradeSummary.rawData.bestRoute.poolExecutionStructure.levels.filter(l => l.pools && l.pools.length > 0).length > 1 ? 's' : '' }})</span>
-              <span style="font-size: 16px;">{{ isExecutionPlanExpanded ? '▼' : '▶' }}</span>
+              <img
+                :src="chevronDownImage"
+                class="chevron-down"
+                :class="{ rotated: isExecutionPlanExpanded }"
+              >
             </div>
 
             <div v-if="isExecutionPlanExpanded" style="margin-top: 8px;">
@@ -6284,5 +6288,19 @@ input.amount-out {
   padding: 2px 6px;
   border-radius: 3px;
   background-color: rgba(76, 175, 80, 0.1);
+}
+
+/* Chevron animation for execution plan */
+.chevron-down {
+  width: 20px;
+  height: 20px;
+  display: inline-block;
+  transition: transform 0.2s ease;
+  margin-left: 6px;
+  margin-bottom: 19px;
+}
+
+.rotated {
+  transform: rotate(180deg);
 }
 </style>
