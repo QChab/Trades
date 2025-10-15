@@ -781,18 +781,47 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
 
                 const bestLeg3 = selectBestVariant(leg3ForThisRoute);
 
-                paths.push({
-                  type: 'cross-dex-uniswap-3hop',
-                  protocol: 'uniswap',
-                  legs: [
-                    { ...firstLegRoute, protocol: 'uniswap', token: intermediate },
-                    { ...bestLeg2ForThisRoute, protocol: 'uniswap', token: ethIntermediate },
-                    { ...bestLeg3, protocol: 'uniswap' }
-                  ],
-                  totalOutput: bestLeg3.outputAmount, // Now specific to this route!
-                  path: `${tokenIn.symbol} -> ${intermediate.symbol} (pool ${i + 1}) -> ETH -> ${tokenOut.symbol} (Uniswap 3-hop)`,
-                  estimatedGas: 250000 // Higher gas for 3 hops
-                });
+                // CRITICAL: Validate that we don't reuse the same pool (backtracking)
+                // E.g., ETH→DAI→ETH uses ETH/DAI pool twice, which is unrealistic arbitrage
+                const poolIdentifiers = new Set();
+                const legs = [firstLegRoute, bestLeg2ForThisRoute, bestLeg3];
+                let hasReusedPool = false;
+
+                for (const leg of legs) {
+                  // Extract pool identifiers from Uniswap trade object
+                  if (leg.trade && leg.trade.swaps && leg.trade.swaps[0]) {
+                    const pools = leg.trade.swaps[0].route.pools;
+                    for (const pool of pools) {
+                      const poolId = pool.address || pool.id || pool.poolId;
+                      if (poolId) {
+                        const normalizedId = poolId.toLowerCase();
+                        if (poolIdentifiers.has(normalizedId)) {
+                          hasReusedPool = true;
+                          console.log(`   ⚠️ Filtered 3-hop route: reuses pool ${poolId.slice(0, 10)}... (${tokenIn.symbol} → ${intermediate.symbol} → ETH → ${tokenOut.symbol})`);
+                          break;
+                        }
+                        poolIdentifiers.add(normalizedId);
+                      }
+                    }
+                  }
+                  if (hasReusedPool) break;
+                }
+
+                // Only add route if no pool is reused
+                if (!hasReusedPool) {
+                  paths.push({
+                    type: 'cross-dex-uniswap-3hop',
+                    protocol: 'uniswap',
+                    legs: [
+                      { ...firstLegRoute, protocol: 'uniswap', token: intermediate },
+                      { ...bestLeg2ForThisRoute, protocol: 'uniswap', token: ethIntermediate },
+                      { ...bestLeg3, protocol: 'uniswap' }
+                    ],
+                    totalOutput: bestLeg3.outputAmount, // Now specific to this route!
+                    path: `${tokenIn.symbol} -> ${intermediate.symbol} (pool ${i + 1}) -> ETH -> ${tokenOut.symbol} (Uniswap 3-hop)`,
+                    estimatedGas: 250000 // Higher gas for 3 hops
+                  });
+                }
               }
 
               console.log(`   ✓ Found 3-hop routes: ${tokenIn.symbol} -> ${intermediate.symbol} -> ETH -> ${tokenOut.symbol}`);

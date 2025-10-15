@@ -193,7 +193,7 @@
               @click="toggleExecutionPlan"
               style="cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 500; margin-bottom: 6px; text-align: center;"
             >
-              <span style="margin-right: 6px;">Execution Plan ({{ tradeSummary.rawData.bestRoute.poolExecutionStructure.levels.filter(l => l.pools && l.pools.length > 0).length }} level{{ tradeSummary.rawData.bestRoute.poolExecutionStructure.levels.filter(l => l.pools && l.pools.length > 0).length > 1 ? 's' : '' }})</span>
+              <span style="margin-right: 6px;">Execution Plan ({{ executionPlanWithAmounts.length }} level{{ executionPlanWithAmounts.length > 1 ? 's' : '' }})</span>
               <img
                 :src="chevronDownImage"
                 class="chevron-down"
@@ -203,14 +203,11 @@
 
             <div v-if="isExecutionPlanExpanded" style="margin-top: 8px;">
               <template
-                v-for="(level, levelIdx) in tradeSummary.rawData.bestRoute.poolExecutionStructure.levels"
+                v-for="(level, levelIdx) in executionPlanWithAmounts"
                 :key="`level-${levelIdx}`"
               >
-                <div
-                  v-if="level.pools && level.pools.length > 0"
-                  style="margin-bottom: 8px; text-align: center;"
-                >
-                  <div style="font-weight: 500; margin-bottom: 4px; color: #666;">Level {{ levelIdx }}:</div>
+                <div style="margin-bottom: 8px; text-align: center;">
+                  <div style="font-weight: 500; margin-bottom: 4px; color: #666;">Level {{ level.level }}:</div>
                   <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">
                     <div
                       v-for="(pool, poolIdx) in level.pools"
@@ -218,9 +215,10 @@
                       style="display: inline-flex; align-items: center; padding: 4px 8px; background: rgba(255, 255, 255, 0.8); border-radius: 4px; font-size: 12px;"
                     >
                       <span style="font-weight: 500; margin-right: 4px;">{{ pool.protocol }}:</span>
-                      <span>{{ typeof pool.inputToken === 'string' ? pool.inputToken : pool.inputToken?.symbol || 'UNKNOWN' }}→{{ typeof pool.outputToken === 'string' ? pool.outputToken : pool.outputToken?.symbol || 'UNKNOWN' }}</span>
-                      <span style="margin-left: 4px; color: #0066cc;">{{ (pool.percentage * 100).toFixed(3) }}%</span>
-                      <!-- <span v-if="pool.shouldUseAllBalance" style="margin-left: 4px; color: #ff6600; font-size: 10px;">[ALL]</span> -->
+                      <span>{{ pool.inputSymbol }}</span>
+                      <span style="margin: 0 4px;">→</span>
+                      <span>{{ pool.outputSymbol }}</span>
+                      <span style="margin-left: 4px; color: #0066cc;">({{ (pool.percentage * 100).toFixed(1) }}%)</span>
                     </div>
                   </div>
                 </div>
@@ -533,12 +531,16 @@
         </div>
       </div>
 
-      <p v-if="tradeSummary.txId === 'pending' && !tradeSummary.isConfirmed && swapMessage === ''">
+      <p
+        v-for="trade in pendingTradesDisplay"
+        :key="trade.sentDateTimestamp"
+        v-show="swapMessage === ''"
+      >
         Swapping
-        {{ tradeSummary.fromAmount }} {{ tradeSummary.fromTokenSymbol }} →
-        {{ tradeSummary.toAmount }} {{ tradeSummary.toTokenSymbol }}
-        from {{ tradeSummary.fromAddressName }} on
-        {{ (new Date(tradeSummary.sentDate)).toLocaleString() }} …
+        {{ trade.fromAmount }} {{ trade.fromTokenSymbol }} →
+        {{ trade.toAmount }} {{ trade.toTokenSymbol }}
+        from {{ trade.fromAddressName }} on
+        {{ (new Date(trade.sentDate)).toLocaleString() }} …
       </p>
       
       <div
@@ -908,9 +910,12 @@ export default {
 
     // We keep a small “offset” map so that once a trade is sent, we subtract it from balance
     const balanceOffsetByTokenByAddress = reactive({});
-    
+
     const pendingLimitOrders = ref([]);
     const shouldSwitchTokensForLimit = ref(false);
+
+    // Array to store immutable snapshots of pending trades (prevents display corruption when tokens change)
+    const pendingTradesDisplay = ref([]);
 
     // Execution plan display state
     const isExecutionPlanExpanded = ref(false);
@@ -1054,6 +1059,66 @@ export default {
       const approveGasLimit = 100000; // Standard approval gas limit
       const gasCostUsd = (approveGasLimit * props.ethPrice * Number(props.gasPrice) * 1.1 / 1e18).toFixed(2);
       return gasCostUsd;
+    });
+
+    // Computed property to enrich execution plan with input amounts
+    const executionPlanWithAmounts = computed(() => {
+      if (!tradeSummary.rawData?.bestRoute?.poolExecutionStructure?.levels || !tradeSummary.fromAmount) {
+        return [];
+      }
+
+      const levels = tradeSummary.rawData.bestRoute.poolExecutionStructure.levels;
+
+      // Start with the initial input amount
+      let currentLevelInput = parseFloat(tradeSummary.fromAmount);
+
+      return levels.map((level, levelIdx) => {
+        if (!level.pools || level.pools.length === 0) {
+          return null;
+        }
+
+        const enrichedPools = level.pools.map(pool => {
+          const inputSymbol = typeof pool.inputToken === 'string' ? pool.inputToken : pool.inputToken?.symbol || 'UNKNOWN';
+          const outputSymbol = typeof pool.outputToken === 'string' ? pool.outputToken : pool.outputToken?.symbol || 'UNKNOWN';
+
+          // Only show amounts for Level 0 (first hop) where we know the exact input
+          // For subsequent levels, we'd need to recalculate outputs which is complex
+          let poolInput = null;
+          let formattedInput = null;
+
+          if (levelIdx === 0) {
+            poolInput = currentLevelInput * pool.percentage;
+
+            // Format with adaptive decimals: show more decimals for small values
+            if (poolInput >= 1) {
+              formattedInput = poolInput.toFixed(4);
+            } else if (poolInput >= 0.0001) {
+              formattedInput = poolInput.toFixed(6);
+            } else if (poolInput >= 0.00000001) {
+              formattedInput = poolInput.toFixed(8);
+            } else {
+              formattedInput = poolInput.toExponential(4);
+            }
+          }
+
+          return {
+            ...pool,
+            poolInput: poolInput,
+            inputSymbol,
+            outputSymbol,
+            formattedInput
+          };
+        });
+
+        // For next level: we use the same amount (approximate, since we don't calculate exact outputs here)
+        // The actual routing happens in the contract
+
+        return {
+          level: levelIdx,
+          pools: enrichedPools,
+          levelInput: currentLevelInput
+        };
+      }).filter(l => l !== null);
     });
 
     // Helper: get a user's token‐balance as a string with 5 decimals
@@ -2322,7 +2387,25 @@ export default {
         currentTradeSummary.txId = 'pending';
         currentTradeSummary.sentDate = new Date();
         currentTradeSummary.isConfirmed = false;
-        
+
+        // Capture timestamp for snapshot removal (needed for error handling where sentDate gets nulled)
+        const sentDateTimestamp = currentTradeSummary.sentDate.getTime();
+
+        // Create immutable snapshot for display BEFORE transaction is sent
+        // This prevents display corruption if user changes tokens while trade is executing
+        const tradeSnapshot = {
+          fromAmount: currentTradeSummary.fromAmount,
+          toAmount: currentTradeSummary.toAmount,
+          fromTokenSymbol: currentTradeSummary.fromTokenSymbol,
+          toTokenSymbol: currentTradeSummary.toTokenSymbol,
+          fromAddressName: currentTradeSummary.fromAddressName,
+          sentDate: currentTradeSummary.sentDate,
+          sentDateTimestamp: sentDateTimestamp, // Unique key for removal
+        };
+
+        // Add snapshot to display array
+        pendingTradesDisplay.value.push(tradeSnapshot);
+
         // Determine trade type based on order context
         if (providedTradeSummary) {
           if (providedTradeSummary.automatic) {
@@ -2514,9 +2597,25 @@ export default {
         console.log(currentTradeSummary);
 
         currentTradeSummary.txId = globalTxs[0]?.hash || null;
+
+        // Remove snapshot from display array now that trade is confirmed
+        const successSnapshotIndex = pendingTradesDisplay.value.findIndex(
+          s => s.sentDateTimestamp === sentDateTimestamp
+        );
+        if (successSnapshotIndex !== -1) {
+          pendingTradesDisplay.value.splice(successSnapshotIndex, 1);
+        }
         emit('update:trade', { ...currentTradeSummary });
         return { success: true };
       } catch (error) {
+        // Remove snapshot from display array on error
+        const errorSnapshotIndex = pendingTradesDisplay.value.findIndex(
+          s => s.sentDateTimestamp === sentDateTimestamp
+        );
+        if (errorSnapshotIndex !== -1) {
+          pendingTradesDisplay.value.splice(errorSnapshotIndex, 1);
+        }
+
         // If using provided trade summary, update it; otherwise update the reactive one
         const currentTradeSummary = providedTradeSummary || tradeSummary;
         currentTradeSummary.txId     = null;
@@ -5442,6 +5541,7 @@ export default {
       displayedGasCostUsd,
       approveGasCostUsd,
       deploymentCostUsd,
+      executionPlanWithAmounts,
 
       // methods
       switchTokens,
@@ -5455,6 +5555,7 @@ export default {
       shouldSwitchTokensForLimit,
       setMarketPriceAsLimit,
 
+      pendingTradesDisplay,
       pendingLimitOrders,
       placeLimitOrder,
       placeLimitOrderConfirmed,

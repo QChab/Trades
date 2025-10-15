@@ -81,8 +81,11 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
         const inputTokenSymbol = typeof pool.inputToken === 'string' ? pool.inputToken : (pool.inputToken?.symbol || 'UNKNOWN');
         const outputTokenSymbol = typeof pool.outputToken === 'string' ? pool.outputToken : (pool.outputToken?.symbol || 'UNKNOWN');
 
+        // Get pool identifier (poolAddress for Balancer, poolId for Uniswap)
+        const poolIdentifier = pool.poolAddress || pool.poolId || 'unknown';
+
         console.log(`      ${poolIdx + 1}. ${pool.protocol}: ${inputTokenSymbol}→${outputTokenSymbol}`);
-        console.log(`         Pool: ${pool.poolAddress.slice(0, 10)}...`);
+        console.log(`         Pool: ${poolIdentifier.slice(0, 10)}...`);
         console.log(`         Allocation: ${(pool.percentage * 100).toFixed(1)}% of level ${level.level} input${pool.shouldUseAllBalance ? ' [USE ALL]' : ''}`);
 
         // Display wrap/unwrap operation if applicable
@@ -612,8 +615,8 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
     } else if (route.protocol === 'uniswap') {
       // Uniswap single path
       pools.push({
-        poolAddress: path.trade?.route?.pools?.[0]?.address || '',
-        poolId: path.trade?.route?.pools?.[0]?.address || '',
+        poolAddress: path.trade?.route?.pools?.[0]?.address || path.trade?.route?.pools?.[0]?.id || '',
+        poolId: path.trade?.route?.pools?.[0]?.id || path.trade?.route?.pools?.[0]?.address || '',
         protocol: 'uniswap',
         inputToken: { symbol: tokenIn.symbol, address: tokenIn.address },
         outputToken: { symbol: tokenOut.symbol, address: tokenOut.address },
@@ -731,9 +734,37 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
           }
         }
 
+        // Extract pool identifier from various possible locations
+        let poolIdentifier = '';
+        if (protocol === 'uniswap' && leg.trade) {
+          // Try multiple paths for Uniswap pool data
+          const pool = leg.trade.route?.pools?.[0] || leg.trade.swaps?.[0]?.route?.pools?.[0];
+          if (pool) {
+            poolIdentifier = pool.id || pool.address || pool.poolId || '';
+          }
+        } else if (protocol === 'balancer' && leg.route) {
+          poolIdentifier = leg.route.poolId || leg.route.poolAddress || '';
+        }
+
+        // Fallback to leg-level properties
+        if (!poolIdentifier) {
+          poolIdentifier = leg.poolAddress || leg.poolId || '';
+        }
+
+        // Debug logging if still no pool identifier
+        if (!poolIdentifier) {
+          console.warn(`   ⚠️  Leg ${legIndex} (${protocol}) missing pool identifier. Trade structure:`, {
+            hasTrade: !!leg.trade,
+            hasRoute: !!leg.trade?.route,
+            hasPools: !!leg.trade?.route?.pools,
+            hasSwaps: !!leg.trade?.swaps,
+            poolsLength: leg.trade?.route?.pools?.length || leg.trade?.swaps?.[0]?.route?.pools?.length || 0
+          });
+        }
+
         const pool = {
-          poolAddress: leg.poolAddress || leg.trade?.route?.pools?.[0]?.address || leg.route?.poolId || '',
-          poolId: leg.poolAddress || leg.trade?.route?.pools?.[0]?.address || leg.route?.poolId || '',
+          poolAddress: poolIdentifier,
+          poolId: poolIdentifier,
           protocol: protocol,
           inputToken: inputToken,  // Store complete token object {symbol, address}
           outputToken: outputToken,  // Store complete token object {symbol, address}
