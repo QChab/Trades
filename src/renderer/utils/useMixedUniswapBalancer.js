@@ -101,7 +101,7 @@ export async function useMixedUniswapBalancer({
 
       // Fetch Balancer pools
       if (useBalancer) {
-        console.log('📦 Fetching Balancer pools...');
+        // console.log('📦 Fetching Balancer pools...');
         allBalancerPools = await fetchAllBalancerPools(allTokens, provider);
       }
 
@@ -1230,9 +1230,6 @@ async function optimizeMixedRoutes(uniswapPaths, balancerPaths, crossDEXPaths, a
  * Display routes in a readable format
  */
 function displayRoutes(routes, tokenOut) {
-  console.log('\n📋 Discovered Routes:');
-  console.log('─'.repeat(80));
-
   routes.forEach((route, index) => {
     const output = ethers.utils.formatUnits(route.totalOutput, tokenOut.decimals);
     const type = route.type || 'unknown';
@@ -1256,8 +1253,6 @@ function displayRoutes(routes, tokenOut) {
 
     console.log('');
   });
-
-  console.log('─'.repeat(80));
 }
 
 /**

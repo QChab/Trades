@@ -1360,15 +1360,22 @@ export default {
       console.log('Fetching quotes on exchanges for', fromToken.symbol, '->', toToken.symbol);
       console.log('Token addresses:', { fromToken: fromToken.address, toToken: toToken.address });
 
+      // Handle null sender address (automatic orders): use first available address for quote purposes
+      let effectiveSenderAddr = senderAddr;
+      if (!effectiveSenderAddr && props.addresses && props.addresses.length > 0) {
+        effectiveSenderAddr = props.addresses[0].address;
+        console.log(`⚠️ Null sender address detected (automatic order), using fallback: ${effectiveSenderAddr}`);
+      }
+
       // Get wallet mode for protocol filtering
       // forceWalletMode: undefined = use sender's mode, null = all protocols, specific string = use that mode
       let walletMode;
       if (forceWalletMode !== undefined) {
         walletMode = forceWalletMode;
-        console.log(`Using forced wallet mode: ${walletMode === null ? 'ALL PROTOCOLS' : walletMode}`);
+        console.log(`Using forced wallet mode: ${walletMode === null ? 'U + B' : walletMode}`);
       } else {
         walletMode = senderDetails.value.mode;
-        console.log(`Using wallet mode for address ${senderAddr}: ${walletMode || 'ALL PROTOCOLS (no mode set)'}`);
+        console.log(`Using wallet mode for address ${effectiveSenderAddr}: ${walletMode || 'U + B (no mode set)'}`);
       }
 
       // Fetch all Uniswap pools for both tokens
@@ -1382,7 +1389,7 @@ export default {
         fromToken,
         toToken,
         amount,
-        senderAddress: senderAddr,
+        senderAddress: effectiveSenderAddr,
         walletMode,
         provider: props.provider,
         uniswapPools,
@@ -1836,9 +1843,18 @@ export default {
     }
 
     const getTradesBalancer = async (_newFrom, _newTo, _newAmt, _newSenderAddress, shouldFetchGasLimit) => {
-      // Extract address string if _newSenderAddress is an object
-      const senderAddressString = typeof _newSenderAddress === 'string' ? _newSenderAddress : _newSenderAddress.address;
-      
+      // Extract address string, handling null/undefined and object types
+      let senderAddressString;
+      if (_newSenderAddress === null || _newSenderAddress === undefined) {
+        // For automatic orders (null sender), use first available address for quote purposes
+        senderAddressString = props.addresses?.[0]?.address || senderDetails.value.address;
+        console.log(`⚠️ getTradesBalancer: null sender, using fallback: ${senderAddressString}`);
+      } else if (typeof _newSenderAddress === 'string') {
+        senderAddressString = _newSenderAddress;
+      } else {
+        senderAddressString = _newSenderAddress.address;
+      }
+
       const result = await findTradeBalancer(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], _newAmt, senderAddressString);
 
       const txData = {
@@ -3159,12 +3175,13 @@ export default {
 
     // Async function to handle multi-address execution without blocking main loop
     // Helper function to re-validate trigger conditions
-    async function revalidateTriggerCondition(order, executionAmount) {
+    // forcedProtocol: optional parameter to force a specific protocol (for multi-address re-validation)
+    async function revalidateTriggerCondition(order, executionAmount, forcedProtocol = null) {
       try {
         // Get current token prices
         const fromToken = tokensByAddresses.value[order.fromToken.address];
         const toToken = tokensByAddresses.value[order.toToken.address];
-        
+
         if (!fromToken?.price || !toToken?.price) {
           console.log(`Missing price data for re-validation: fromToken=${fromToken?.symbol}, toToken=${toToken?.symbol}`);
           return { valid: false, reason: 'Missing price data' };
@@ -3179,15 +3196,41 @@ export default {
         }
 
         // Get exact execution price from DEX
-        // For limit orders: use the order creator's wallet mode
-        const senderAddr = order?.sender?.address || senderDetails.value.address;
-        const orderCreatorMode = await getWalletModeForAddress(senderAddr);
+        // Determine sender address and wallet mode based on order type:
+        // - Multi-address re-validation: use forced protocol
+        // - Automatic order: null sender (sender-agnostic), query all protocols
+        // - Limit order: use order creator's address and wallet mode
+        // - Manual order: use currently selected wallet
+        let senderAddr;
+        let walletMode;
+
+        if (forcedProtocol) {
+          // Multi-address re-validation: use the winning protocol's mode
+          senderAddr = order?.sender?.address || props.addresses[0]?.address;
+          // Convert protocol to wallet mode for getBestTrades
+          if (forcedProtocol === 'Odos') walletMode = 'odos';
+          else if (forcedProtocol === 'Contract') walletMode = 'contract';
+          else walletMode = null; // Uniswap/Balancer/mixed
+        } else if (order.automatic) {
+          // Automatic order: sender-agnostic, evaluate ALL protocols
+          senderAddr = null;
+          walletMode = 'odos & contract';
+        } else if (order?.sender) {
+          // Limit order: use order creator's address and wallet mode
+          senderAddr = order.sender.address;
+          walletMode = await getWalletModeForAddress(senderAddr);
+        } else {
+          // Manual order: use currently selected wallet
+          senderAddr = senderDetails.value.address;
+          walletMode = senderDetails.value.mode;
+        }
+
         let bestTradeResult = await getBestTrades(
           order.fromToken.address,
           order.toToken.address,
           executionAmount.toString(),
           senderAddr,
-          orderCreatorMode // Use order creator's wallet mode
+          walletMode
         );
 
         if (!bestTradeResult || !bestTradeResult.totalHuman) {
@@ -3250,29 +3293,29 @@ export default {
       }
     }
 
-    async function executeMultiAddressTrade(order, addressSelection, exactExecutionPrice, targetAmount) {
+    async function executeMultiAddressTrade(order, addressSelection, exactExecutionPrice, targetAmount, protocol) {
       let totalExecuted = 0;
       let allExecutionSuccessful = true;
       let validationFailures = 0;
       const maxValidationFailures = 2; // Allow up to 2 validation failures before stopping
-      
+
       try {
-        console.log(`Starting multi-address execution for order ${order.id} with ${addressSelection.addresses.length} addresses, target amount: ${targetAmount}`);
-        
+        console.log(`Starting multi-address execution for order ${order.id} with ${addressSelection.addresses.length} addresses, target amount: ${targetAmount}, protocol: ${protocol}`);
+
         // Execute trades sequentially with each address
         for (let i = 0; i < addressSelection.addresses.length; i++) {
           const addressInfo = addressSelection.addresses[i];
           const { address, amount, name } = addressInfo;
-          
+
           if (totalExecuted >= targetAmount) break;
-          
+
           const executeAmount = Math.min(amount, targetAmount - totalExecuted);
-          
+
           // Re-validate trigger conditions before each address execution (except first)
           if (i > 0) {
             console.log(`Re-validating trigger conditions before executing with address ${name} (${i + 1}/${addressSelection.addresses.length})`);
-            
-            const validation = await revalidateTriggerCondition(order, executeAmount);
+
+            const validation = await revalidateTriggerCondition(order, executeAmount, protocol);
             
             if (!validation.valid) {
               console.log(`⚠️ Trigger condition no longer valid for address ${name}: ${validation.reason}`);
@@ -3297,8 +3340,8 @@ export default {
           }
           
           console.log(`Executing ${executeAmount} ${order.fromToken.symbol} from address ${name} (${i + 1}/${addressSelection.addresses.length})`);
-          
-          const execution = await executeTradeWithAddress(order, addressInfo, executeAmount);
+
+          const execution = await executeTradeWithAddress(order, addressInfo, executeAmount, protocol);
           
           if (execution.success) {
             totalExecuted += execution.executedAmount;
@@ -3501,17 +3544,18 @@ export default {
     }
 
     // Helper function to execute trade with specific address and amount
-    async function executeTradeWithAddress(order, addressInfo, amount) {
+    async function executeTradeWithAddress(order, addressInfo, amount, protocol) {
       try {
-        console.log('executeTradeWithAddress called with addressInfo:', addressInfo);
+        console.log('executeTradeWithAddress called with addressInfo:', addressInfo, 'protocol:', protocol);
         const modifiedOrder = {
           ...order,
           fromAmount: amount,
           sender: addressInfo
         };
-        
+
         // Use revalidateTriggerCondition to get trade result and validate
-        const validation = await revalidateTriggerCondition(modifiedOrder, amount);
+        // Pass protocol to ensure we use the winning protocol from optimization
+        const validation = await revalidateTriggerCondition(modifiedOrder, amount, protocol);
         
         if (!validation.valid) {
           throw new Error(`Trade condition not met: ${validation.reason}`);
@@ -3579,8 +3623,8 @@ export default {
         // 🔍 Re-validate and refresh trade data if approval took longer than 5 seconds
         if (approvalDuration > 5) {
           console.log(`⚠️ Approval took ${approvalDuration.toFixed(2)}s (>5s), re-validating with fresh trade data...`);
-          
-          const postApprovalValidation = await revalidateTriggerCondition(order, amount);
+
+          const postApprovalValidation = await revalidateTriggerCondition(order, amount, protocol);
           
           if (!postApprovalValidation.valid) {
             console.log(`❌ Price condition no longer valid after slow approval: ${postApprovalValidation.reason}`);
@@ -3796,6 +3840,29 @@ export default {
             let exactExecutionPrice = null;
             let comparableExecutionPrice = null;
             let workingMultiplier = null;
+
+            // Get exact trade execution price by fetching best trades
+            // Determine sender and mode based on order type:
+            // - Automatic order: sender-agnostic, query ALL protocols ('odos & contract' mode)
+            // - Limit order: use sender's wallet mode
+            // - Manual order: use currently selected wallet mode
+            let senderAddr;
+            let walletMode;
+
+            if (order.automatic) {
+              // Automatic order: evaluate ALL protocols, sender-agnostic
+              senderAddr = null;
+              walletMode = 'odos & contract';
+            } else if (order?.sender) {
+              // Limit order: use order creator's address and wallet mode
+              senderAddr = order.sender.address;
+              walletMode = await getWalletModeForAddress(senderAddr);
+            } else {
+              // Manual order: use currently selected wallet
+              senderAddr = senderDetails.value.address;
+              walletMode = senderDetails.value.mode;
+            }
+
             
             for (const multiplier of testMultipliers) {
               const testAmount = remainingAmount * multiplier;  // FIX: Use remainingAmount, not order.fromAmount
@@ -3803,18 +3870,12 @@ export default {
 
               console.log(`Order ${order.id}: Testing with ${(multiplier * 100)}% of remaining amount ($${testValueUSD.toFixed(2)} worth)`);
               
-              // Get exact trade execution price by fetching best trades
-              // If order has sender (limit order): use sender's wallet mode
-              // If no sender (automatic order): query all protocols
-              const senderAddr = order?.sender?.address || senderDetails.value.address;
-              const walletMode = order?.sender ? await getWalletModeForAddress(senderAddr) : null;
-
               const bestTradeResult = await getBestTrades(
                 order.fromToken.address,
                 order.toToken.address,
                 testAmount.toString(),
                 senderAddr,
-                walletMode // Use sender's mode for limit orders, null for automatic orders
+                walletMode
               );
 
               // Calculate exact execution price using the helper (with small test amount)
@@ -3896,7 +3957,7 @@ export default {
             // Execute order asynchronously without blocking main loop
             tryExecutePendingOrder(order, exactExecutionPrice, workingMultiplier);
             
-            await new Promise(r => setTimeout(r, 2000));
+            await new Promise(r => setTimeout(r, 1000));
           } catch (error) {
             console.error(`Error checking limit order ${order.id}:`, error);
           }
@@ -3934,19 +3995,35 @@ export default {
       }
       
       // Get trade result for this amount
-      // If order has sender (limit order): use sender's wallet mode
-      // If no sender (automatic order): query all protocols
+      // Determine sender and mode based on order type:
+      // - Automatic order: sender-agnostic (null), query ALL protocols ('odos & contract' mode)
+      // - Limit order: use sender's wallet mode
+      // - Manual order: use currently selected wallet mode
       let testResult;
       try {
-        const senderAddr = order?.sender?.address || senderDetails.value.address;
-        const walletMode = order?.sender ? await getWalletModeForAddress(senderAddr) : null;
+        let senderAddr;
+        let walletMode;
+
+        if (order.automatic) {
+          // Automatic order: evaluate ALL protocols, sender-agnostic
+          senderAddr = null;  // Important: null for sender-agnostic evaluation
+          walletMode = 'odos & contract';
+        } else if (order?.sender) {
+          // Limit order: use order creator's address and wallet mode
+          senderAddr = order.sender.address;
+          walletMode = await getWalletModeForAddress(senderAddr);
+        } else {
+          // Manual order: use currently selected wallet
+          senderAddr = senderDetails.value.address;
+          walletMode = senderDetails.value.mode;
+        }
 
         testResult = await getBestTrades(
           order.fromToken.address,
           order.toToken.address,
           testAmount.toString(),
           senderAddr,
-          walletMode // Use sender's mode for limit orders, null for automatic orders
+          walletMode
         );
       } catch (error) {
         console.error(`Error getting best trades for order ${order.id}:`, error);
@@ -4133,7 +4210,7 @@ export default {
           // Adapt margin error based on the range we're working with
           // Use 2.5% of the range size as margin error
           const rangeSize = highPercentage - lowPercentage;
-          const marginError = rangeSize * 0.01; // 1% precision of the search range
+          const marginError = rangeSize * 0.005; // 0.5% precision of the search range
           const minPercentage = marginError; // Minimum percentage to consider
                     
           // Binary search to find maximum executable percentage
@@ -4147,7 +4224,7 @@ export default {
               typeOfRemainingAmount: typeof remainingAmount
             });
             
-            await new Promise(r => setTimeout(r, 6000));
+            await new Promise(r => setTimeout(r, 1000));
             const testResult = await testExecutableAmount(order, testAmount);
             console.log(testResult)
             if (testResult.unprofitable) {
@@ -4242,8 +4319,11 @@ export default {
       } catch (error) {
         console.error(`❌ Error executing order ${order.id}:`, error);
 
-        // Increment failure counter for automatic orders
-        if (order.automatic) {
+        // Check if this is a skip error (no wallet support) - don't increment failure counter
+        const isSkipError = error.message && error.message.startsWith('SKIP_NO_WALLET_SUPPORT:');
+
+        // Increment failure counter for automatic orders (but not for skip errors)
+        if (order.automatic && !isSkipError) {
           const currentCount = orderFailureCounters.get(order.id) || 0;
           const newCount = currentCount + 1;
           orderFailureCounters.set(order.id, newCount);
@@ -4268,11 +4348,29 @@ export default {
         }
 
         // Restore order status on error
+        // Use partially_filled if order has executedAmount, otherwise pending
+        const restoredStatus = (order.executedAmount && order.executedAmount > 0) ? 'partially_filled' : 'pending';
         try {
           await window.electronAPI.updatePendingOrder({
             ...JSON.parse(JSON.stringify(order)),
-            status: 'pending'
+            status: restoredStatus
           });
+          console.log(`📝 Restored order ${order.id} status to ${restoredStatus}`);
+
+          // Update UI status for automatic orders
+          if (order.automatic && order.sourceLocation) {
+            const { rowIndex, colIndex, levelIndex, levelType } = order.sourceLocation;
+            if (tokensInRow[rowIndex]?.columns[colIndex]?.details) {
+              const levels = levelType === 'sell'
+                ? tokensInRow[rowIndex].columns[colIndex].details.sellLevels
+                : tokensInRow[rowIndex].columns[colIndex].details.buyLevels;
+
+              if (levels[levelIndex]) {
+                levels[levelIndex].status = restoredStatus;
+                updateDetailsOrder(rowIndex, colIndex, tokensInRow[rowIndex].columns[colIndex].details);
+              }
+            }
+          }
         } catch (dbError) {
           console.error(`Failed to restore order ${order.id} status:`, dbError);
         }
@@ -4316,6 +4414,13 @@ export default {
             }
 
             console.log(`Filtered ${filteredAddresses.length}/${availableAddresses.length} wallets that support protocol ${winningProtocol}`);
+
+            // CRITICAL: If no wallets support the winning protocol, skip this order for now
+            if (filteredAddresses.length === 0) {
+              console.log(`⚠️ Skipping order ${order.id}: No wallets support protocol ${winningProtocol}. Enable ${winningProtocol} mode on at least one wallet to execute this order.`);
+              throw new Error(`SKIP_NO_WALLET_SUPPORT: No wallets support protocol ${winningProtocol}`);
+            }
+
             availableAddresses = filteredAddresses;
           }
 
@@ -4325,7 +4430,7 @@ export default {
             order,
             availableAddresses
           );
-          
+
           if (addressSelection.totalAvailable < executableAmount) {
             console.log(`Insufficient total balance across all addresses. Need: ${executableAmount}, Available: ${addressSelection.totalAvailable}`);
             throw new Error(`Insufficient balance across wallets that support protocol ${limitOrderTradeSummary.protocol}. Need: ${executableAmount}, Available: ${addressSelection.totalAvailable}`);
@@ -4333,10 +4438,10 @@ export default {
           
           // Execute multi-address trade asynchronously without blocking main loop
           order.status = 'processing';
-          
+
           console.log(`Executing multi-address trade for order ${order.id} with amount ${executableAmount}`);
           console.log({addressSelection})
-          await executeMultiAddressTrade(order, addressSelection, exactExecutionPrice, executableAmount);
+          await executeMultiAddressTrade(order, addressSelection, exactExecutionPrice, executableAmount, limitOrderTradeSummary.protocol);
         } else {
           // Limit order: Single address execution
           const singleAddress = order.sender;

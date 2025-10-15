@@ -291,7 +291,7 @@ const POOL_ABI = [
  */
 export async function fetchAllBalancerPools(tokenAddresses, provider) {
   try {
-    console.log(`🔍 Bulk fetching Balancer pools for ${tokenAddresses.length} tokens...`);
+    // console.log(`🔍 Bulk fetching Balancer pools for ${tokenAddresses.length} tokens...`);
 
     // Normalize addresses
     const normalizedTokens = tokenAddresses.map(addr => addr.toLowerCase());
@@ -1071,7 +1071,7 @@ export async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provi
     return bOut.gt(aOut) ? 1 : -1;
   });
   
-  console.log(`Found ${paths.length} total paths, returning best ${Math.min(5, paths.length)}`);
+  // console.log(`Found ${paths.length} total paths, returning best ${Math.min(5, paths.length)}`);
   return paths.slice(0, 5);
 }
 
