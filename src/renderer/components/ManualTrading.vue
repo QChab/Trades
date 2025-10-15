@@ -212,13 +212,13 @@
                     <div
                       v-for="(pool, poolIdx) in level.pools"
                       :key="`pool-${levelIdx}-${poolIdx}`"
-                      style="display: inline-flex; align-items: center; padding: 4px 8px; background: rgba(255, 255, 255, 0.8); border-radius: 4px; font-size: 12px;"
+                      style="display: inline-flex; align-items: center; padding: 4px 8px; background: rgba(255, 255, 255, 0.8); border-radius: 4px; font-size: 14px;"
                     >
                       <span style="font-weight: 500; margin-right: 4px;">{{ pool.protocol }}:</span>
                       <span>{{ pool.inputSymbol }}</span>
                       <span style="margin: 0 4px;">→</span>
                       <span>{{ pool.outputSymbol }}</span>
-                      <span style="margin-left: 4px; color: #0066cc;">({{ (pool.percentage * 100).toFixed(1) }}%)</span>
+                      <span style="margin-left: 4px; color: #0066cc;">({{ (pool.percentage * 100).toFixed(3) }}%)</span>
                     </div>
                   </div>
                 </div>
