@@ -246,10 +246,8 @@ contract WalletBundler {
                 // Both Uniswap V4 and Balancer V3 use Permit2 approval system
                 // Smart contracts can call approve() but cannot sign permit messages
 
-                // Determine the actual spender for Permit2
                 // Uniswap: Universal Router pulls tokens via Permit2
                 // Balancer: Vault pulls tokens via Permit2 (not Router!)
-                // address permit2Spender = target == BALANCER_ROUTER ? BALANCER_VAULT : target;
                 // address permit2Spender = target == BALANCER_ROUTER ? BALANCER_VAULT : target;
 
                 uint256 permit2Allowance;

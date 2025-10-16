@@ -7,23 +7,28 @@ import { BundlerManager } from '../src/bundler/BundlerManager.js';
 
 // ===== TEST PARAMETERS =====
 const TEST_PARAMS = {
+  // tokenInObject: {
+  //   address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // ETH
+  //   symbol: 'ONE',
+  //   decimals: 18
+  // },
   tokenInObject: {
-    address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // ETH
-    symbol: 'ONE',
-    decimals: 18
-  },
-  tokenOutObject: {
     address: '0x0000000000000000000000000000000000000000', // osETH
     symbol: 'ETH',
     decimals: 18
   },
   // tokenOutObject: {
-  //   address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
-  //   symbol: 'AAVE',
+  //   address: '0x45804880de22913dafe09f4980848ece6ecbaf78', // AAVE
+  //   symbol: 'PAXG',
   //   decimals: 18
   // },
-  amountIn: '0.000001', // In human-readable format, not wei
-  slippageTolerance: 0.5 // 0.5%
+  tokenOutObject: {
+    address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
+    symbol: 'AAVE',
+    decimals: 18
+  },
+  amountIn: '0.0000964', // In human-readable format, not wei
+  slippageTolerance: 20 // 0.5%
 };
 
 // ===== DEPLOYED CONTRACT ADDRESSES =====
@@ -249,6 +254,8 @@ describe("Real Swap Integration Test", function () {
     console.log(`   Max Fee Per Gas: ${ethers.utils.formatUnits(maxFeePerGas, 'gwei')} gwei`);
     console.log(`   Max Priority Fee: ${maxPriorityFeePerGas.toString()} wei`);
 
+    console.log(contractCallArgs.encoderData)
+
     if (contractCallArgs.encoderTargets.length <= 1) return console.log('not interesting tx to try')
     // Execute the swap
     const tx = await walletBundler.encodeAndExecuteaaaaaYops(
@@ -262,7 +269,7 @@ describe("Real Swap Integration Test", function () {
         value: msgValue,
         maxFeePerGas: maxFeePerGas,
         maxPriorityFeePerGas: maxPriorityFeePerGas,
-        gasLimit: 800000  // Fixed gas limit to skip estimation and see actual error
+        // gasLimit: 1200000  // Fixed gas limit to skip estimation and see actual error
       }
     );
 

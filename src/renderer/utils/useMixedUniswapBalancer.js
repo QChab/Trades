@@ -2104,7 +2104,7 @@ async function optimizeInterGroupSplit(
     iteration++;
 
     // PRUNE: After fine-tuning starts, exclude groups below threshold from optimization
-    if (stepSize < 0.01) { // Only prune after coarse optimization
+    if (stepSize < 0.03) { // Only prune after coarse optimization
       for (let i = 0; i < numGroups; i++) {
         if (currentSplit[i] < MIN_GROUP_ALLOCATION && !excludedGroups.has(i)) {
           excludedGroups.add(i);
@@ -2603,10 +2603,37 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
 
   // CRITICAL: Remove backwards routes that consume the target output token
   // Example: For ETH→ONE, remove ONE→ETH (trades away our target)
-  const beforeFilterCount = groupsWithLevels.length;
+  let beforeFilterCount = groupsWithLevels.length;
   groupsWithLevels = groupsWithLevels.filter(g => g.inputToken !== tokenOut.symbol);
   if (groupsWithLevels.length < beforeFilterCount) {
     console.log(`\n🚫 Filtered out ${beforeFilterCount - groupsWithLevels.length} backwards route(s) that consume target token ${tokenOut.symbol}`);
+  }
+
+  // CRITICAL: Remove dead-end routes - groups that produce a token that:
+  // 1. Is NOT the final output token
+  // 2. Is NOT consumed by any downstream group
+  beforeFilterCount = groupsWithLevels.length;
+  groupsWithLevels = groupsWithLevels.filter(group => {
+    // If this group outputs the final token, keep it
+    if (group.outputToken === tokenOut.symbol) {
+      return true;
+    }
+
+    // Check if any downstream group consumes this group's output
+    const isConsumed = groupsWithLevels.some(otherGroup =>
+      otherGroup.level > group.level &&
+      otherGroup.inputToken === group.outputToken
+    );
+
+    if (!isConsumed) {
+      console.log(`   🚫 Filtering dead-end route: ${group.tokenPairKey} (produces ${group.outputToken} which is not consumed)`);
+    }
+
+    return isConsumed;
+  });
+
+  if (groupsWithLevels.length < beforeFilterCount) {
+    console.log(`\n🚫 Filtered out ${beforeFilterCount - groupsWithLevels.length} dead-end route(s)`);
   }
 
   console.log(`\n📋 Execution Levels:`);
@@ -2901,7 +2928,7 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
       const percentageOfLevelInput = poolPercentageWithinGroup * groupPercentageOfLevel;
 
       // FILTER: Skip pools with allocation < 0.01% (0.0001) to save gas
-      if (percentageOfLevelInput < 0.0001) {
+      if (percentageOfLevelInput < 0.0002) {
         // console.log(`      ⚠️  Skipping pool ${pool.poolAddress?.slice(0, 10)}... at Level ${level}: ${(percentageOfLevelInput * 100).toFixed(4)}% (< 0.01% threshold)`);
         continue; // Skip this pool
       }
@@ -3005,10 +3032,82 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
   const levels = Array.from(levelMap.entries())
     .sort((a, b) => a[0] - b[0])  // Sort levels by number (unchanged)
     .map(([levelNum, pools]) => {
-      // Group pools by input token within this level
-      const inputTokenGroups = new Map();
+      // Group pools by (inputToken, outputToken) pair within this level
+      const tokenPairGroups = new Map();
 
       pools.forEach(pool => {
+        const pairKey = `${pool.inputToken}->${pool.outputToken}`;
+        if (!tokenPairGroups.has(pairKey)) {
+          tokenPairGroups.set(pairKey, []);
+        }
+        tokenPairGroups.get(pairKey).push(pool);
+      });
+
+      // CONSOLIDATION: For each token pair, consolidate pools < 0.02% into the largest pool
+      const consolidatedPools = [];
+
+      tokenPairGroups.forEach((poolGroup, pairKey) => {
+        // Calculate total input for this token pair
+        const totalPairInput = poolGroup.reduce((sum, pool) => {
+          return sum.add(pool.inputAmount || ethers.BigNumber.from(0));
+        }, ethers.BigNumber.from(0));
+
+        // Find pools with < 0.02% of total pair input
+        const threshold = 0.0002; // 0.02%
+        const tinyPools = [];
+        const significantPools = [];
+
+        poolGroup.forEach(pool => {
+          const poolPercentageOfPair = totalPairInput.gt(0)
+            ? pool.inputAmount.mul(1000000).div(totalPairInput).toNumber() / 1000000
+            : 0;
+
+          if (poolPercentageOfPair < threshold && poolPercentageOfPair > 0) {
+            tinyPools.push(pool);
+            console.log(`      🔄 Consolidating tiny pool ${pool.poolAddress?.slice(0, 10)}... (${(poolPercentageOfPair * 100).toFixed(4)}% of ${pairKey})`);
+          } else {
+            significantPools.push(pool);
+          }
+        });
+
+        // If we have tiny pools, consolidate them into the largest significant pool
+        if (tinyPools.length > 0 && significantPools.length > 0) {
+          // Find the largest pool by inputAmount
+          const largestPool = significantPools.reduce((max, pool) => {
+            const maxAmount = max.inputAmount || ethers.BigNumber.from(0);
+            const poolAmount = pool.inputAmount || ethers.BigNumber.from(0);
+            return poolAmount.gt(maxAmount) ? pool : max;
+          });
+
+          // Sum up all tiny pool inputs, outputs, and percentages
+          const consolidatedInput = tinyPools.reduce((sum, pool) => {
+            return sum.add(pool.inputAmount || ethers.BigNumber.from(0));
+          }, ethers.BigNumber.from(0));
+
+          const consolidatedOutput = tinyPools.reduce((sum, pool) => {
+            return sum.add(pool.expectedOutput || ethers.BigNumber.from(0));
+          }, ethers.BigNumber.from(0));
+
+          const consolidatedPercentage = tinyPools.reduce((sum, pool) => {
+            return sum + (pool.percentage || 0);
+          }, 0);
+
+          // Add to largest pool
+          largestPool.inputAmount = largestPool.inputAmount.add(consolidatedInput);
+          largestPool.expectedOutput = largestPool.expectedOutput.add(consolidatedOutput);
+          largestPool.percentage = largestPool.percentage + consolidatedPercentage;
+
+          console.log(`      ✓ Consolidated ${tinyPools.length} tiny pools into ${largestPool.poolAddress?.slice(0, 10)}... (new: ${(largestPool.percentage * 100).toFixed(2)}%)`);
+        }
+
+        // Add significant pools to result (tiny pools are now discarded)
+        consolidatedPools.push(...significantPools);
+      });
+
+      // Group consolidated pools by input token for sorting
+      const inputTokenGroups = new Map();
+
+      consolidatedPools.forEach(pool => {
         const inputToken = pool.inputToken;
         if (!inputTokenGroups.has(inputToken)) {
           inputTokenGroups.set(inputToken, []);

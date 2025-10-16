@@ -1677,8 +1677,8 @@ export default {
             }
 
             // Check if approval is needed
-            console.log(`📋 About to check allowances. Protocol: "${bestTradeResult.protocol}", Token: ${_newFrom}`);
             if (_newFrom !== ethers.constants.AddressZero) {
+              console.log(`📋 About to check allowances. Protocol: "${bestTradeResult.protocol}", Token: ${_newFrom}`);
               await checkAllowances(_newFrom, null, bestTradeResult.trades, bestTradeResult.protocol);
             } else {
               needsToApprove.value = false;
@@ -2366,9 +2366,22 @@ export default {
       }
     }
 
+    // Helper function to safely serialize objects containing BigInt
+    // Recursively converts BigInt to strings to avoid JSON.stringify errors
+    function safeJsonClone(obj) {
+      return JSON.parse(JSON.stringify(obj, (key, value) => {
+        // Convert BigInt to string
+        if (typeof value === 'bigint') {
+          return value.toString();
+        }
+        return value;
+      }));
+    }
+
     // ─── triggerTrade(): Execute *all* legs ────
     const triggerTrade = async (providedTrades = null, providedTradeSummary = null) => {
       let globalWarnings;
+      let sentDateTimestamp; // Declare here so it's accessible in try, catch, and finally
 
       // Determine if this is a manual trade or automatic/limit order
       const isManualTrade = !providedTradeSummary;
@@ -2389,22 +2402,25 @@ export default {
         currentTradeSummary.isConfirmed = false;
 
         // Capture timestamp for snapshot removal (needed for error handling where sentDate gets nulled)
-        const sentDateTimestamp = currentTradeSummary.sentDate.getTime();
+        sentDateTimestamp = currentTradeSummary.sentDate.getTime();
 
         // Create immutable snapshot for display BEFORE transaction is sent
         // This prevents display corruption if user changes tokens while trade is executing
-        const tradeSnapshot = {
-          fromAmount: currentTradeSummary.fromAmount,
-          toAmount: currentTradeSummary.toAmount,
-          fromTokenSymbol: currentTradeSummary.fromTokenSymbol,
-          toTokenSymbol: currentTradeSummary.toTokenSymbol,
-          fromAddressName: currentTradeSummary.fromAddressName,
-          sentDate: currentTradeSummary.sentDate,
-          sentDateTimestamp: sentDateTimestamp, // Unique key for removal
-        };
+        // Safety check: Only create snapshot if symbols are defined
+        if (currentTradeSummary.fromTokenSymbol && currentTradeSummary.toTokenSymbol) {
+          const tradeSnapshot = {
+            fromAmount: currentTradeSummary.fromAmount,
+            toAmount: currentTradeSummary.toAmount,
+            fromTokenSymbol: currentTradeSummary.fromTokenSymbol,
+            toTokenSymbol: currentTradeSummary.toTokenSymbol,
+            fromAddressName: currentTradeSummary.fromAddressName,
+            sentDate: currentTradeSummary.sentDate,
+            sentDateTimestamp: sentDateTimestamp, // Unique key for removal
+          };
 
-        // Add snapshot to display array
-        pendingTradesDisplay.value.push(tradeSnapshot);
+          // Add snapshot to display array
+          pendingTradesDisplay.value.push(tradeSnapshot);
+        }
 
         // Determine trade type based on order context
         if (providedTradeSummary) {
@@ -2454,7 +2470,7 @@ export default {
             outputAmount: currentTrades[0].outputAmount.toString(),
             value: currentTrades[0].value.toString(),
             from: currentTradeSummary.sender.address,
-            tradeSummary: JSON.parse(JSON.stringify(currentTradeSummary)),
+            tradeSummary: safeJsonClone(currentTradeSummary),
             contractAddress: currentTrades[0].contractAddress,
           }
           const response = await window.electronAPI.sendTransaction(args);
@@ -2498,7 +2514,7 @@ export default {
             wrapOperations: encoderPlan.wrapOperations,
             minOutputAmount: trade.executionPlan.minOutput.toString(),
             from: currentTradeSummary.sender.address,
-            tradeSummary: JSON.parse(JSON.stringify(currentTradeSummary)),
+            tradeSummary: safeJsonClone(currentTradeSummary),
             value: encoderPlan.fromToken === ethers.constants.AddressZero ? encoderPlan.fromAmount.toString() : '0'
           };
 

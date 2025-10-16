@@ -14,8 +14,8 @@ const { ethers } = hre;
 // ===== CONFIGURATION =====
 const PARAMS = {
   // Token to approve (change this to the token you want to trade)
-  tokenAddress: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // ONE token example
-  tokenSymbol: 'ONE', // For display purposes only
+  tokenAddress: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // ONE token example
+  tokenSymbol: 'AAVE', // For display purposes only
 
   // Your WalletBundler address
   bundlerAddress: '0xDb0d5062C851407bBCc450b7c9E7505Dc0Fbc38a',

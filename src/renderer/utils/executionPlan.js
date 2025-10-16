@@ -164,16 +164,64 @@ export function createEncoderExecutionPlan(
   const encoderData = [];
   const wrapOperations = [];
 
-  // First, mark split legs in the execution plan
-  const markedPlan = markSplitLegs(executionPlan);
+  // CRITICAL: Sort execution steps within each level by input amount (smallest to largest)
+  // This ensures the largest swap executes last and can use remaining balance
+  const sortedSteps = [...executionPlan.executionSteps].sort((a, b) => {
+    // First sort by level
+    const levelA = a.level || 0;
+    const levelB = b.level || 0;
+    if (levelA !== levelB) return levelA - levelB;
 
-  // Process each execution step
-  markedPlan.executionSteps.forEach((step) => {
+    // Within same level, sort by input token
+    const tokenA = a.inputToken?.address || a.inputToken?.symbol || a.inputToken || '';
+    const tokenB = b.inputToken?.address || b.inputToken?.symbol || b.inputToken || '';
+    if (tokenA !== tokenB) return tokenA.localeCompare(tokenB);
+
+    // Within same level and token, sort by input amount (smallest first)
+    const amountA = a.inputAmount || BigNumber.from(0);
+    const amountB = b.inputAmount || BigNumber.from(0);
+    if (amountA.lt(amountB)) return -1;
+    if (amountA.gt(amountB)) return 1;
+    return 0;
+  });
+
+  console.log('\n🔄 Sorted execution steps by level → token → amount (smallest to largest)');
+
+  // Mark which steps should use all balance AFTER sorting
+  // Group by level and input token, mark the LAST step in each group
+  const levelTokenGroups = new Map();
+  sortedSteps.forEach((step, index) => {
+    const level = step.level || 0;
+    const tokenKey = step.inputToken?.address || step.inputToken?.symbol || step.inputToken || '';
+    const groupKey = `${level}:${tokenKey}`;
+
+    if (!levelTokenGroups.has(groupKey)) {
+      levelTokenGroups.set(groupKey, []);
+    }
+    levelTokenGroups.get(groupKey).push(index);
+  });
+
+  // Mark the last step in each group as useAllBalance
+  levelTokenGroups.forEach((indices) => {
+    if (indices.length > 0) {
+      const lastIndex = indices[indices.length - 1];
+      sortedSteps[lastIndex].useAllBalance = true;
+
+      // Mark all others as NOT useAllBalance
+      for (let i = 0; i < indices.length - 1; i++) {
+        sortedSteps[indices[i]].useAllBalance = false;
+      }
+    }
+  });
+
+  // Process each execution step in sorted order
+  sortedSteps.forEach((step) => {
     // Determine input amount based on smart analysis
     let inputAmount;
-    if (shouldUseAllBalance(step, markedPlan)) {
+    if (step.useAllBalance) {
       // Use all available balance for this token
       inputAmount = ethers.constants.MaxUint256; // Special marker for "use all"
+      console.log(`   🔄 Step ${step.level} marked as useAllBalance (will use MaxUint256)`);
     } else {
       // Use exact calculated amount
       inputAmount = step.inputAmount || BigNumber.from(0);
