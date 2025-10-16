@@ -269,6 +269,65 @@ export function useUniswapV4() {
 
     return {tokenA, tokenB}
   }
+
+  /**
+   * Fetch remaining ticks for pools with >1000 ticks
+   * Uses pagination to get all ticks beyond the first 1000
+   */
+  async function fetchRemainingTicks(poolId, lastTickIdx) {
+    const allAdditionalTicks = [];
+    let lastFetchedTick = lastTickIdx;
+    let batchCount = 0;
+    const maxBatches = 10; // Safety limit to prevent infinite loops
+
+    while (batchCount < maxBatches) {
+      const tickQuery = gql`
+        query($poolId: String!, $lastTick: BigInt!) {
+          pool(id: $poolId) {
+            ticks(
+              where: {
+                liquidityGross_not: "0",
+                tickIdx_gt: $lastTick
+              },
+              first: 1000,
+              orderBy: tickIdx,
+              orderDirection: asc
+            ) {
+              tickIdx
+              liquidityNet
+              liquidityGross
+            }
+          }
+        }
+      `;
+
+      const result = await request(SUBGRAPH_URL, tickQuery, {
+        poolId: poolId,
+        lastTick: lastFetchedTick.toString()
+      });
+
+      const newTicks = result.pool?.ticks || [];
+
+      if (newTicks.length === 0) {
+        // No more ticks to fetch
+        break;
+      }
+
+      allAdditionalTicks.push(...newTicks);
+      lastFetchedTick = newTicks[newTicks.length - 1].tickIdx;
+      batchCount++;
+
+      // If we got less than 1000, we've reached the end
+      if (newTicks.length < 1000) {
+        break;
+      }
+
+      console.log(`   Fetched batch ${batchCount}: ${newTicks.length} ticks (total: ${allAdditionalTicks.length})`);
+    }
+
+    return allAdditionalTicks;
+  }
+
   // --- Path finding ---
   async function findPossiblePools(tokenInObject, tokenOutObject) {
     const tokenIn = tokenInObject.address.toLowerCase();
@@ -387,8 +446,17 @@ export function useUniswapV4() {
         {address: pool.token0?.id, symbol: pool.token0?.symbol, decimals: pool.token0?.decimals},
         {address: pool.token1?.id, symbol: pool.token1?.symbol, decimals: pool.token1?.decimals},
       );
-      
-      const cleanedTicks  = sanitiseTicks(pool.ticks, Number(pool.tickSpacing))
+
+      // If we got exactly 1000 ticks, there might be more - fetch remaining ticks
+      let allTicks = pool.ticks;
+      if (pool.ticks.length === 1000) {
+        console.log(`⚠️  Pool ${pool.id} has 1000 ticks, fetching more...`);
+        const additionalTicks = await fetchRemainingTicks(pool.id, pool.ticks[999].tickIdx);
+        allTicks = [...pool.ticks, ...additionalTicks];
+        console.log(`✅ Total ticks for pool: ${allTicks.length}`);
+      }
+
+      const cleanedTicks  = sanitiseTicks(allTicks, Number(pool.tickSpacing))
       const tickProvider  = new TickListDataProvider(cleanedTicks, Number(pool.tickSpacing))
 
       const poolInstance = new Pool(

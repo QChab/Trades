@@ -1341,7 +1341,7 @@ export default {
                   
                   // Update the order in the database
                   await window.electronAPI.updatePendingOrder({
-                    ...JSON.parse(JSON.stringify(order)),
+                    ...safeJsonClone(order),
                     remainingAmount: order.remainingAmount.toString(),
                     status: 'pending'
                   });
@@ -1678,7 +1678,7 @@ export default {
 
             // Check if approval is needed
             if (_newFrom !== ethers.constants.AddressZero) {
-              console.log(`📋 About to check allowances. Protocol: "${bestTradeResult.protocol}", Token: ${_newFrom}`);
+              // console.log(`📋 About to check allowances. Protocol: "${bestTradeResult.protocol}", Token: ${_newFrom}`);
               await checkAllowances(_newFrom, null, bestTradeResult.trades, bestTradeResult.protocol);
             } else {
               needsToApprove.value = false;
@@ -2572,7 +2572,7 @@ export default {
             callData: assembled.tx.data,        // sendTransaction expects 'callData', not 'data'
             value: assembled.tx.value || '0',
             from: currentTradeSummary.sender.address,
-            tradeSummary: JSON.parse(JSON.stringify(currentTradeSummary)),
+            tradeSummary: safeJsonClone(currentTradeSummary),
             gasLimit: assembled.estimatedGas || assembled.tx.gas || trade.gasEstimate || 300000
           };
 
@@ -3158,13 +3158,13 @@ export default {
         fromAmount: fromAmount.value,
         remainingAmount: fromAmount.value, // Track remaining amount for partial executions
         toAmount: expectedToAmount, // Use calculated expected amount
-        fromToken: JSON.parse(JSON.stringify(tokensByAddresses.value[fromTokenAddress.value])),
-        toToken: JSON.parse(JSON.stringify(tokensByAddresses.value[toTokenAddress.value])),
+        fromToken: safeJsonClone(tokensByAddresses.value[fromTokenAddress.value]),
+        toToken: safeJsonClone(tokensByAddresses.value[toTokenAddress.value]),
         priceLimit: priceLimit.value,
         currentMarketPrice: currentMarketPrice,
         // orderType removed - new logic doesn't use this distinction
         shouldSwitchTokensForLimit: shouldSwitchTokensForLimit.value,
-        sender: JSON.parse(JSON.stringify(senderDetails.value)),
+        sender: safeJsonClone(senderDetails.value),
         status: 'pending',
         createdAt: new Date().toISOString()
       };
@@ -3659,7 +3659,7 @@ export default {
         
         // Update database with final order status
         await window.electronAPI.updatePendingOrder({
-          ...JSON.parse(JSON.stringify(order)),
+          ...safeJsonClone(order),
           status: order.status,
           remainingAmount: order.remainingAmount?.toString() || '0',
           completedAt: order.completedAt,
@@ -3707,7 +3707,7 @@ export default {
 
         // Update database with failed status
         await window.electronAPI.updatePendingOrder({
-          ...JSON.parse(JSON.stringify(order)),
+          ...safeJsonClone(order),
           status: 'failed',
           completedAt: order.completedAt,
           errorMessage: error.message || String(error)
@@ -4340,7 +4340,7 @@ export default {
           
           // Update remaining amount to 0 since we're executing everything
           await window.electronAPI.updatePendingOrder({
-            ...JSON.parse(JSON.stringify(order)),
+            ...safeJsonClone(order),
             remainingAmount: '0',
             status: 'processing'
           });
@@ -4435,7 +4435,7 @@ export default {
           const newExecutedAmount = (order.executedAmount || 0) + executedThisTime;
           newRemainingAmount = originalFromAmount - newExecutedAmount;
           window.electronAPI.updatePendingOrder({
-            ...JSON.parse(JSON.stringify(order)),
+            ...safeJsonClone(order),
             executedAmount: newExecutedAmount,
             remainingAmount: newRemainingAmount.toString(),
             status: 'processing'
@@ -4455,7 +4455,7 @@ export default {
               }
             }
           } else {
-            await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
+            await window.electronAPI.updatePendingOrder(safeJsonClone(order));
           }
         }
         // Get the final best trades for the executable amount
@@ -4524,7 +4524,7 @@ export default {
         const restoredStatus = (order.executedAmount && order.executedAmount > 0) ? 'partially_filled' : 'pending';
         try {
           await window.electronAPI.updatePendingOrder({
-            ...JSON.parse(JSON.stringify(order)),
+            ...safeJsonClone(order),
             status: restoredStatus
           });
           console.log(`📝 Restored order ${order.id} status to ${restoredStatus}`);
@@ -4620,7 +4620,7 @@ export default {
           
           // Update status to running before execution
           await window.electronAPI.updatePendingOrder({
-            ...JSON.parse(JSON.stringify(order)),
+            ...safeJsonClone(order),
             status: 'pending',
             remainingAmount: newRemainingAmount.toString()
           });
@@ -4675,7 +4675,7 @@ export default {
               
               // Update database AFTER UI update
               await window.electronAPI.updatePendingOrder({
-                ...JSON.parse(JSON.stringify(order)),
+                ...safeJsonClone(order),
                 remainingAmount: actualRemainingAmount.toString(),
                 executedAmount: totalExecutedAmount,
                 status: order.status
@@ -4691,7 +4691,7 @@ export default {
               console.log(`Order ${order.id} partially filled - ${fillPercentage.toFixed(1)}% complete, remaining: ${actualRemainingAmount}`);
               
               await window.electronAPI.updatePendingOrder({
-                ...JSON.parse(JSON.stringify(order)),
+                ...safeJsonClone(order),
                 remainingAmount: actualRemainingAmount.toString(),
                 executedAmount: totalExecutedAmount,
                 status: order.status
@@ -4701,7 +4701,7 @@ export default {
             // Trade failed, restore the remaining amount
             const restoredAmount = Number(order.remainingAmount || order.fromAmount);
             await window.electronAPI.updatePendingOrder({
-              ...JSON.parse(JSON.stringify(order)),
+              ...safeJsonClone(order),
               remainingAmount: restoredAmount.toString(),
               status: 'pending'
             });
@@ -4746,7 +4746,7 @@ export default {
           }
         }
         
-        await window.electronAPI.updatePendingOrder(JSON.parse(JSON.stringify(order)));
+        await window.electronAPI.updatePendingOrder(safeJsonClone(order));
         
         throw tradeError; // Re-throw to be caught by tryExecutePendingOrder
       }
