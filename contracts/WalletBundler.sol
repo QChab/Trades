@@ -335,6 +335,15 @@ contract WalletBundler {
             }
 
             // ----------------
+            // OPTION 1: Pre-transfer tokens to PoolManager for Universal Router ERC20 swaps
+            // ----------------
+            if (target == UNIVERSAL_ROUTER && tokenIn != address(0)) {
+                // For ERC20 swaps via Universal Router, transfer tokens to PoolManager first
+                // This creates a delta so Universal Router's exttload check won't return zero
+                _transferToken(tokenIn, UNISWAP_POOLMANAGER, inputAmount);
+            }
+
+            // ----------------
             // Execute the swap and capture return value
             // ----------------
             uint256 callValue = tokenIn == address(0) ? inputAmount : 0;
