@@ -76,8 +76,8 @@
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/UniswapEncoder.sol": {
-      "lastModificationDate": 1760664613751,
-      "contentHash": "18fec56c65eed6459a329052c322eaa4",
+      "lastModificationDate": 1760671317928,
+      "contentHash": "c78bd050efa3f70a372e43ae24f4a0d0",
       "sourceName": "contracts/UniswapEncoder.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -112,8 +112,8 @@
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/WalletBundler.sol": {
-      "lastModificationDate": 1760669486184,
-      "contentHash": "feb6e0cdbdfbacb7bbe828b690120805",
+      "lastModificationDate": 1760675708549,
+      "contentHash": "d0908688595b0e5d68d60393de009e59",
       "sourceName": "contracts/WalletBundler.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -146,6 +146,8 @@
       "artifacts": [
         "IBundlerRegistry",
         "IPermit2",
+        "IPoolManager",
+        "IUnlockCallback",
         "WalletBundler"
       ]
     }

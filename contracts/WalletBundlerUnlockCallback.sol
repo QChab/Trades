@@ -1,0 +1,552 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+interface IPermit2 {
+    function approve(address token, address spender, uint160 amount, uint48 expiration) external;
+}
+
+interface IBundlerRegistry {
+    function registerBundler() external;
+}
+
+interface IUnlockCallback {
+    function unlockCallback(bytes calldata data) external returns (bytes memory);
+}
+
+interface IPoolManager {
+    function unlock(bytes calldata data) external returns (bytes memory);
+    function swap(
+        PoolKey memory key,
+        SwapParams memory params,
+        bytes calldata hookData
+    ) external returns (int256, int256);
+    function sync(address currency) external;
+    function settle() external payable returns (uint256);
+    function take(address currency, address to, uint256 amount) external;
+}
+
+struct PoolKey {
+    address currency0;
+    address currency1;
+    uint24 fee;
+    int24 tickSpacing;
+    address hooks;
+}
+
+struct SwapParams {
+    bool zeroForOne;
+    int256 amountSpecified;
+    uint160 sqrtPriceLimitX96;
+}
+
+/**
+ * @title WalletBundler
+ * @notice Gas-optimized standalone bundler contract for MEV-protected multi-DEX trading
+ * @dev Deploy one instance per wallet for complete fund isolation
+ */
+contract WalletBundlerUnlockCallback is IUnlockCallback {
+    address public immutable owner;
+    address private immutable self;
+
+    // Pack constants to save deployment gas
+    address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+    address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address private constant POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90; // Uniswap V4
+    address private constant UNISWAP_POOLMANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90; // Uniswap V4 (legacy)
+    address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
+    address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3 Router
+    address private constant BALANCER_VAULT = 0xbA1333333333a1BA1108E8412f11850A5C319bA9; // Balancer V3 Vault
+    address private constant BUNDLER_REGISTRY = 0x4df4B688d6F7954F6F53787B2e2778720BaB5d28; // Well-known registry
+    uint48 private constant EXPIRATION_OFFSET = 281474976710655; // MAx uint48
+    uint256 private constant APPROVAL_THRESHOLD = 1e45; // Gas-optimized approval check threshold
+
+    error Unauthorized();
+    error CallFailed();
+
+    modifier auth() {
+        if (msg.sender != owner) revert Unauthorized();
+        _;
+    }
+
+    constructor() {
+        owner = msg.sender;
+        self = address(this);
+
+        // Register this bundler in the registry, only works if no bundler registered for the user
+        IBundlerRegistry(BUNDLER_REGISTRY).registerBundler();
+    }
+    
+    /**
+     * @dev Internal assembly function to transfer ERC20 tokens from sender
+     * @param token Token contract address
+     * @param from Sender address
+     * @param to Recipient address
+     * @param amount Amount to transfer
+     */
+    function _transferFromToken(address token, address from, address to, uint256 amount) private {
+        assembly {
+            let ptr := mload(0x40)
+            // Store transferFrom(address,address,uint256) selector
+            mstore(ptr, 0x23b872dd00000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), from)   // sender
+            mstore(add(ptr, 0x24), to)     // recipient
+            mstore(add(ptr, 0x44), amount) // amount
+
+            let success := call(gas(), token, 0, ptr, 0x64, ptr, 0x20)
+            if iszero(success) { revert(0, 0) }
+
+            // Check return value (some tokens return false instead of reverting)
+            let returnValue := mload(ptr)
+            if iszero(returnValue) { revert(0, 0) }
+        }
+    }
+
+    /**
+     * @dev Internal assembly function to transfer ERC20 tokens (contract's own tokens)
+     * @param token Token contract address
+     * @param to Recipient address
+     * @param amount Amount to transfer
+     */
+    function _transferToken(address token, address to, uint256 amount) private {
+        assembly {
+            let ptr := mload(0x40)
+            // Store transfer(address,uint256) selector
+            mstore(ptr, 0xa9059cbb00000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), to)     // recipient
+            mstore(add(ptr, 0x24), amount) // amount
+
+            let success := call(gas(), token, 0, ptr, 0x44, ptr, 0x20)
+            if iszero(success) { revert(0, 0) }
+
+            // Check return value (some tokens return false instead of reverting)
+            let returnValue := mload(ptr)
+            if iszero(returnValue) { revert(0, 0) }
+        }
+    }
+    
+    /**
+     * @dev Internal assembly function to get ERC20 token balance
+     * @param token Token contract address
+     * @param account Account to check balance for
+     * @return tokenBalance Token balance
+     */
+    function _getTokenBalance(address token, address account) private view returns (uint256 tokenBalance) {
+        assembly {
+            let ptr := mload(0x40)
+            // Store balanceOf(address) selector
+            mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), account)
+
+            // Use separate memory location for output (ptr + 0x40 = 64 bytes after input)
+            let outPtr := add(ptr, 0x40)
+            let success := staticcall(gas(), token, ptr, 0x24, outPtr, 0x20)
+            if iszero(success) { revert(0, 0) }
+
+            // Verify we actually got return data (protects against non-existent contracts)
+            if iszero(returndatasize()) { revert(0, 0) }
+
+            tokenBalance := mload(outPtr)
+        }
+    }
+    
+    /**
+     * @dev Internal assembly function to send ETH
+     * @param to Recipient address
+     * @param amount Amount to send
+     */
+    function _sendETH(address to, uint256 amount) private {
+        assembly {
+            let success := call(gas(), to, amount, 0, 0, 0, 0)
+            if iszero(success) { revert(0, 0) }
+        }
+    }
+    
+    /**
+     * @notice Emergency withdraw - minimal implementation
+     */
+    function withdraw(address token) external auth {
+        if (token == address(0)) {
+            _sendETH(owner, self.balance);
+        } else {
+            _transferToken(token, owner, _getTokenBalance(token, self));
+        }
+    }
+    
+    /**
+     * @dev Wrap specific amount of ETH to WETH
+     * @param amount Amount of ETH to wrap (0 means wrap all)
+     */
+    function _wrapETH(uint256 amount) private {
+        assembly {
+            let ptr := mload(0x40)
+            // Store deposit() selector
+            mstore(ptr, 0xd0e30db000000000000000000000000000000000000000000000000000000000)
+            let success := call(gas(), WETH, amount, ptr, 0x04, 0, 0)
+            if iszero(success) { revert(0, 0) }
+        }
+    }
+
+    /**
+     * @dev Unwrap specific amount of WETH to ETH
+     * @param amount Amount of WETH to unwrap (0 means unwrap all)
+     */
+    function _unwrapWETH(uint256 amount) private {
+        assembly {
+            let ptr := mload(0x40)
+            // Store withdraw(uint256) selector
+            mstore(ptr, 0x2e1a7d4d00000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), amount)
+            let success := call(gas(), WETH, 0, ptr, 0x24, 0, 0)
+            if iszero(success) { revert(0, 0) }
+        }
+    }
+
+    /**
+     * @notice Execute trades with dynamic encoding for slippage handling
+     * @dev Uses encoder contracts to build calldata based on actual amounts
+     * @param fromToken Input token address (0x0 for ETH)
+     * @param fromAmount Input amount
+     * @param toToken Expected output token address (0x0 for ETH)
+     * @param encoderTargets Array of encoder contract addresses
+     * @param encoderData Array of calldata for encoder contracts
+     * @param wrapOperations Array of wrap/unwrap operations
+     */
+    function encodeAndExecuteaaaaaYops(
+        address fromToken,
+        uint256 fromAmount,
+        address toToken,
+        address[] calldata encoderTargets,
+        bytes[] calldata encoderData,
+        uint8[] calldata wrapOperations
+    ) external payable auth returns (bool[] memory results) {
+        uint256 stepsLength = encoderTargets.length;
+
+        // Transfer input tokens if needed
+        if (fromToken != address(0)) {
+            _transferFromToken(fromToken, owner, self, fromAmount);
+        }
+        // Note: If fromToken is address(0), ETH is already received via msg.value
+
+        results = new bool[](stepsLength);
+        uint256 i;
+
+        for (; i < stepsLength;) {
+            uint8 wrapOp = wrapOperations[i];
+
+            // Call encoder to get target, calldata, input amount, and input token
+            (address target, bytes memory callData, uint256 inputAmount, address tokenIn) = _callEncoder(encoderTargets[i], encoderData[i]);
+
+
+            // Handle wrap/unwrap before (for output token conversions)
+            if (wrapOp == 1) {
+                // Wrap ETH to WETH before - use exact amount from encoder
+                _wrapETH(inputAmount);
+            } else if (wrapOp == 3) {
+                // Unwrap WETH to ETH before - use exact amount from encoder
+                _unwrapWETH(inputAmount);
+            }
+
+            // Ensure we have enough tokenIn by converting ETH<->WETH if needed
+            if (tokenIn == address(0)) {
+                // Step needs ETH - check if we have enough
+                uint256 ethBalance = self.balance;
+                if (ethBalance < inputAmount) {
+                    // Not enough ETH, unwrap the shortfall from WETH
+                    uint256 shortfall;
+                    unchecked {
+                        shortfall = inputAmount - ethBalance;
+                    }
+                    _unwrapWETH(shortfall);
+                }
+            } else if (tokenIn == WETH) {
+                // Step needs WETH - check if we have enough
+                uint256 wethBalance = _getTokenBalance(WETH, self);
+                if (wethBalance < inputAmount) {
+                    // Not enough WETH, wrap the shortfall from ETH
+                    uint256 shortfall;
+                    unchecked {
+                        shortfall = inputAmount - wethBalance;
+                    }
+                    _wrapETH(shortfall);
+                }
+            }
+            
+            // ---------------------------------------
+            // Ensure approval for the input token to the target protocol
+            // ----------------------------------------------------------
+            if (tokenIn != address(0)) {
+                // Both Uniswap V4 and Balancer V3 use Permit2 approval system
+                // Smart contracts can call approve() but cannot sign permit messages
+
+                // Uniswap: Universal Router pulls tokens via Permit2
+                // Balancer: Vault pulls tokens via Permit2 (not Router!)
+                // address permit2Spender = target == BALANCER_ROUTER ? BALANCER_VAULT : target;
+
+                uint256 permit2Allowance;
+                address contractAddr = self;
+                assembly {
+                    let ptr := mload(0x40)
+                    // Store allowance(address,address,address) selector
+                    mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
+                    mstore(add(ptr, 0x04), contractAddr)  // owner (this contract)
+                    mstore(add(ptr, 0x24), tokenIn)       // tokenIn
+                    mstore(add(ptr, 0x44), target) // spender
+
+                    // Use separate memory location for output (ptr + 0x80 = 128 bytes after input)
+                    let outPtr := add(ptr, 0x80)
+                    let success := staticcall(gas(), PERMIT2, ptr, 0x64, outPtr, 0x60)
+                    if success {
+                        permit2Allowance := mload(outPtr) // First return value is uint160 amount
+                    }
+                }
+
+                if (permit2Allowance < APPROVAL_THRESHOLD) {
+                    // Approve both Token→Permit2 and Permit2→Spender
+                    if (_getAllowance(tokenIn, PERMIT2) < APPROVAL_THRESHOLD)
+                        _approve(tokenIn, PERMIT2);  // Token → Permit2 (max uint256, never decrements)
+
+                    // Approve Permit2 → Spender (uint160 max, does decrement)
+                    assembly {
+                        let ptr := mload(0x40)
+                        // Store approve(address,address,uint160,uint48) selector
+                        mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
+                        mstore(add(ptr, 0x04), tokenIn)                // tokenIn
+                        mstore(add(ptr, 0x24), target)         // spender (Vault for Balancer, Router for Uniswap)
+                        mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
+                        mstore(add(ptr, 0x64), EXPIRATION_OFFSET) // expiration
+
+                        let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
+                        if iszero(success) { revert(0, 0) }
+                    }
+                    
+                    address testUniswapPM = UNISWAP_POOLMANAGER;
+                    assembly {
+                        let ptr := mload(0x40)
+                        // Store approve(address,address,uint160,uint48) selector
+                        mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
+                        mstore(add(ptr, 0x04), tokenIn)                // tokenIn
+                        mstore(add(ptr, 0x24), testUniswapPM)         // spender (Vault for Balancer, Router for Uniswap)
+                        mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
+                        mstore(add(ptr, 0x64), EXPIRATION_OFFSET) // expiration
+
+                        let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
+                        if iszero(success) { revert(0, 0) }
+                    }
+                }
+            }
+
+            // ----------------
+            // Execute the swap and capture return value
+            // ----------------
+            uint256 callValue = tokenIn == address(0) ? inputAmount : 0;
+            (bool success, bytes memory returnData) = target.call{value: callValue}(callData);
+            if (!success) revert CallFailed();
+            results[i] = success;
+
+            // Decode the output amount from return data
+            uint256 outputAmount;
+            if (returnData.length >= 32) {
+                assembly {
+                    outputAmount := mload(add(returnData, 0x20))
+                }
+            }
+
+            // Handle wrap/unwrap after based on actual output amount
+            if (wrapOp == 2) {
+                // Wrap after - wrap the exact ETH output amount
+                _wrapETH(outputAmount);
+            } else if (wrapOp == 4) {
+                // Unwrap after - unwrap the exact WETH output amount
+                _unwrapWETH(outputAmount);
+            }
+
+            unchecked { ++i; }
+        }
+
+        // Send the toToken back to owner
+        if (toToken == address(0)) {
+            _sendETH(owner, self.balance);
+        } else {
+            _transferToken(toToken, owner, _getTokenBalance(toToken, self));
+        }
+    }
+
+    /**
+     * @dev Call encoder contract to get target, calldata, and input amount
+     */
+    function _callEncoder(address encoder, bytes calldata data) private view returns (address target, bytes memory callData, uint256 inputAmount, address tokenIn) {
+        (bool success, bytes memory result) = encoder.staticcall(data);
+        if (!success) revert CallFailed();
+        (target, callData, inputAmount, tokenIn) = abi.decode(result, (address, bytes, uint256, address));
+    }
+
+    /**
+     * @dev Check ERC20 allowance
+     */
+    function _getAllowance(address token, address spender) private view returns (uint256 allowance) {
+        address contractAddr = self;
+        assembly {
+            let ptr := mload(0x40)
+            // Store allowance(address,address) selector
+            mstore(ptr, 0xdd62ed3e00000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), contractAddr) // owner (this contract)
+            mstore(add(ptr, 0x24), spender)   // spender
+
+            // Use separate memory location for output
+            let outPtr := add(ptr, 0x60)
+            let success := staticcall(gas(), token, ptr, 0x44, outPtr, 0x20)
+            if success {
+                allowance := mload(outPtr)
+            }
+        }
+    }
+
+    /**
+     * @dev Approve ERC20 spending
+     */
+    function _approve(address token, address spender) private {
+        assembly {
+            let ptr := mload(0x40)
+            // Store approve(address,uint256) selector
+            mstore(ptr, 0x095ea7b300000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), spender)
+            mstore(add(ptr, 0x24), 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff) // max uint256
+
+            let success := call(gas(), token, 0, ptr, 0x44, 0, 0)
+            if iszero(success) { revert(0, 0) }
+        }
+    }
+
+    /**
+     * @notice Direct Uniswap V4 swap via PoolManager (bypasses Universal Router)
+     * @dev Implements custom unlockCallback for full control over swap flow
+     * @param fromToken Input token address (0x0 for ETH)
+     * @param fromAmount Input amount
+     * @param toToken Expected output token address (0x0 for ETH)
+     * @param poolKey Uniswap V4 pool parameters
+     * @param zeroForOne Swap direction
+     * @param amountSpecified Signed amount (negative for exact input)
+     * @param sqrtPriceLimitX96 Price limit for slippage protection
+     * @param minOutputAmount Minimum output to prevent slippage attacks
+     */
+    function swapDirectV4(
+        address fromToken,
+        uint256 fromAmount,
+        address toToken,
+        PoolKey calldata poolKey,
+        bool zeroForOne,
+        int256 amountSpecified,
+        uint160 sqrtPriceLimitX96,
+        uint256 minOutputAmount
+    ) external payable auth returns (uint256 outputAmount) {
+        // Transfer input tokens if needed
+        if (fromToken != address(0)) {
+            _transferFromToken(fromToken, owner, self, fromAmount);
+        }
+        // Note: If fromToken is address(0), ETH is already received via msg.value
+
+        // Encode swap parameters for unlockCallback
+        bytes memory swapData = abi.encode(
+            fromToken,
+            toToken,
+            poolKey,
+            SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: amountSpecified,
+                sqrtPriceLimitX96: sqrtPriceLimitX96
+            }),
+            minOutputAmount
+        );
+
+        // Call PoolManager.unlock() which will trigger our unlockCallback
+        IPoolManager(POOL_MANAGER).unlock(swapData);
+
+        // Send the toToken back to owner
+        if (toToken == address(0)) {
+            outputAmount = self.balance;
+            _sendETH(owner, outputAmount);
+        } else {
+            outputAmount = _getTokenBalance(toToken, self);
+            _transferToken(toToken, owner, outputAmount);
+        }
+
+        require(outputAmount >= minOutputAmount, "Insufficient output");
+    }
+
+    /**
+     * @notice Unlock callback implementation for direct PoolManager swaps
+     * @dev Only callable by PoolManager during unlock flow
+     * @param data Encoded swap parameters from swapDirectV4
+     */
+    function unlockCallback(bytes calldata data) external override returns (bytes memory) {
+        // Security: Only PoolManager can call this
+        if (msg.sender != POOL_MANAGER) revert Unauthorized();
+
+        // Decode swap parameters
+        (
+            address fromToken,
+            address toToken,
+            PoolKey memory poolKey,
+            SwapParams memory swapParams,
+            uint256 minOutputAmount
+        ) = abi.decode(data, (address, address, PoolKey, SwapParams, uint256));
+
+        // Determine actual token addresses (handle ETH as address(0))
+        address tokenIn = fromToken;
+        address tokenOut = toToken;
+
+        // For ETH, we need to use address(0) for PoolManager operations
+        // ETH is represented as address(0) in V4
+
+        // Step 1: Sync the input currency (required for ERC20 before settlement)
+        if (tokenIn != address(0)) {
+            IPoolManager(POOL_MANAGER).sync(tokenIn);
+        }
+
+        // Step 2: Execute the swap
+        (int256 delta0, int256 delta1) = IPoolManager(POOL_MANAGER).swap(
+            poolKey,
+            swapParams,
+            "" // Empty hook data
+        );
+
+        // Step 3: Settle the input token debt
+        uint256 amountToSettle;
+        if (swapParams.zeroForOne) {
+            // Swapping token0 → token1, so we owe token0
+            amountToSettle = uint256(-delta0); // delta0 is negative (debt)
+        } else {
+            // Swapping token1 → token0, so we owe token1
+            amountToSettle = uint256(-delta1); // delta1 is negative (debt)
+        }
+
+        if (tokenIn == address(0)) {
+            // Pay with ETH
+            IPoolManager(POOL_MANAGER).settle{value: amountToSettle}();
+        } else {
+            // Pay with ERC20: transfer tokens to PoolManager then settle
+            _transferToken(tokenIn, POOL_MANAGER, amountToSettle);
+            IPoolManager(POOL_MANAGER).settle();
+        }
+
+        // Step 4: Take the output tokens
+        uint256 amountToTake;
+        if (swapParams.zeroForOne) {
+            // We received token1
+            amountToTake = uint256(delta1); // delta1 is positive (credit)
+        } else {
+            // We received token0
+            amountToTake = uint256(delta0); // delta0 is positive (credit)
+        }
+
+        // Take tokens from PoolManager to this contract
+        IPoolManager(POOL_MANAGER).take(tokenOut, self, amountToTake);
+
+        // Validate minimum output
+        require(amountToTake >= minOutputAmount, "Insufficient output");
+
+        return "";
+    }
+
+    receive() external payable {}
+}

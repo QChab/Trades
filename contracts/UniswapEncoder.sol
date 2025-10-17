@@ -59,7 +59,7 @@ contract UniswapEncoder {
      */
     function encodeSingleSwap(
         SingleSwapParams calldata swapParams
-    ) external pure returns (address target, bytes memory callData, uint256 inputAmount, address _tokenIn) {
+    ) external view returns (address target, bytes memory callData, uint256 inputAmount, address _tokenIn) {
         // Build params array
         bytes[] memory params = new bytes[](3);
 

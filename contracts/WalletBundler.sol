@@ -9,6 +9,36 @@ interface IBundlerRegistry {
     function registerBundler() external;
 }
 
+interface IUnlockCallback {
+    function unlockCallback(bytes calldata data) external returns (bytes memory);
+}
+
+interface IPoolManager {
+    function unlock(bytes calldata data) external returns (bytes memory);
+    function swap(
+        PoolKey memory key,
+        SwapParams memory params,
+        bytes calldata hookData
+    ) external returns (int256, int256);
+    function sync(address currency) external;
+    function settle() external payable returns (uint256);
+    function take(address currency, address to, uint256 amount) external;
+}
+
+struct PoolKey {
+    address currency0;
+    address currency1;
+    uint24 fee;
+    int24 tickSpacing;
+    address hooks;
+}
+
+struct SwapParams {
+    bool zeroForOne;
+    int256 amountSpecified;
+    uint160 sqrtPriceLimitX96;
+}
+
 /**
  * @title WalletBundler
  * @notice Gas-optimized standalone bundler contract for MEV-protected multi-DEX trading

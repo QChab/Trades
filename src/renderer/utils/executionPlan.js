@@ -167,7 +167,7 @@ export function createEncoderExecutionPlan(
   // CRITICAL: DO NOT sort or re-order execution steps!
   // The execution plan from the optimizer already has the correct order
   // and the shouldUseAllBalance flags are already set correctly
-  console.log('\n🔄 Processing execution steps in original order (as defined by optimizer)');
+  // console.log('\n🔄 Processing execution steps in original order (as defined by optimizer)');
 
   // Process each execution step in the order they appear
   executionPlan.executionSteps.forEach((step, stepIndex) => {
@@ -244,7 +244,7 @@ export function createEncoderExecutionPlan(
     // Extract protocol-specific data
     let poolId, fee, currency0, currency1, tickSpacing, hooks, zeroForOne;
 
-    console.log(`   📍 Step ${stepIndex}: protocol="${step.protocol}" (type: ${typeof step.protocol}), useAllBalance=${step.useAllBalance}, inputToken=${getTokenSymbol(step.inputToken)}, outputToken=${getTokenSymbol(step.outputToken)}`);
+    // console.log(`   📍 Step ${stepIndex}: protocol="${step.protocol}" (type: ${typeof step.protocol}), useAllBalance=${step.useAllBalance}, inputToken=${getTokenSymbol(step.inputToken)}, outputToken=${getTokenSymbol(step.outputToken)}`);
 
     // Helper to extract token symbol
     function getTokenSymbol(token) {
@@ -253,8 +253,8 @@ export function createEncoderExecutionPlan(
     }
 
     // DEBUG: Check protocol matching
-    console.log(`      Testing protocol: step.protocol === 'balancer' → ${step.protocol === 'balancer'}`);
-    console.log(`      Testing protocol: step.protocol === 'uniswap' → ${step.protocol === 'uniswap'}`);
+    // console.log(`      Testing protocol: step.protocol === 'balancer' → ${step.protocol === 'balancer'}`);
+    // console.log(`      Testing protocol: step.protocol === 'uniswap' → ${step.protocol === 'uniswap'}`);
 
     if (step.protocol === 'balancer') {
       // For V3, poolId is just a 20-byte address

@@ -12,22 +12,22 @@ const TEST_PARAMS = {
   //   symbol: 'ONE',
   //   decimals: 18
   // },
-  tokenInObject: {
+  tokenOutObject: {
     address: '0x0000000000000000000000000000000000000000', // osETH
     symbol: 'ETH',
     decimals: 18
   },
-  tokenOutObject: {
-    address: '0x45804880De22913dAFE09f4980848ECE6EcbAf78', // AAVE
-    symbol: 'PAXG',
-    decimals: 18
-  },
   // tokenOutObject: {
-  //   address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
-  //   symbol: 'AAVE',
+  //   address: '0x45804880De22913dAFE09f4980848ECE6EcbAf78', // AAVE
+  //   symbol: 'PAXG',
   //   decimals: 18
   // },
-  amountIn: '0.0000964', // In human-readable format, not wei
+  tokenInObject: {
+    address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
+    symbol: 'AAVE',
+    decimals: 18
+  },
+  amountIn: '0.000964', // In human-readable format, not wei
   slippageTolerance: 20 // 0.5%
 };
 
@@ -269,7 +269,7 @@ describe("Real Swap Integration Test", function () {
         value: msgValue,
         maxFeePerGas: maxFeePerGas,
         maxPriorityFeePerGas: maxPriorityFeePerGas,
-        gasLimit: 1200000  // Fixed gas limit to skip estimation and see actual error
+        gasLimit: 1500000  // Fixed gas limit to skip estimation and see actual error
       }
     );
 
