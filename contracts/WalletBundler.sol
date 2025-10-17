@@ -317,20 +317,6 @@ contract WalletBundler {
                         let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
                         if iszero(success) { revert(0, 0) }
                     }
-                    
-                    address testUniswapPM = UNISWAP_POOLMANAGER;
-                    assembly {
-                        let ptr := mload(0x40)
-                        // Store approve(address,address,uint160,uint48) selector
-                        mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
-                        mstore(add(ptr, 0x04), tokenIn)                // tokenIn
-                        mstore(add(ptr, 0x24), testUniswapPM)         // spender (Vault for Balancer, Router for Uniswap)
-                        mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
-                        mstore(add(ptr, 0x64), EXPIRATION_OFFSET) // expiration
-
-                        let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
-                        if iszero(success) { revert(0, 0) }
-                    }
                 }
             }
 
