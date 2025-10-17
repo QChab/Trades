@@ -26,8 +26,8 @@ export function encodeUniswapExactInput(step, recipient, slippagePercent = 0.5) 
   ]);
 
   const params = {
-    tokenIn: step.inputToken === 'WETH' ? WETH_ADDRESS : step.inputToken.address,
-    tokenOut: step.outputToken === 'WETH' ? WETH_ADDRESS : step.outputToken.address,
+    tokenIn: (typeof step.inputToken === 'string' ? step.inputToken : step.inputToken?.symbol) === 'WETH' ? WETH_ADDRESS : (step.inputToken?.address || step.inputToken),
+    tokenOut: (typeof step.outputToken === 'string' ? step.outputToken : step.outputToken?.symbol) === 'WETH' ? WETH_ADDRESS : (step.outputToken?.address || step.outputToken),
     fee: 3000, // Default 0.3% fee tier
     recipient: recipient,
     deadline: Math.floor(Date.now() / 1000) + 1200,
@@ -96,8 +96,8 @@ export function encodeBalancerSingleSwap(step, recipient, slippagePercent = 0.5)
   const singleSwap = {
     poolId: step.pools?.[0]?.id || '0x', // Would need actual pool ID
     kind: 0, // GIVEN_IN
-    assetIn: step.inputToken === 'WETH' ? WETH_ADDRESS : step.inputToken.address,
-    assetOut: step.outputToken === 'WETH' ? WETH_ADDRESS : step.outputToken.address,
+    assetIn: (typeof step.inputToken === 'string' ? step.inputToken : step.inputToken?.symbol) === 'WETH' ? WETH_ADDRESS : (step.inputToken?.address || step.inputToken),
+    assetOut: (typeof step.outputToken === 'string' ? step.outputToken : step.outputToken?.symbol) === 'WETH' ? WETH_ADDRESS : (step.outputToken?.address || step.outputToken),
     amount: step.input,
     userData: '0x'
   };

@@ -20,7 +20,7 @@ const PARAMS = {
   // tokenSymbol: 'PAXG', // For display purposes only
 
   // Your WalletBundler address
-  bundlerAddress: '0x3457d3BC3A590160476236A7C316a2e30a947553',
+  bundlerAddress: '0x5f7Ac637c4aB52C581CA444CE4770C3e8b88B2dD',
 
   // Amount to approve (leave as 'max' for unlimited, or specify a number like '1000')
   approvalAmount: 'max'

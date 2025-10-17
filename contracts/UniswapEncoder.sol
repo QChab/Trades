@@ -73,7 +73,7 @@ contract UniswapEncoder {
         );
 
         // Param 1: SETTLE_ALL - currency and amount to pull and payerIsUser
-        params[1] = abi.encode(swapParams.tokenIn, swapParams.amountIn, true);
+        params[1] = abi.encode(swapParams.tokenIn, swapParams.amountIn);
 
         // Param 2: TAKE_ALL - currency and minAmount to send
         address currencyOut = swapParams.zeroForOne ? swapParams.poolKey.currency1 : swapParams.poolKey.currency0;

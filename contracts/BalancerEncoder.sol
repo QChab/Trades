@@ -24,6 +24,7 @@ contract BalancerEncoder {
     // Balancer V3 Router address (simple Router, not BatchRouter)
     address private constant ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2;
     uint256 private constant DEADLINE = type(uint256).max; // No deadline
+    address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
 
     /**
      * @notice Encode a single swap for Balancer V3 via Router
@@ -75,9 +76,9 @@ contract BalancerEncoder {
     ) external view returns (address target, bytes memory callData, uint256 inputAmount, address) {
         // Determine which balance to query based on wrap operation
         uint256 actualBalance;
-        if (wrapOp == 1) {
+        if (wrapOp == 1 || wrapOp == 3) {
             // Will wrap ETH to WETH before swap, so query ETH balance
-            actualBalance = msg.sender.balance;
+            actualBalance = msg.sender.balance + _getTokenBalance(WETH, msg.sender);
         } else {
             actualBalance = _getTokenBalance(tokenIn, msg.sender);
         }

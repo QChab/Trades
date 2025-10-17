@@ -12,11 +12,11 @@ const TEST_PARAMS = {
   //   symbol: 'ONE',
   //   decimals: 18
   // },
-  // tokenInObject: {
-  //   address: '0x0000000000000000000000000000000000000000', // osETH
-  //   symbol: 'ETH',
-  //   decimals: 18
-  // },
+  tokenInObject: {
+    address: '0x0000000000000000000000000000000000000000', // osETH
+    symbol: 'ETH',
+    decimals: 18
+  },
   // tokenOutObject: {
   //   address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // osETH
   //   symbol: 'USDC',
@@ -27,11 +27,11 @@ const TEST_PARAMS = {
     symbol: 'PAXG',
     decimals: 18
   },
-  tokenInObject: {
-    address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
-    symbol: 'AAVE',
-    decimals: 18
-  },
+  // tokenInObject: {
+  //   address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
+  //   symbol: 'AAVE',
+  //   decimals: 18
+  // },
   // tokenOutObject: {
   //   address: '0x6b175474e89094c44da98b954eedeac495271d0f', // DAI
   //   symbol: 'DAI',
@@ -44,8 +44,8 @@ const TEST_PARAMS = {
 // ===== DEPLOYED CONTRACT ADDRESSES =====
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28',
-  uniswapEncoder: '0x8065a70c2840a4EC19430456745F6e8a0116Bd56',  // V4 with correct action codes
-  balancerEncoder: '0xEbaf7dd325585354b2B2ba52C371F3d34355b7ec'
+  uniswapEncoder: '0xbB9417Cfd94383cA8EF2e323aE2e244CC58aF010',  // V4 with correct action codes
+  balancerEncoder: '0xc9BC3dd2AAF14992Bf987dFEf1E9592151E8e1C4'
 };
 
 describe("Real Swap Integration Test", function () {
@@ -279,7 +279,7 @@ describe("Real Swap Integration Test", function () {
         value: msgValue,
         maxFeePerGas: maxFeePerGas,
         maxPriorityFeePerGas: maxPriorityFeePerGas,
-        // gasLimit: 1200000  // Fixed gas limit to skip estimation and see actual error
+        gasLimit: 800000  // Fixed gas limit to skip estimation and see actual error
       }
     );
 

@@ -111,6 +111,51 @@ const QUOTER_ABI                 = [
 ];
 
 /**
+ * Check if a pool has active liquidity at its current tick
+ * Returns false if the pool is out of range (like the PAXG/USDT example)
+ * @param {Object} pool - Pool data from GraphQL with ticks array
+ * @returns {boolean} True if there's liquidity at the current tick
+ */
+function hasLiquidityAtCurrentTick(pool) {
+  if (!pool.ticks || pool.ticks.length === 0) return false;
+
+  const currentTick = Number(pool.tick);
+  const tickSpacing = Number(pool.tickSpacing);
+
+  // Sort ticks by index
+  const sortedTicks = pool.ticks
+    .map(t => ({
+      idx: Number(t.tickIdx),
+      liquidityNet: BigInt(t.liquidityNet),
+      liquidityGross: BigInt(t.liquidityGross)
+    }))
+    .sort((a, b) => a.idx - b.idx);
+
+  // Calculate cumulative liquidity at current tick
+  // Start with zero liquidity below the lowest tick
+  let cumulativeLiquidity = 0n;
+
+  for (const tick of sortedTicks) {
+    if (tick.idx <= currentTick) {
+      // Add liquidityNet for ticks at or below current tick
+      cumulativeLiquidity += tick.liquidityNet;
+    } else {
+      // We've passed the current tick
+      break;
+    }
+  }
+
+  // If cumulative liquidity is positive, there's active liquidity at current tick
+  const hasLiquidity = cumulativeLiquidity > 0n;
+
+  if (!hasLiquidity) {
+    console.warn(`⚠️  Pool ${pool.id} has NO liquidity at current tick ${currentTick}. Skipping.`);
+  }
+
+  return hasLiquidity;
+}
+
+/**
  * Bulk fetch all Uniswap V4 pools for multiple tokens at once
  * This is much more efficient than querying for each token pair individually
  * @param {Array<string>} tokenAddresses - Array of token addresses to fetch pools for
@@ -171,11 +216,14 @@ export async function fetchAllUniswapPools(tokenAddresses) {
     const response = await request(SUBGRAPH_URL, query);
     const rawPools = response.pools || [];
 
-    // Filter by liquidity and hooks
-    const candidatePools = rawPools.filter(pool =>
-      pool.hooks === '0x0000000000000000000000000000000000000000' &&
-      pool.liquidity > 100000
-    );
+    // Filter by liquidity, hooks, AND check if current tick has active liquidity
+    const candidatePools = rawPools.filter(pool => {
+      if (pool.hooks !== '0x0000000000000000000000000000000000000000') return false;
+      if (pool.liquidity <= 100000) return false;
+
+      // CRITICAL: Check if current tick is within an active liquidity range
+      return hasLiquidityAtCurrentTick(pool);
+    });
 
     console.log(`✅ Found ${candidatePools.length} Uniswap pools with sufficient liquidity`);
 
@@ -341,6 +389,7 @@ export function useUniswapV4() {
       query($a: String!, $b: String!){
         poolsDirect: pools(
           where:{
+            id_not: "0xa48b304778f26c64701510a417afb93e0836aa62a62ed48f908b4d6e2fef0f5c",
             token0_in: [$a, $b],
             token1_in: [
               ${tokenIn < tokenOut ? '$b' : '$a'},
@@ -364,6 +413,7 @@ export function useUniswapV4() {
       query($a: String!, $b: String!){
         poolsOut: pools(
           where:{
+            id_not: "0xa48b304778f26c64701510a417afb93e0836aa62a62ed48f908b4d6e2fef0f5c",
             token0_in: [
               "0x0000000000000000000000000000000000000000",
               ${lastAddressAlphabet <= "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" ? '' : '"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",'}
@@ -389,6 +439,7 @@ export function useUniswapV4() {
           where: {
             or: [
               {
+                id_not: "0xa48b304778f26c64701510a417afb93e0836aa62a62ed48f908b4d6e2fef0f5c",
                 token0_in: [
                   $a,
                   $b,
@@ -399,7 +450,8 @@ export function useUniswapV4() {
                 ],
                 liquidity_not: "0"
               }, {
-                token1_in: [
+                  id_not: "0xa48b304778f26c64701510a417afb93e0836aa62a62ed48f908b4d6e2fef0f5c",
+                  token1_in: [
                   $a,
                   $b,
                   "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
@@ -432,12 +484,18 @@ export function useUniswapV4() {
     const unique = new Map();
     rawPools.forEach(p => unique.set(p.id, p));
     let candidatePools = Array.from(unique.values()).filter((pool) => (
-      pool.hooks === '0x0000000000000000000000000000000000000000' && pool.liquidity > 100000 && pool.totalValueLockedUSD && Number(pool.totalValueLockedUSD) >= 10000
+      pool.hooks === '0x0000000000000000000000000000000000000000' &&
+      pool.liquidity > 100000 &&
+      pool.totalValueLockedUSD &&
+      Number(pool.totalValueLockedUSD) >= 10000 &&
+      hasLiquidityAtCurrentTick(pool)  // CRITICAL: Filter out pools with no liquidity at current tick
     ))
-  
+
     if (candidatePools.length <= 6)
       candidatePools = Array.from(unique.values()).filter((pool) => (
-        pool.hooks === '0x0000000000000000000000000000000000000000' && pool.liquidity > 100000
+        pool.hooks === '0x0000000000000000000000000000000000000000' &&
+        pool.liquidity > 100000 &&
+        hasLiquidityAtCurrentTick(pool)  // CRITICAL: Filter out pools with no liquidity at current tick
       ))
 
       const pools = [];

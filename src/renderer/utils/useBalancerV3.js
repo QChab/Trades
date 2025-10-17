@@ -567,7 +567,7 @@ async function enrichPoolData(pools, provider) {
   );
   
   // Process WETH pools first, then others, limit to 20 total
-  const poolsToProcess = [...wethPools.slice(0, 15), ...otherPools.slice(0, 5)];
+  const poolsToProcess = [...wethPools.slice(0, 50), ...otherPools.slice(0, 50)];
   console.log(`Processing ${poolsToProcess.length} pools (${wethPools.length} with WETH)...`);
   
   for (const pool of poolsToProcess) {

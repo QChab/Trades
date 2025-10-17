@@ -35,6 +35,7 @@ contract WalletBundler {
     // Pack constants to save deployment gas
     address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address private constant UNISWAP_POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90; // Uniswap V4
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
     address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3 Router
     address private constant BALANCER_VAULT = 0xbA1333333333a1BA1108E8412f11850A5C319bA9; // Balancer V3 Vault
@@ -218,6 +219,8 @@ contract WalletBundler {
                 // Two-step approval process:
                 // Step 1: Token → Permit2 (standard ERC20 approval)
                 // Step 2: Permit2 → Protocol (Permit2's internal approval)
+                address permit2Spender = target;
+                //  == BALANCER_ROUTER ? BALANCER_VAULT : UNISWAP_POOL_MANAGER;
 
                 // Check if Token is approved to Permit2
                 uint256 tokenAllowance = _getAllowance(tokenIn, PERMIT2);
@@ -226,10 +229,10 @@ contract WalletBundler {
                 }
 
                 // Check if Permit2 has approved the protocol
-                // (uint160 permit2Allowance, , ) = IPermit2(PERMIT2).allowance(self, tokenIn, target);
-                // if (permit2Allowance < APPROVAL_THRESHOLD) {
-                    _approvePermit2(tokenIn, target);  // Permit2 → Protocol (max uint160)
-                // }
+                (uint160 permit2Allowance, , ) = IPermit2(PERMIT2).allowance(self, tokenIn, permit2Spender);
+                if (permit2Allowance < APPROVAL_THRESHOLD) {
+                    _approvePermit2(tokenIn, permit2Spender);  // Permit2 → Protocol (max uint160)
+                }
             }
 
             // ----------------
