@@ -25,7 +25,7 @@ async function main() {
   const feeData = await ethers.provider.getFeeData();
 
   const baseFee = feeData.lastBaseFeePerGas || ethers.BigNumber.from(0);
-  const priorityFee = ethers.BigNumber.from(10); // Minimum priority fee
+  const priorityFee = ethers.BigNumber.from(10000000); // Minimum priority fee
   const maxFeePerGas = baseFee.mul(2).add(priorityFee); // 2x base fee buffer + minimal priority
 
   console.log(`  Base Fee: ${ethers.utils.formatUnits(baseFee, "gwei")} gwei`);
@@ -51,16 +51,16 @@ async function main() {
   console.log(`   Gas cost: ${ethers.utils.formatEther(uniswapGasCost)} ETH\n`);
 
   // Deploy BalancerEncoder
-  console.log("2️⃣  Deploying BalancerEncoder...");
-  const BalancerEncoder = await ethers.getContractFactory("BalancerEncoder");
-  const balancerEncoder = await BalancerEncoder.deploy(gasParams);
-  await balancerEncoder.deployed();
-  console.log(`   ✓ BalancerEncoder deployed: ${balancerEncoder.address}`);
+  // console.log("2️⃣  Deploying BalancerEncoder...");
+  // const BalancerEncoder = await ethers.getContractFactory("BalancerEncoder");
+  // const balancerEncoder = await BalancerEncoder.deploy(gasParams);
+  // await balancerEncoder.deployed();
+  // console.log(`   ✓ BalancerEncoder deployed: ${balancerEncoder.address}`);
 
-  const balancerReceipt = await balancerEncoder.deployTransaction.wait();
-  const balancerGasCost = balancerReceipt.gasUsed.mul(balancerReceipt.effectiveGasPrice);
-  console.log(`   Gas used: ${balancerReceipt.gasUsed.toString()}`);
-  console.log(`   Gas cost: ${ethers.utils.formatEther(balancerGasCost)} ETH\n`);
+  // const balancerReceipt = await balancerEncoder.deployTransaction.wait();
+  // const balancerGasCost = balancerReceipt.gasUsed.mul(balancerReceipt.effectiveGasPrice);
+  // console.log(`   Gas used: ${balancerReceipt.gasUsed.toString()}`);
+  // console.log(`   Gas cost: ${ethers.utils.formatEther(balancerGasCost)} ETH\n`);
 
   console.log("=========================================");
   console.log("✅ Encoders deployed successfully!");

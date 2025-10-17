@@ -4,8 +4,8 @@ import { ethers } from 'ethers';
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
-const balancerEncoderAddress = '0x155CCfeA3c02deF5D8506dCCe569E94Ff4Facba7';
-const uniswapEncoderAddress = '0x34981aD6A5F65268EF251185334531329020e7FD';  // V4 with correct action codes
+const balancerEncoderAddress = '0xEbaf7dd325585354b2B2ba52C371F3d34355b7ec';
+const uniswapEncoderAddress = '0x8065a70c2840a4EC19430456745F6e8a0116Bd56';  // V4 with correct action codes
 
 /**
  * Create execution plan for the selected route
@@ -275,6 +275,7 @@ export function createEncoderExecutionPlan(
 
     // Calculate minimum amount out with slippage for this step
     let minAmountOut = BigNumber.from(0);
+    // console.log(step.expectedOutput.toString())
     if (step.expectedOutput || step.output) {
       const expectedOut = step.expectedOutput || step.output || BigNumber.from(0);
       // Apply slippage: minAmount = expectedAmount * (100 - slippagePercent) / 100

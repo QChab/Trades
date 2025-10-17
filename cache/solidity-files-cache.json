@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/qch/MyTech/SecDev/Trades/contracts/BalancerEncoder.sol": {
-      "lastModificationDate": 1760415814247,
-      "contentHash": "e6ab516f131e2c4a13d21c74133f779a",
+      "lastModificationDate": 1760588143672,
+      "contentHash": "e0b6294bd789fbb9b3ff9dee1118d82f",
       "sourceName": "contracts/BalancerEncoder.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -76,8 +76,8 @@
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/UniswapEncoder.sol": {
-      "lastModificationDate": 1760415779061,
-      "contentHash": "18fec56c65eed6459a329052c322eaa4",
+      "lastModificationDate": 1760632402887,
+      "contentHash": "f1542be66e8e7d78a0e6c80ce54033b3",
       "sourceName": "contracts/UniswapEncoder.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -112,8 +112,8 @@
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/WalletBundler.sol": {
-      "lastModificationDate": 1760581968005,
-      "contentHash": "83d15f75bea260b7b7b250a1173d5225",
+      "lastModificationDate": 1760626772334,
+      "contentHash": "6c3a3ab3771ee52172aadb994223ac94",
       "sourceName": "contracts/WalletBundler.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -145,8 +145,48 @@
       ],
       "artifacts": [
         "IBundlerRegistry",
+        "IERC20",
         "IPermit2",
+        "IWETH",
         "WalletBundler"
+      ]
+    },
+    "/Users/qch/MyTech/SecDev/Trades/contracts/WalletBundler copy.sol": {
+      "lastModificationDate": 1760592182883,
+      "contentHash": "6eedcc39267e9b7ae1d2a53f4019fe0d",
+      "sourceName": "contracts/WalletBundler copy.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "IBundlerRegistry",
+        "IPermit2",
+        "WalletBundler_COPY"
       ]
     }
   }
