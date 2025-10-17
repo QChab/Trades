@@ -72,7 +72,7 @@ contract UniswapEncoder {
             EMPTY_HOOK_DATA
         );
 
-        // Param 1: SETTLE_ALL - currency and amount to pull
+        // Param 1: SETTLE_ALL - currency and amount to pull and payerIsUser
         params[1] = abi.encode(swapParams.tokenIn, swapParams.amountIn);
 
         // Param 2: TAKE_ALL - currency and minAmount to send
@@ -84,6 +84,7 @@ contract UniswapEncoder {
         bytes[] memory inputs = new bytes[](1);
         inputs[0] = abi.encode(ACTIONS, params);
 
+        // use abi.encode with the pre-computed signature to reduce gas cost
         callData = abi.encodeWithSignature(
             "execute(bytes,bytes[],uint256)",
             COMMANDS,
@@ -152,7 +153,8 @@ contract UniswapEncoder {
             EXPIRATION_OFFSET
         );
 
-        return (UNIVERSAL_ROUTER, callData, actualBalance, swapParams.tokenIn);
+        // CRITICAL: Return the original tokenIn from memory, not calldata
+        return (UNIVERSAL_ROUTER, callData, actualBalance, balanceToken);
     }
 
     /**
@@ -168,14 +170,17 @@ contract UniswapEncoder {
             mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000)
             mstore(add(ptr, 0x04), account)
 
-            // Use separate memory location for output (ptr + 0x40 = 64 bytes after input)
-            let outPtr := add(ptr, 0x40)
-            let success := staticcall(gas(), token, ptr, 0x24, outPtr, 0x20)
+            // CRITICAL FIX: Use returndatacopy instead of writing to output pointer
+            // This prevents memory corruption of calldata regions
+            let success := staticcall(gas(), token, ptr, 0x24, 0, 0)
             if iszero(success) { revert(0, 0) }
 
             // Verify we actually got return data (protects against non-existent contracts)
             if iszero(returndatasize()) { revert(0, 0) }
 
+            // Copy return data to a safe memory location AFTER the call
+            let outPtr := add(ptr, 0x40)
+            returndatacopy(outPtr, 0, 0x20)
             tokenBalance := mload(outPtr)
         }
     }

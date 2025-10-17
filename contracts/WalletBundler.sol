@@ -1,8 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
+interface IERC20 {
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    function transfer(address to, uint256 amount) external returns (bool);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
+    function allowance(address owner, address spender) external view returns (uint256);
+}
+
+interface IWETH {
+    function deposit() external payable;
+    function withdraw(uint256 amount) external;
+}
+
 interface IPermit2 {
     function approve(address token, address spender, uint160 amount, uint48 expiration) external;
+    function allowance(address owner, address token, address spender) external view returns (uint160 amount, uint48 expiration, uint48 nonce);
 }
 
 interface IBundlerRegistry {
@@ -21,6 +35,7 @@ contract WalletBundler {
     // Pack constants to save deployment gas
     address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address private constant UNISWAP_POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90; // Uniswap V4
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
     address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3 Router
     address private constant BALANCER_VAULT = 0xbA1333333333a1BA1108E8412f11850A5C319bA9; // Balancer V3 Vault
@@ -45,88 +60,56 @@ contract WalletBundler {
     }
     
     /**
-     * @dev Internal assembly function to transfer ERC20 tokens from sender
+     * @dev Transfer ERC20 tokens from sender using standard Solidity with detailed errors
      * @param token Token contract address
      * @param from Sender address
      * @param to Recipient address
      * @param amount Amount to transfer
      */
     function _transferFromToken(address token, address from, address to, uint256 amount) private {
-        assembly {
-            let ptr := mload(0x40)
-            // Store transferFrom(address,address,uint256) selector
-            mstore(ptr, 0x23b872dd00000000000000000000000000000000000000000000000000000000)
-            mstore(add(ptr, 0x04), from)   // sender
-            mstore(add(ptr, 0x24), to)     // recipient
-            mstore(add(ptr, 0x44), amount) // amount
-
-            let success := call(gas(), token, 0, ptr, 0x64, ptr, 0x20)
-            if iszero(success) { revert(0, 0) }
-
-            // Check return value (some tokens return false instead of reverting)
-            let returnValue := mload(ptr)
-            if iszero(returnValue) { revert(0, 0) }
+        (bool success, bytes memory data) = token.call(
+            abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, amount)
+        );
+        require(success, "TransferFrom call failed");
+        if (data.length > 0) {
+            require(abi.decode(data, (bool)), "TransferFrom returned false");
         }
     }
 
     /**
-     * @dev Internal assembly function to transfer ERC20 tokens (contract's own tokens)
+     * @dev Transfer ERC20 tokens (contract's own tokens) with safe handling for non-standard tokens
      * @param token Token contract address
      * @param to Recipient address
      * @param amount Amount to transfer
      */
     function _transferToken(address token, address to, uint256 amount) private {
-        assembly {
-            let ptr := mload(0x40)
-            // Store transfer(address,uint256) selector
-            mstore(ptr, 0xa9059cbb00000000000000000000000000000000000000000000000000000000)
-            mstore(add(ptr, 0x04), to)     // recipient
-            mstore(add(ptr, 0x24), amount) // amount
-
-            let success := call(gas(), token, 0, ptr, 0x44, ptr, 0x20)
-            if iszero(success) { revert(0, 0) }
-
-            // Check return value (some tokens return false instead of reverting)
-            let returnValue := mload(ptr)
-            if iszero(returnValue) { revert(0, 0) }
+        (bool success, bytes memory data) = token.call(
+            abi.encodeWithSelector(IERC20.transfer.selector, to, amount)
+        );
+        require(success, "Transfer call failed");
+        if (data.length > 0) {
+            require(abi.decode(data, (bool)), "Transfer returned false");
         }
     }
     
     /**
-     * @dev Internal assembly function to get ERC20 token balance
+     * @dev Get ERC20 token balance using standard Solidity
      * @param token Token contract address
      * @param account Account to check balance for
-     * @return tokenBalance Token balance
+     * @return Token balance
      */
-    function _getTokenBalance(address token, address account) private view returns (uint256 tokenBalance) {
-        assembly {
-            let ptr := mload(0x40)
-            // Store balanceOf(address) selector
-            mstore(ptr, 0x70a0823100000000000000000000000000000000000000000000000000000000)
-            mstore(add(ptr, 0x04), account)
-
-            // Use separate memory location for output (ptr + 0x40 = 64 bytes after input)
-            let outPtr := add(ptr, 0x40)
-            let success := staticcall(gas(), token, ptr, 0x24, outPtr, 0x20)
-            if iszero(success) { revert(0, 0) }
-
-            // Verify we actually got return data (protects against non-existent contracts)
-            if iszero(returndatasize()) { revert(0, 0) }
-
-            tokenBalance := mload(outPtr)
-        }
+    function _getTokenBalance(address token, address account) private view returns (uint256) {
+        return IERC20(token).balanceOf(account);
     }
     
     /**
-     * @dev Internal assembly function to send ETH
+     * @dev Send ETH using standard Solidity
      * @param to Recipient address
      * @param amount Amount to send
      */
     function _sendETH(address to, uint256 amount) private {
-        assembly {
-            let success := call(gas(), to, amount, 0, 0, 0, 0)
-            if iszero(success) { revert(0, 0) }
-        }
+        (bool success, ) = to.call{value: amount}("");
+        require(success, "ETH transfer failed");
     }
     
     /**
@@ -141,32 +124,19 @@ contract WalletBundler {
     }
     
     /**
-     * @dev Wrap specific amount of ETH to WETH
-     * @param amount Amount of ETH to wrap (0 means wrap all)
+     * @dev Wrap specific amount of ETH to WETH using standard Solidity
+     * @param amount Amount of ETH to wrap
      */
     function _wrapETH(uint256 amount) private {
-        assembly {
-            let ptr := mload(0x40)
-            // Store deposit() selector
-            mstore(ptr, 0xd0e30db000000000000000000000000000000000000000000000000000000000)
-            let success := call(gas(), WETH, amount, ptr, 0x04, 0, 0)
-            if iszero(success) { revert(0, 0) }
-        }
+        IWETH(WETH).deposit{value: amount}();
     }
 
     /**
-     * @dev Unwrap specific amount of WETH to ETH
-     * @param amount Amount of WETH to unwrap (0 means unwrap all)
+     * @dev Unwrap specific amount of WETH to ETH using standard Solidity
+     * @param amount Amount of WETH to unwrap
      */
     function _unwrapWETH(uint256 amount) private {
-        assembly {
-            let ptr := mload(0x40)
-            // Store withdraw(uint256) selector
-            mstore(ptr, 0x2e1a7d4d00000000000000000000000000000000000000000000000000000000)
-            mstore(add(ptr, 0x04), amount)
-            let success := call(gas(), WETH, 0, ptr, 0x24, 0, 0)
-            if iszero(success) { revert(0, 0) }
-        }
+        IWETH(WETH).withdraw(amount);
     }
 
     /**
@@ -246,45 +216,22 @@ contract WalletBundler {
                 // Both Uniswap V4 and Balancer V3 use Permit2 approval system
                 // Smart contracts can call approve() but cannot sign permit messages
 
-                // Uniswap: Universal Router pulls tokens via Permit2
-                // Balancer: Vault pulls tokens via Permit2 (not Router!)
-                // address permit2Spender = target == BALANCER_ROUTER ? BALANCER_VAULT : target;
+                // Two-step approval process:
+                // Step 1: Token → Permit2 (standard ERC20 approval)
+                // Step 2: Permit2 → Protocol (Permit2's internal approval)
+                address permit2Spender = target;
+                //  == BALANCER_ROUTER ? BALANCER_VAULT : UNISWAP_POOL_MANAGER;
 
-                uint256 permit2Allowance;
-                address contractAddr = self;
-                assembly {
-                    let ptr := mload(0x40)
-                    // Store allowance(address,address,address) selector
-                    mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
-                    mstore(add(ptr, 0x04), contractAddr)  // owner (this contract)
-                    mstore(add(ptr, 0x24), tokenIn)       // tokenIn
-                    mstore(add(ptr, 0x44), target) // spender
-
-                    // Use separate memory location for output (ptr + 0x80 = 128 bytes after input)
-                    let outPtr := add(ptr, 0x80)
-                    let success := staticcall(gas(), PERMIT2, ptr, 0x64, outPtr, 0x60)
-                    if success {
-                        permit2Allowance := mload(outPtr) // First return value is uint160 amount
-                    }
+                // Check if Token is approved to Permit2
+                uint256 tokenAllowance = _getAllowance(tokenIn, PERMIT2);
+                if (tokenAllowance < APPROVAL_THRESHOLD) {
+                    _approve(tokenIn, PERMIT2);  // Token → Permit2 (max uint256)
                 }
 
+                // Check if Permit2 has approved the protocol
+                (uint160 permit2Allowance, , ) = IPermit2(PERMIT2).allowance(self, tokenIn, permit2Spender);
                 if (permit2Allowance < APPROVAL_THRESHOLD) {
-                    // Approve both Token→Permit2 and Permit2→Spender
-                    _approve(tokenIn, PERMIT2);  // Token → Permit2 (max uint256, never decrements)
-
-                    // Approve Permit2 → Spender (uint160 max, does decrement)
-                    assembly {
-                        let ptr := mload(0x40)
-                        // Store approve(address,address,uint160,uint48) selector
-                        mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
-                        mstore(add(ptr, 0x04), tokenIn)                // tokenIn
-                        mstore(add(ptr, 0x24), target)         // spender (Vault for Balancer, Router for Uniswap)
-                        mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
-                        mstore(add(ptr, 0x64), EXPIRATION_OFFSET) // expiration
-
-                        let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
-                        if iszero(success) { revert(0, 0) }
-                    }
+                    _approvePermit2(tokenIn, permit2Spender);  // Permit2 → Protocol (max uint160)
                 }
             }
 
@@ -293,7 +240,19 @@ contract WalletBundler {
             // ----------------
             uint256 callValue = tokenIn == address(0) ? inputAmount : 0;
             (bool success, bytes memory returnData) = target.call{value: callValue}(callData);
-            if (!success) revert CallFailed();
+
+            if (!success) {
+                // Decode revert reason if available
+                if (returnData.length > 0) {
+                    assembly {
+                        let returndata_size := mload(returnData)
+                        revert(add(32, returnData), returndata_size)
+                    }
+                } else {
+                    revert CallFailed();
+                }
+            }
+
             results[i] = success;
 
             // Decode the output amount from return data
@@ -334,40 +293,32 @@ contract WalletBundler {
     }
 
     /**
-     * @dev Check ERC20 allowance
+     * @dev Check ERC20 allowance using standard Solidity
      */
-    function _getAllowance(address token, address spender) private view returns (uint256 allowance) {
-        address contractAddr = self;
-        assembly {
-            let ptr := mload(0x40)
-            // Store allowance(address,address) selector
-            mstore(ptr, 0xdd62ed3e00000000000000000000000000000000000000000000000000000000)
-            mstore(add(ptr, 0x04), contractAddr) // owner (this contract)
-            mstore(add(ptr, 0x24), spender)   // spender
+    function _getAllowance(address token, address spender) private view returns (uint256) {
+        return IERC20(token).allowance(self, spender);
+    }
 
-            // Use separate memory location for output
-            let outPtr := add(ptr, 0x60)
-            let success := staticcall(gas(), token, ptr, 0x44, outPtr, 0x20)
-            if success {
-                allowance := mload(outPtr)
-            }
+    /**
+     * @dev Approve ERC20 spending with safe handling for non-standard tokens (USDC, USDT)
+     */
+    function _approve(address token, address spender) private {
+        (bool success, bytes memory data) = token.call(
+            abi.encodeWithSelector(IERC20.approve.selector, spender, type(uint256).max)
+        );
+        require(success, "Approve call failed");
+        if (data.length > 0) {
+            require(abi.decode(data, (bool)), "Approve returned false");
         }
     }
 
     /**
-     * @dev Approve ERC20 spending
+     * @dev Approve Permit2 spending using standard Solidity interface
+     * @param token Token to approve
+     * @param spender Spender address (Vault for Balancer, Router for Uniswap)
      */
-    function _approve(address token, address spender) private {
-        assembly {
-            let ptr := mload(0x40)
-            // Store approve(address,uint256) selector
-            mstore(ptr, 0x095ea7b300000000000000000000000000000000000000000000000000000000)
-            mstore(add(ptr, 0x04), spender)
-            mstore(add(ptr, 0x24), 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff) // max uint256
-
-            let success := call(gas(), token, 0, ptr, 0x44, 0, 0)
-            if iszero(success) { revert(0, 0) }
-        }
+    function _approvePermit2(address token, address spender) private {
+        IPermit2(PERMIT2).approve(token, spender, type(uint160).max, EXPIRATION_OFFSET);
     }
 
     receive() external payable {}

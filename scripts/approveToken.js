@@ -14,11 +14,13 @@ const { ethers } = hre;
 // ===== CONFIGURATION =====
 const PARAMS = {
   // Token to approve (change this to the token you want to trade)
+  // tokenAddress: '0x45804880de22913dafe09f4980848ece6ecbaf78', // ONE token example
   tokenAddress: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // ONE token example
   tokenSymbol: 'AAVE', // For display purposes only
+  // tokenSymbol: 'PAXG', // For display purposes only
 
   // Your WalletBundler address
-  bundlerAddress: '0xDb0d5062C851407bBCc450b7c9E7505Dc0Fbc38a',
+  bundlerAddress: '0x5f7Ac637c4aB52C581CA444CE4770C3e8b88B2dD',
 
   // Amount to approve (leave as 'max' for unlimited, or specify a number like '1000')
   approvalAmount: 'max'
@@ -112,7 +114,7 @@ async function main() {
 
   try {
     const tx = await tokenContract.approve(PARAMS.bundlerAddress, approvalAmount, {
-      gasPrice: gasPrice.mul(110).div(100) // 10% buffer
+      gasPrice: gasPrice.mul(120).div(100) // 10% buffer
     });
 
     console.log(`\n🚀 Transaction sent: ${tx.hash}`);

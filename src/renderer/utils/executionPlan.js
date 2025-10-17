@@ -4,8 +4,8 @@ import { ethers } from 'ethers';
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
-const balancerEncoderAddress = '0x155CCfeA3c02deF5D8506dCCe569E94Ff4Facba7';
-const uniswapEncoderAddress = '0x34981aD6A5F65268EF251185334531329020e7FD';  // V4 with correct action codes
+const balancerEncoderAddress = '0xc9BC3dd2AAF14992Bf987dFEf1E9592151E8e1C4';
+const uniswapEncoderAddress = '0xbB9417Cfd94383cA8EF2e323aE2e244CC58aF010';  // V4 with correct action codes
 
 /**
  * Create execution plan for the selected route
@@ -85,7 +85,7 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
         const poolIdentifier = pool.poolAddress || pool.poolId || 'unknown';
 
         console.log(`      ${poolIdx + 1}. ${pool.protocol}: ${inputTokenSymbol}→${outputTokenSymbol}`);
-        console.log(`         Pool: ${poolIdentifier.slice(0, 10)}...`);
+        console.log(`         Pool: ${poolIdentifier}`);
         console.log(`         Allocation: ${(pool.percentage * 100).toFixed(1)}% of level ${level.level} input${pool.shouldUseAllBalance ? ' [USE ALL]' : ''}`);
 
         // Display wrap/unwrap operation if applicable
@@ -275,6 +275,7 @@ export function createEncoderExecutionPlan(
 
     // Calculate minimum amount out with slippage for this step
     let minAmountOut = BigNumber.from(0);
+    // console.log(step.expectedOutput.toString())
     if (step.expectedOutput || step.output) {
       const expectedOut = step.expectedOutput || step.output || BigNumber.from(0);
       // Apply slippage: minAmount = expectedAmount * (100 - slippagePercent) / 100
@@ -297,6 +298,7 @@ export function createEncoderExecutionPlan(
       const tradeRoute = step.trade?.route || step.trade?.swaps?.[0]?.route;
       const pool = tradeRoute?.pools?.[0];
 
+      console.log(pool.poolKey);
       if (pool?.poolKey) {
         // V4 pool with full PoolKey
         currency0 = pool.poolKey.currency0;
@@ -718,9 +720,9 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
           inputToken.address = tradeRoute?.input?.address || leg.trade.inputAmount?.currency?.address;
           outputToken.symbol = tradeRoute?.output?.symbol || leg.trade.outputAmount?.currency?.symbol;
           outputToken.address = tradeRoute?.output?.address || leg.trade.outputAmount?.currency?.address;
-        } else if (protocol === 'balancer' && leg.route) {
-          // Extract from Balancer route object
-          const hops = leg.route.hops || leg.route.path?.hops;
+        } else if (protocol === 'balancer' && leg.path) {
+          // Extract from Balancer path object
+          const hops = leg.path.hops || leg.path.path?.hops;
           if (hops && hops.length > 0) {
             const firstHop = hops[0];
             const lastHop = hops[hops.length - 1];
@@ -769,16 +771,42 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
         // Determine wrap operation for first leg
         let wrapOp = 0;
         if (legIndex === 0) {
-          const poolExpectsWETH = leg.route?.path?.[0]?.toLowerCase() === WETH_ADDRESS.toLowerCase() ||
-                                  leg.trade?.route?.input?.address?.toLowerCase() === WETH_ADDRESS.toLowerCase();
-          const poolExpectsETH = leg.route?.path?.[0]?.toLowerCase() === ETH_ADDRESS.toLowerCase();
+          // Check what the pool expects based on protocol and actual token addresses
+          let poolExpectsWETH = false;
+          let poolExpectsETH = false;
+
+          if (protocol === 'balancer') {
+            // Balancer ALWAYS uses WETH, never native ETH
+            // Check if the input token in the Balancer path is WETH
+            const balancerInputToken = leg.path?.hops?.[0]?.tokenIn;
+            if (balancerInputToken) {
+              poolExpectsWETH = balancerInputToken.toLowerCase() === WETH_ADDRESS.toLowerCase();
+              poolExpectsETH = balancerInputToken.toLowerCase() === ETH_ADDRESS.toLowerCase();
+            } else {
+              // If we can't determine, assume Balancer expects WETH (it always does)
+              poolExpectsWETH = true;
+            }
+          } else if (protocol === 'uniswap') {
+            // Uniswap V4 uses native ETH
+            const uniswapInputAddr = leg.trade?.route?.input?.address || leg.trade?.inputAmount?.currency?.address;
+            if (uniswapInputAddr) {
+              poolExpectsWETH = uniswapInputAddr.toLowerCase() === WETH_ADDRESS.toLowerCase();
+              poolExpectsETH = uniswapInputAddr.toLowerCase() === ETH_ADDRESS.toLowerCase();
+            } else {
+              // If we can't determine, assume Uniswap expects ETH
+              poolExpectsETH = true;
+            }
+          }
+
           const userSendsETH = tokenIn.address === ETH_ADDRESS;
           const userSendsWETH = tokenIn.address === WETH_ADDRESS;
 
           if (poolExpectsWETH && userSendsETH) {
             wrapOp = 1; // Wrap ETH to WETH before swap
+            console.log(`   🔄 Leg 0 (${protocol}): Pool expects WETH, user sends ETH → wrapOp=1 (wrap before)`);
           } else if (poolExpectsETH && userSendsWETH) {
             wrapOp = 3; // Unwrap WETH to ETH before swap
+            console.log(`   🔄 Leg 0 (${protocol}): Pool expects ETH, user sends WETH → wrapOp=3 (unwrap before)`);
           }
         }
 
@@ -790,8 +818,14 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
           if (pool) {
             poolIdentifier = pool.id || pool.address || pool.poolId || '';
           }
-        } else if (protocol === 'balancer' && leg.route) {
-          poolIdentifier = leg.route.poolId || leg.route.poolAddress || '';
+        } else if (protocol === 'balancer' && leg.path) {
+          // Extract from Balancer path hops
+          const hops = leg.path.hops || leg.path.path?.hops;
+          if (hops && hops.length > 0) {
+            poolIdentifier = hops[0].poolAddress || hops[0].poolId || leg.path.poolId || leg.path.poolAddress || '';
+          } else {
+            poolIdentifier = leg.path.poolId || leg.path.poolAddress || '';
+          }
         }
 
         // Fallback to leg-level properties
@@ -822,7 +856,7 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
           wrapOperation: wrapOp,
           shouldUseAllBalance: legIndex > 0, // First leg uses exact amount, others use all balance
           ...(protocol === 'uniswap' && { trade: leg.trade }),
-          ...(protocol === 'balancer' && { path: leg.route })
+          ...(protocol === 'balancer' && { path: leg.path })
         };
 
         pools.push(pool);

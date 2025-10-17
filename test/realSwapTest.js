@@ -18,24 +18,34 @@ const TEST_PARAMS = {
     decimals: 18
   },
   // tokenOutObject: {
-  //   address: '0x45804880de22913dafe09f4980848ece6ecbaf78', // AAVE
-  //   symbol: 'PAXG',
-  //   decimals: 18
+  //   address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // osETH
+  //   symbol: 'USDC',
+  //   decimals: 6
   // },
   tokenOutObject: {
-    address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
-    symbol: 'AAVE',
+    address: '0x45804880de22913dafe09f4980848ece6ecbaf78', // AAVE
+    symbol: 'PAXG',
     decimals: 18
   },
-  amountIn: '0.0000964', // In human-readable format, not wei
+  // tokenInObject: {
+  //   address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
+  //   symbol: 'AAVE',
+  //   decimals: 18
+  // },
+  // tokenOutObject: {
+  //   address: '0x6b175474e89094c44da98b954eedeac495271d0f', // DAI
+  //   symbol: 'DAI',
+  //   decimals: 18
+  // },
+  amountIn: '0.000000964', // In human-readable format, not wei
   slippageTolerance: 20 // 0.5%
 };
 
 // ===== DEPLOYED CONTRACT ADDRESSES =====
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28',
-  uniswapEncoder: '0x34981aD6A5F65268EF251185334531329020e7FD',  // V4 with correct action codes
-  balancerEncoder: '0x155CCfeA3c02deF5D8506dCCe569E94Ff4Facba7'
+  uniswapEncoder: '0xbB9417Cfd94383cA8EF2e323aE2e244CC58aF010',  // V4 with correct action codes
+  balancerEncoder: '0xc9BC3dd2AAF14992Bf987dFEf1E9592151E8e1C4'
 };
 
 describe("Real Swap Integration Test", function () {
@@ -256,7 +266,7 @@ describe("Real Swap Integration Test", function () {
 
     console.log(contractCallArgs.encoderData)
 
-    if (contractCallArgs.encoderTargets.length <= 1) return console.log('not interesting tx to try')
+    // if (contractCallArgs.encoderTargets.length <= 1) return console.log('not interesting tx to try')
     // Execute the swap
     const tx = await walletBundler.encodeAndExecuteaaaaaYops(
       contractCallArgs.fromToken,
@@ -269,7 +279,7 @@ describe("Real Swap Integration Test", function () {
         value: msgValue,
         maxFeePerGas: maxFeePerGas,
         maxPriorityFeePerGas: maxPriorityFeePerGas,
-        // gasLimit: 1200000  // Fixed gas limit to skip estimation and see actual error
+        gasLimit: 800000  // Fixed gas limit to skip estimation and see actual error
       }
     );
 
