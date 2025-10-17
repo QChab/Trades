@@ -17,16 +17,16 @@ const TEST_PARAMS = {
     symbol: 'ETH',
     decimals: 18
   },
-  // tokenOutObject: {
-  //   address: '0x45804880de22913dafe09f4980848ece6ecbaf78', // AAVE
-  //   symbol: 'PAXG',
-  //   decimals: 18
-  // },
   tokenOutObject: {
-    address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
-    symbol: 'AAVE',
+    address: '0x45804880de22913dafe09f4980848ece6ecbaf78', // AAVE
+    symbol: 'PAXG',
     decimals: 18
   },
+  // tokenOutObject: {
+  //   address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
+  //   symbol: 'AAVE',
+  //   decimals: 18
+  // },
   amountIn: '0.0000964', // In human-readable format, not wei
   slippageTolerance: 20 // 0.5%
 };

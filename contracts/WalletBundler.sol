@@ -270,7 +270,8 @@ contract WalletBundler {
 
                 if (permit2Allowance < APPROVAL_THRESHOLD) {
                     // Approve both Token→Permit2 and Permit2→Spender
-                    _approve(tokenIn, PERMIT2);  // Token → Permit2 (max uint256, never decrements)
+                    if (_getAllowance(tokenIn, PERMIT2) < APPROVAL_THRESHOLD)
+                        _approve(tokenIn, PERMIT2);  // Token → Permit2 (max uint256, never decrements)
 
                     // Approve Permit2 → Spender (uint160 max, does decrement)
                     assembly {

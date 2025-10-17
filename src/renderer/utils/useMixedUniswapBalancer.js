@@ -16,6 +16,26 @@ const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 
 /**
+ * Helper functions to handle both string and object token formats
+ */
+const getTokenSymbol = (token) => {
+  if (typeof token === 'string') return token;
+  return token?.symbol || 'UNKNOWN';
+};
+
+const getTokenAddress = (token) => {
+  if (typeof token === 'string') return token;
+  return token?.address || token;
+};
+
+const isETHOrWETH = (token) => {
+  if (typeof token === 'string') {
+    return token === 'ETH' || token === 'WETH';
+  }
+  return token?.symbol === 'ETH' || token?.symbol === 'WETH';
+};
+
+/**
  * Mixed Uniswap-Balancer router that finds optimal trade splits across both DEXs
  * Supports multi-hop routing, percentage-based splitting, and ETH/WETH conversion
  * 
@@ -887,7 +907,7 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
   let currentSplit;
   if (poolInitialAllocations) {
     currentSplit = pools.map(pool => {
-      const poolKey = pool.poolKey || `${pool.poolAddress}@${pool.inputToken}-${pool.outputToken}`;
+      const poolKey = pool.poolKey || `${pool.poolAddress}@${pool.inputToken?.symbol || pool.inputToken}-${pool.outputToken?.symbol || pool.outputToken}`;
       const initialPct = poolInitialAllocations.get(poolKey) || (1.0 / numPools);
       return Math.max(0.001, initialPct); // Minimum 0.1%
     });
@@ -1375,21 +1395,40 @@ function buildTokenPairGroups(routes) {
           const pool = tradeRoute.pools[0];
           const path = tradeRoute.currencyPath || tradeRoute.path;
           if (path && path.length >= 2) {
-            let inputToken = path[path.length - 2].symbol.replace(/WETH/g, 'ETH');
-            let outputToken = path[path.length - 1].symbol.replace(/WETH/g, 'ETH');
+            const inputCurrency = path[path.length - 2];
+            const outputCurrency = path[path.length - 1];
+
+            let inputTokenSymbol = inputCurrency.symbol.replace(/WETH/g, 'ETH');
+            let inputTokenAddress = inputCurrency.address;
+            let outputTokenSymbol = outputCurrency.symbol.replace(/WETH/g, 'ETH');
+            let outputTokenAddress = outputCurrency.address;
+
+            // If address is WETH but symbol is now ETH, convert address to ETH_ADDRESS
+            if (inputTokenSymbol === 'ETH' && inputTokenAddress.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
+              inputTokenAddress = ETH_ADDRESS;
+            }
+            if (outputTokenSymbol === 'ETH' && outputTokenAddress.toLowerCase() === WETH_ADDRESS.toLowerCase()) {
+              outputTokenAddress = ETH_ADDRESS;
+            }
+
             const poolAddress = pool.address || pool.id || pool.poolId || 'unknown';
 
             // If leg has a token property, use that as the output (more reliable for cross-DEX routes)
             if (leg.token && leg.token.symbol) {
-              outputToken = leg.token.symbol.replace(/WETH/g, 'ETH');
+              outputTokenSymbol = leg.token.symbol.replace(/WETH/g, 'ETH');
+              if (leg.token.address) {
+                outputTokenAddress = outputTokenSymbol === 'ETH' && leg.token.address.toLowerCase() === WETH_ADDRESS.toLowerCase()
+                  ? ETH_ADDRESS
+                  : leg.token.address;
+              }
             }
 
             poolInfo = {
               poolAddress,
-              poolKey: `${poolAddress}@${inputToken}-${outputToken}`,
+              poolKey: `${poolAddress}@${inputTokenSymbol}-${outputTokenSymbol}`,
               protocol: 'uniswap',
-              inputToken,
-              outputToken,
+              inputToken: { symbol: inputTokenSymbol, address: inputTokenAddress },
+              outputToken: { symbol: outputTokenSymbol, address: outputTokenAddress },
               trade: leg.trade,
               routeIndex,
               legIndex
@@ -1404,36 +1443,50 @@ function buildTokenPairGroups(routes) {
           const firstHop = hops[0];
           const lastHop = hops[hops.length - 1];
 
-          let inputToken = 'UNKNOWN';
-          let outputToken = 'UNKNOWN';
+          let inputTokenSymbol = 'UNKNOWN';
+          let inputTokenAddress = '';
+          let outputTokenSymbol = 'UNKNOWN';
+          let outputTokenAddress = '';
 
           if (firstHop.poolData && firstHop.poolData.tokens) {
             const tokenInObj = firstHop.poolData.tokens.find(
               t => t.address.toLowerCase() === firstHop.tokenIn.toLowerCase()
             );
-            inputToken = tokenInObj?.symbol?.replace(/WETH/g, 'ETH') || 'UNKNOWN';
+            if (tokenInObj) {
+              inputTokenSymbol = tokenInObj.symbol.replace(/WETH/g, 'ETH');
+              // CRITICAL: Balancer uses WETH, so keep WETH address even if symbol is ETH
+              inputTokenAddress = tokenInObj.address;
+            }
           }
 
           if (lastHop.poolData && lastHop.poolData.tokens) {
             const tokenOutObj = lastHop.poolData.tokens.find(
               t => t.address.toLowerCase() === lastHop.tokenOut.toLowerCase()
             );
-            outputToken = tokenOutObj?.symbol?.replace(/WETH/g, 'ETH') || 'UNKNOWN';
+            if (tokenOutObj) {
+              outputTokenSymbol = tokenOutObj.symbol.replace(/WETH/g, 'ETH');
+              // CRITICAL: Balancer uses WETH, so keep WETH address even if symbol is ETH
+              outputTokenAddress = tokenOutObj.address;
+            }
           }
 
           // If leg has a token property, use that as the output (more reliable for cross-DEX routes)
           if (leg.token && leg.token.symbol) {
-            outputToken = leg.token.symbol.replace(/WETH/g, 'ETH');
+            outputTokenSymbol = leg.token.symbol.replace(/WETH/g, 'ETH');
+            if (leg.token.address) {
+              // Balancer always uses WETH address
+              outputTokenAddress = leg.token.address;
+            }
           }
 
           const poolAddress = firstHop.poolAddress;
           poolInfo = {
             poolAddress,
-            poolKey: `${poolAddress}@${inputToken}-${outputToken}`,
+            poolKey: `${poolAddress}@${inputTokenSymbol}-${outputTokenSymbol}`,
             poolId: firstHop.poolId,
             protocol: 'balancer',
-            inputToken,
-            outputToken,
+            inputToken: { symbol: inputTokenSymbol, address: inputTokenAddress },
+            outputToken: { symbol: outputTokenSymbol, address: outputTokenAddress },
             path: leg.path,
             routeIndex,
             legIndex
@@ -1442,7 +1495,7 @@ function buildTokenPairGroups(routes) {
       }
 
       if (poolInfo) {
-        const tokenPairKey = `${poolInfo.inputToken}->${poolInfo.outputToken}`;
+        const tokenPairKey = `${poolInfo.inputToken?.symbol || poolInfo.inputToken}->${poolInfo.outputToken?.symbol || poolInfo.outputToken}`;
 
         if (!tokenPairMap.has(tokenPairKey)) {
           tokenPairMap.set(tokenPairKey, []);
@@ -1540,7 +1593,7 @@ function buildTokenPairGroups(routes) {
 
       // Add pool to tokenPairMap
       if (poolInfo) {
-        const tokenPairKey = `${poolInfo.inputToken}->${poolInfo.outputToken}`;
+        const tokenPairKey = `${poolInfo.inputToken?.symbol || poolInfo.inputToken}->${poolInfo.outputToken?.symbol || poolInfo.outputToken}`;
 
         if (!tokenPairMap.has(tokenPairKey)) {
           tokenPairMap.set(tokenPairKey, []);
@@ -1747,11 +1800,12 @@ function buildPoolExecutionStructure(routes, splitPercentages) {
         }
 
         // Track what this pool produces
-        if (!tokenProducers.has(poolInfo.outputToken)) {
-          tokenProducers.set(poolInfo.outputToken, []);
+        const outputTokenSymbol = getTokenSymbol(poolInfo.outputToken);
+        if (!tokenProducers.has(outputTokenSymbol)) {
+          tokenProducers.set(outputTokenSymbol, []);
         }
-        if (!tokenProducers.get(poolInfo.outputToken).includes(poolKey)) {
-          tokenProducers.get(poolInfo.outputToken).push(poolKey);
+        if (!tokenProducers.get(outputTokenSymbol).includes(poolKey)) {
+          tokenProducers.get(outputTokenSymbol).push(poolKey);
         }
       }
     });
@@ -1772,7 +1826,8 @@ function buildPoolExecutionStructure(routes, splitPercentages) {
       const pool = poolMap.get(poolKey);
 
       // Check if this pool's input token is produced by any remaining pool
-      const inputProducers = tokenProducers.get(pool.inputToken) || [];
+      const inputTokenSymbol = getTokenSymbol(pool.inputToken);
+      const inputProducers = tokenProducers.get(inputTokenSymbol) || [];
       const hasUnresolvedDependency = inputProducers.some(producerKey =>
         remainingPools.has(producerKey) && producerKey !== poolKey
       );
@@ -1999,7 +2054,7 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
     if (group.pools.length === 1) {
       // Single pool - gets 100%
       const pool = group.pools[0];
-      const poolKey = pool.poolKey || `${pool.poolAddress}@${pool.inputToken}-${pool.outputToken}`;
+      const poolKey = pool.poolKey || `${pool.poolAddress}@${pool.inputToken?.symbol || pool.inputToken}-${pool.outputToken?.symbol || pool.outputToken}`;
       poolInitialAllocations.set(poolKey, 1.0);
     } else {
       // Multiple pools - distribute based on importance
@@ -2007,7 +2062,7 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
       const importanceByPool = new Map();
 
       for (const pool of group.pools) {
-        const poolKey = pool.poolKey || `${pool.poolAddress}@${pool.inputToken}-${pool.outputToken}`;
+        const poolKey = pool.poolKey || `${pool.poolAddress}@${pool.inputToken?.symbol || pool.inputToken}-${pool.outputToken?.symbol || pool.outputToken}`;
         const importance = poolImportance.get(poolKey) || BigNumber.from(1); // Minimum 1
         importanceByPool.set(poolKey, importance);
         totalImportance = totalImportance.add(importance);
@@ -2015,7 +2070,7 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
 
       // Normalize to percentages
       for (const pool of group.pools) {
-        const poolKey = pool.poolKey || `${pool.poolAddress}@${pool.inputToken}-${pool.outputToken}`;
+        const poolKey = pool.poolKey || `${pool.poolAddress}@${pool.inputToken?.symbol || pool.inputToken}-${pool.outputToken?.symbol || pool.outputToken}`;
         const importance = importanceByPool.get(poolKey);
         const percentage = importance.mul(100000).div(totalImportance).toNumber() / 100000;
         poolInitialAllocations.set(poolKey, Math.max(0.01, percentage)); // Minimum 1%
@@ -2243,7 +2298,8 @@ async function optimizeInterGroupSplit(
   const removedOutputTokens = new Set();
   for (let i = 0; i < numGroups; i++) {
     if (removedIndices.has(i)) {
-      removedOutputTokens.add(competingGroups[i].outputToken);
+      const outputSymbol = getTokenSymbol(competingGroups[i].outputToken);
+      removedOutputTokens.add(outputSymbol);
     }
   }
 
@@ -2288,8 +2344,10 @@ async function optimizeInterGroupSplit(
     const groupInput = totalInput.mul(Math.floor(consolidatedSplit[i] * 1000000)).div(1000000);
     groupInputs.push(groupInput);
 
-    const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
-    const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
+    const inputSymbol = getTokenSymbol(group.inputToken);
+    const outputSymbol = getTokenSymbol(group.outputToken);
+    const groupTokenIn = { symbol: inputSymbol, decimals: tokenDecimalsLookup[inputSymbol] || 18, address: tokenIn.address };
+    const groupTokenOut = { symbol: outputSymbol, decimals: tokenDecimalsLookup[outputSymbol] || 18, address: tokenOut.address };
     const result = await optimizeTokenPairGroup(group, groupInput, groupTokenIn, groupTokenOut, poolInitialAllocations);
     result.inputPercentage = consolidatedSplit[i];
     groupOptimizations.push(result);
@@ -2352,8 +2410,10 @@ async function evaluateInterGroupSplit(
       continue;
     }
 
-    const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
-    const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
+    const inputSymbol = getTokenSymbol(group.inputToken);
+    const outputSymbol = getTokenSymbol(group.outputToken);
+    const groupTokenIn = { symbol: inputSymbol, decimals: tokenDecimalsLookup[inputSymbol] || 18, address: tokenIn.address };
+    const groupTokenOut = { symbol: outputSymbol, decimals: tokenDecimalsLookup[outputSymbol] || 18, address: tokenOut.address };
     const result = await optimizeTokenPairGroup(group, groupInput, groupTokenIn, groupTokenOut, poolInitialAllocations);
 
     groupOutputs.set(group.tokenPairKey, result.totalOutput);
@@ -2376,7 +2436,7 @@ async function evaluateInterGroupSplit(
       // Sum outputs from previous level(s) that produce this input token
       for (const [tpKey, output] of groupOutputs) {
         const prevGroup = allGroupsWithLevels.find(g => g.tokenPairKey === tpKey);
-        if (prevGroup && prevGroup.outputToken === group.inputToken) {
+        if (prevGroup && getTokenSymbol(prevGroup.outputToken) === getTokenSymbol(group.inputToken)) {
           inputAmount = inputAmount.add(output);
         }
       }
@@ -2385,7 +2445,7 @@ async function evaluateInterGroupSplit(
       for (const [tpKey, opt] of previousOptimizations) {
         if (!groupOutputs.has(tpKey)) {
           const prevGroup = allGroupsWithLevels.find(g => g.tokenPairKey === tpKey);
-          if (prevGroup && prevGroup.outputToken === group.inputToken) {
+          if (prevGroup && getTokenSymbol(prevGroup.outputToken) === getTokenSymbol(group.inputToken)) {
             inputAmount = inputAmount.add(opt.totalOutput);
           }
         }
@@ -2439,10 +2499,11 @@ function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
 
   // Build producer map
   for (const group of groupsWithLevels) {
-    if (!tokenProducers.has(group.outputToken)) {
-      tokenProducers.set(group.outputToken, []);
+    const outputSymbol = getTokenSymbol(group.outputToken);
+    if (!tokenProducers.has(outputSymbol)) {
+      tokenProducers.set(outputSymbol, []);
     }
-    tokenProducers.get(group.outputToken).push(group);
+    tokenProducers.get(outputSymbol).push(group);
   }
 
   // Assign levels using topological sort
@@ -2450,8 +2511,9 @@ function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
   let remaining = new Set(groupsWithLevels);
 
   // Level 0: Groups that consume the initial input token
+  const initialInputSymbol = getTokenSymbol(initialInputToken);
   for (const group of groupsWithLevels) {
-    if (group.inputToken === initialInputToken) {
+    if (getTokenSymbol(group.inputToken) === initialInputSymbol) {
       group.level = 0;
       remaining.delete(group);
     }
@@ -2464,7 +2526,8 @@ function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
 
     for (const group of remaining) {
       // Check if this group's input is produced by a lower level
-      const producers = tokenProducers.get(group.inputToken) || [];
+      const inputSymbol = getTokenSymbol(group.inputToken);
+      const producers = tokenProducers.get(inputSymbol) || [];
       const hasUnresolvedDependency = producers.some(p =>
         p !== group && remaining.has(p)
       );
@@ -2498,8 +2561,8 @@ function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
         const groupB = groupsAtLevel[j];
 
         // Detect circular flow: A→B and B→A
-        if (groupA.inputToken === groupB.outputToken &&
-            groupA.outputToken === groupB.inputToken) {
+        if (getTokenSymbol(groupA.inputToken) === getTokenSymbol(groupB.outputToken) &&
+            getTokenSymbol(groupA.outputToken) === getTokenSymbol(groupB.inputToken)) {
           console.log(`   ⚠️  Circular token flow detected at Level ${level}:`);
           console.log(`       ${groupA.tokenPairKey} ⇄ ${groupB.tokenPairKey}`);
 
@@ -2709,7 +2772,7 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
           inputAmount = BigNumber.from(0);
           for (const [tpKey, opt] of groupOptimizations) {
             const prevGroup = groupsWithLevels.find(g => g.tokenPairKey === tpKey);
-            if (prevGroup && prevGroup.outputToken === group.inputToken) {
+            if (prevGroup && getTokenSymbol(prevGroup.outputToken) === getTokenSymbol(group.inputToken)) {
               inputAmount = inputAmount.add(opt.totalOutput);
             }
           }
@@ -2735,10 +2798,10 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
         } else {
           // Sum outputs from previous level
           totalInput = BigNumber.from(0);
-          const inputToken = competingGroups[0].inputToken;
+          const inputTokenSymbol = getTokenSymbol(competingGroups[0].inputToken);
           for (const [tpKey, opt] of groupOptimizations) {
             const prevGroup = groupsWithLevels.find(g => g.tokenPairKey === tpKey);
-            if (prevGroup && prevGroup.outputToken === inputToken) {
+            if (prevGroup && getTokenSymbol(prevGroup.outputToken) === inputTokenSymbol) {
               totalInput = totalInput.add(opt.totalOutput);
             }
           }
@@ -2862,7 +2925,7 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
       const poolAddr = pool.poolAddress || pool.poolKey || 'unknown';
       const displayAddr = poolAddr.length > 10 ? poolAddr.slice(0, 10) + '...' : poolAddr;
       const pct = pool.percentage !== undefined ? (pool.percentage * 100).toFixed(1) + '%' : 'N/A';
-      console.log(`      • ${pool.protocol} (${displayAddr}): ${pool.inputToken}→${pool.outputToken} at ${pct}`);
+      console.log(`      • ${pool.protocol} (${displayAddr}): ${pool.inputToken?.symbol || pool.inputToken}→${pool.outputToken?.symbol || pool.outputToken} at ${pct}`);
     });
   });
 
@@ -2919,7 +2982,7 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
     }
 
     for (const pool of group.pools) {
-      const poolKey = pool.poolKey || `${pool.poolAddress || pool.poolId}@${pool.inputToken}-${pool.outputToken}`;
+      const poolKey = pool.poolKey || `${pool.poolAddress || pool.poolId}@${pool.inputToken?.symbol || pool.inputToken}-${pool.outputToken?.symbol || pool.outputToken}`;
 
       // CRITICAL: Calculate percentage of level input, not just group input
       // percentage = group's share of level × pool's share within group
@@ -2942,20 +3005,21 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
       // Operation codes: 0=none, 1=wrap before, 2=wrap after, 3=unwrap before, 4=unwrap after
       let wrapOperation = 0;
 
-      const isETHOrWETH = (token) => token === 'ETH' || token === 'WETH';
+      const inputTokenSymbol = getTokenSymbol(pool.inputToken);
+      const outputTokenSymbol = getTokenSymbol(pool.outputToken);
 
       // Determine actual tokens used by this protocol
-      const actualInput = (pool.protocol === 'balancer' && pool.inputToken === 'ETH') ? 'WETH' : pool.inputToken;
-      const actualOutput = (pool.protocol === 'balancer' && pool.outputToken === 'ETH') ? 'WETH' : pool.outputToken;
+      const actualInput = (pool.protocol === 'balancer' && inputTokenSymbol === 'ETH') ? 'WETH' : inputTokenSymbol;
+      const actualOutput = (pool.protocol === 'balancer' && outputTokenSymbol === 'ETH') ? 'WETH' : outputTokenSymbol;
 
       // FIRST: Check if INPUT conversion is needed
       // This applies to ALL levels, not just level 0
       if (isETHOrWETH(pool.inputToken)) {
-        if (pool.protocol === 'balancer' && pool.inputToken === 'ETH') {
+        if (pool.protocol === 'balancer' && inputTokenSymbol === 'ETH') {
           // Balancer expects WETH, but input is ETH → wrap before call
           wrapOperation = 1;
           console.log(`      🔄 Level ${level} Balancer pool needs ETH→WETH wrap (wrapOp=1)`);
-        } else if (pool.protocol === 'uniswap' && pool.inputToken === 'WETH') {
+        } else if (pool.protocol === 'uniswap' && inputTokenSymbol === 'WETH') {
           // Uniswap expects ETH, but input is WETH → unwrap before call
           wrapOperation = 3;
           console.log(`      🔄 Level ${level} Uniswap pool needs WETH→ETH unwrap (wrapOp=3)`);
@@ -2994,12 +3058,12 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
         // FINAL OUTPUT: If no consuming levels, this is final output to user
         else {
           // Balancer outputs WETH but user expects ETH → unwrap after call
-          if (pool.protocol === 'balancer' && pool.outputToken === 'ETH') {
+          if (pool.protocol === 'balancer' && outputTokenSymbol === 'ETH') {
             wrapOperation = 4; // Unwrap WETH to ETH after call
             console.log(`      🔄 Level ${level} Balancer final output needs WETH→ETH unwrap (wrapOp=4)`);
           }
           // Uniswap outputs ETH but user expects WETH (rare) → wrap after call
-          else if (pool.protocol === 'uniswap' && pool.outputToken === 'WETH') {
+          else if (pool.protocol === 'uniswap' && outputTokenSymbol === 'WETH') {
             wrapOperation = 2; // Wrap ETH to WETH after call
             console.log(`      🔄 Level ${level} Uniswap final output needs ETH→WETH wrap (wrapOp=2)`);
           }
@@ -3036,7 +3100,7 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
       const tokenPairGroups = new Map();
 
       pools.forEach(pool => {
-        const pairKey = `${pool.inputToken}->${pool.outputToken}`;
+        const pairKey = `${pool.inputToken?.symbol || pool.inputToken}->${pool.outputToken?.symbol || pool.outputToken}`;
         if (!tokenPairGroups.has(pairKey)) {
           tokenPairGroups.set(pairKey, []);
         }
@@ -3108,11 +3172,11 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
       const inputTokenGroups = new Map();
 
       consolidatedPools.forEach(pool => {
-        const inputToken = pool.inputToken;
-        if (!inputTokenGroups.has(inputToken)) {
-          inputTokenGroups.set(inputToken, []);
+        const inputTokenSymbol = getTokenSymbol(pool.inputToken);
+        if (!inputTokenGroups.has(inputTokenSymbol)) {
+          inputTokenGroups.set(inputTokenSymbol, []);
         }
-        inputTokenGroups.get(inputToken).push(pool);
+        inputTokenGroups.get(inputTokenSymbol).push(pool);
       });
 
       // Sort each input token group by percentage (lowest to highest)
