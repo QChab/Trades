@@ -119,8 +119,8 @@ contract UniswapEncoder {
             ? msg.sender.balance
             : _getTokenBalance(balanceToken, msg.sender);
 
-        // Build params array
-        bytes[] memory params = new bytes[](3);
+        // Build params array - only 2 params now (SWAP + TAKE, no SETTLE)
+        bytes[] memory params = new bytes[](2);
 
         // Param 0: Swap parameters
         params[0] = abi.encode(
@@ -131,13 +131,9 @@ contract UniswapEncoder {
             EMPTY_HOOK_DATA
         );
 
-        // Param 1: SETTLE_ALL - currency and amount to pull
-        params[1] = abi.encode(balanceToken, actualBalance);
-
-        // Param 2: TAKE_ALL - currency and minAmount to send
+        // Param 1: TAKE_ALL - currency and minAmount to send
         address currencyOut = swapParams.zeroForOne ? swapParams.poolKey.currency1 : swapParams.poolKey.currency0;
-        // Gas optimization: removed redundant if check (currencyOut is already set correctly)
-        params[2] = abi.encode(currencyOut, swapParams.minAmountOut);
+        params[1] = abi.encode(currencyOut, swapParams.minAmountOut);
 
         // Encode inputs as [actions, params]
         bytes[] memory inputs = new bytes[](1);
