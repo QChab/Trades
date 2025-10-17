@@ -1,0 +1,109 @@
+#!/usr/bin/env node
+
+/**
+ * CLI tool to generate Forge test data
+ * Usage examples:
+ *   npm run gentest                    # Use default config
+ *   npm run gentest ETH PAXG 0.001     # Specify tokens and amount
+ *   npm run gentest AAVE USDC 100      # Swap 100 AAVE for USDC
+ */
+
+import { CONFIG, TOKENS, generateEncoderPlan, updateTestFile } from './generateForgeTest.js';
+import hre from 'hardhat';
+const { ethers } = hre;
+
+// Parse command line arguments
+const args = process.argv.slice(2);
+
+if (args.length > 0 && (args[0] === '--help' || args[0] === '-h')) {
+  console.log(`
+🔧 Forge Test Generator
+
+Usage:
+  npm run gentest [TOKEN_IN] [TOKEN_OUT] [AMOUNT]
+
+Arguments:
+  TOKEN_IN   - Input token symbol (default: ETH)
+  TOKEN_OUT  - Output token symbol (default: PAXG)
+  AMOUNT     - Amount to swap in human-readable format (default: 0.000964)
+
+Available tokens:
+  ${Object.keys(TOKENS).join(', ')}
+
+Examples:
+  npm run gentest                    # ETH -> PAXG (default)
+  npm run gentest ETH AAVE 0.01      # 0.01 ETH -> AAVE
+  npm run gentest AAVE USDC 100      # 100 AAVE -> USDC
+  npm run gentest USDC DAI 1000      # 1000 USDC -> DAI
+
+The script will:
+  1. Find the optimal route using the routing optimizer
+  2. Generate encoder execution plan
+  3. Update test/RealSwapTest.t.sol with the new test data
+  4. You can then run: forge test --match-test test -vv
+  `);
+  process.exit(0);
+}
+
+// Override config with CLI arguments if provided
+if (args.length >= 2) {
+  const tokenInSymbol = args[0].toUpperCase();
+  const tokenOutSymbol = args[1].toUpperCase();
+
+  if (!TOKENS[tokenInSymbol]) {
+    console.error(`❌ Unknown token: ${tokenInSymbol}`);
+    console.error(`Available tokens: ${Object.keys(TOKENS).join(', ')}`);
+    process.exit(1);
+  }
+
+  if (!TOKENS[tokenOutSymbol]) {
+    console.error(`❌ Unknown token: ${tokenOutSymbol}`);
+    console.error(`Available tokens: ${Object.keys(TOKENS).join(', ')}`);
+    process.exit(1);
+  }
+
+  CONFIG.tokenIn = TOKENS[tokenInSymbol];
+  CONFIG.tokenOut = TOKENS[tokenOutSymbol];
+
+  if (args.length >= 3) {
+    CONFIG.amountIn = args[2];
+  }
+}
+
+console.log('\n📋 Configuration:');
+console.log(`   From: ${CONFIG.amountIn} ${CONFIG.tokenIn.symbol}`);
+console.log(`   To: ${CONFIG.tokenOut.symbol}`);
+console.log(`   Slippage: ${CONFIG.slippageTolerance}%`);
+
+// Import and run main function
+import('./generateForgeTest.js')
+  .then(module => module.default || main)
+  .catch(error => {
+    console.error('❌ Error:', error.message);
+    process.exit(1);
+  });
+
+async function main() {
+  const provider = ethers.provider;
+
+  const encoderPlan = await generateEncoderPlan(
+    CONFIG.tokenIn,
+    CONFIG.tokenOut,
+    CONFIG.amountIn,
+    CONFIG.slippageTolerance,
+    provider
+  );
+
+  const amountInWei = ethers.utils.parseUnits(CONFIG.amountIn, CONFIG.tokenIn.decimals);
+
+  updateTestFile(
+    CONFIG.tokenIn,
+    CONFIG.tokenOut,
+    amountInWei,
+    encoderPlan,
+    CONFIG.bundlerAddress
+  );
+
+  console.log('\n✅ Test generation complete!\n');
+  console.log('Run with: forge test --match-test test -vv\n');
+}

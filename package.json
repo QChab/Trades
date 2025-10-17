@@ -15,7 +15,9 @@
     "build": "vite build && electron-builder",
     "buildSign": "node scripts/buildSign.js",
     "vite:dev": "vite build --watch",
-    "vite:build": "vite build"
+    "vite:build": "vite build",
+    "gentest": "npx hardhat run scripts/generateForgeTest.js --network mainnet",
+    "forgetest": "npm run gentest && source .env && forge test --match-test test -vvvv"
   },
   "build": {
     "appId": "com.techinblocks.trades",

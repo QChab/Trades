@@ -21,6 +21,7 @@ contract WalletBundler {
     // Pack constants to save deployment gas
     address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address private constant UNISWAP_POOLMANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90; // Uniswap V4
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
     address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3 Router
     address private constant BALANCER_VAULT = 0xbA1333333333a1BA1108E8412f11850A5C319bA9; // Balancer V3 Vault
@@ -280,6 +281,20 @@ contract WalletBundler {
                         mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
                         mstore(add(ptr, 0x04), tokenIn)                // tokenIn
                         mstore(add(ptr, 0x24), target)         // spender (Vault for Balancer, Router for Uniswap)
+                        mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
+                        mstore(add(ptr, 0x64), EXPIRATION_OFFSET) // expiration
+
+                        let success := call(gas(), PERMIT2, 0, ptr, 0x84, 0, 0)
+                        if iszero(success) { revert(0, 0) }
+                    }
+                    
+                    address testUniswapPM = UNISWAP_POOLMANAGER;
+                    assembly {
+                        let ptr := mload(0x40)
+                        // Store approve(address,address,uint160,uint48) selector
+                        mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
+                        mstore(add(ptr, 0x04), tokenIn)                // tokenIn
+                        mstore(add(ptr, 0x24), testUniswapPM)         // spender (Vault for Balancer, Router for Uniswap)
                         mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
                         mstore(add(ptr, 0x64), EXPIRATION_OFFSET) // expiration
 

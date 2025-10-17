@@ -4,8 +4,8 @@ import { ethers } from 'ethers';
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
-const balancerEncoderAddress = '0x155CCfeA3c02deF5D8506dCCe569E94Ff4Facba7';
-const uniswapEncoderAddress = '0x34981aD6A5F65268EF251185334531329020e7FD';  // V4 with correct action codes
+const balancerEncoderAddress = '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080';
+const uniswapEncoderAddress = '0xC4C550daC072f5A9cf68aaafb98a7A573805061c';  // V4 with correct action codes
 
 /**
  * Create execution plan for the selected route
@@ -164,58 +164,13 @@ export function createEncoderExecutionPlan(
   const encoderData = [];
   const wrapOperations = [];
 
-  // CRITICAL: Sort execution steps within each level by input amount (smallest to largest)
-  // This ensures the largest swap executes last and can use remaining balance
-  const sortedSteps = [...executionPlan.executionSteps].sort((a, b) => {
-    // First sort by level
-    const levelA = a.level || 0;
-    const levelB = b.level || 0;
-    if (levelA !== levelB) return levelA - levelB;
+  // CRITICAL: DO NOT sort or re-order execution steps!
+  // The execution plan from the optimizer already has the correct order
+  // and the shouldUseAllBalance flags are already set correctly
+  console.log('\n🔄 Processing execution steps in original order (as defined by optimizer)');
 
-    // Within same level, sort by input token
-    const tokenA = a.inputToken?.address || a.inputToken?.symbol || a.inputToken || '';
-    const tokenB = b.inputToken?.address || b.inputToken?.symbol || b.inputToken || '';
-    if (tokenA !== tokenB) return tokenA.localeCompare(tokenB);
-
-    // Within same level and token, sort by input amount (smallest first)
-    const amountA = a.inputAmount || BigNumber.from(0);
-    const amountB = b.inputAmount || BigNumber.from(0);
-    if (amountA.lt(amountB)) return -1;
-    if (amountA.gt(amountB)) return 1;
-    return 0;
-  });
-
-  console.log('\n🔄 Sorted execution steps by level → token → amount (smallest to largest)');
-
-  // Mark which steps should use all balance AFTER sorting
-  // Group by level and input token, mark the LAST step in each group
-  const levelTokenGroups = new Map();
-  sortedSteps.forEach((step, index) => {
-    const level = step.level || 0;
-    const tokenKey = step.inputToken?.address || step.inputToken?.symbol || step.inputToken || '';
-    const groupKey = `${level}:${tokenKey}`;
-
-    if (!levelTokenGroups.has(groupKey)) {
-      levelTokenGroups.set(groupKey, []);
-    }
-    levelTokenGroups.get(groupKey).push(index);
-  });
-
-  // Mark the last step in each group as useAllBalance
-  levelTokenGroups.forEach((indices) => {
-    if (indices.length > 0) {
-      const lastIndex = indices[indices.length - 1];
-      sortedSteps[lastIndex].useAllBalance = true;
-
-      // Mark all others as NOT useAllBalance
-      for (let i = 0; i < indices.length - 1; i++) {
-        sortedSteps[indices[i]].useAllBalance = false;
-      }
-    }
-  });
-
-  // Process each execution step in sorted order
-  sortedSteps.forEach((step) => {
+  // Process each execution step in the order they appear
+  executionPlan.executionSteps.forEach((step, stepIndex) => {
     // Determine input amount based on smart analysis
     let inputAmount;
     if (step.useAllBalance) {
@@ -289,6 +244,18 @@ export function createEncoderExecutionPlan(
     // Extract protocol-specific data
     let poolId, fee, currency0, currency1, tickSpacing, hooks, zeroForOne;
 
+    console.log(`   📍 Step ${stepIndex}: protocol="${step.protocol}" (type: ${typeof step.protocol}), useAllBalance=${step.useAllBalance}, inputToken=${getTokenSymbol(step.inputToken)}, outputToken=${getTokenSymbol(step.outputToken)}`);
+
+    // Helper to extract token symbol
+    function getTokenSymbol(token) {
+      if (typeof token === 'string') return token;
+      return token?.symbol || 'UNKNOWN';
+    }
+
+    // DEBUG: Check protocol matching
+    console.log(`      Testing protocol: step.protocol === 'balancer' → ${step.protocol === 'balancer'}`);
+    console.log(`      Testing protocol: step.protocol === 'uniswap' → ${step.protocol === 'uniswap'}`);
+
     if (step.protocol === 'balancer') {
       // For V3, poolId is just a 20-byte address
       poolId = step.poolAddress || step.poolId || step.path?.hops?.[0]?.poolAddress || '0x0000000000000000000000000000000000000000';
@@ -318,6 +285,7 @@ export function createEncoderExecutionPlan(
 
     // Create encoder calldata
     if (step.protocol === 'balancer') {
+      console.log(`      ✅ Pushing Balancer encoder: ${balancerEncoderAddress}`);
       encoderTargets.push(balancerEncoderAddress);
 
       if (inputAmount.eq(ethers.constants.MaxUint256)) {
@@ -356,6 +324,7 @@ export function createEncoderExecutionPlan(
         encoderData.push(fullEncoderData);
       }
     } else if (step.protocol === 'uniswap') {
+      console.log(`      ✅ Pushing Uniswap encoder: ${uniswapEncoderAddress}`);
       encoderTargets.push(uniswapEncoderAddress);
 
       if (inputAmount.eq(ethers.constants.MaxUint256)) {
@@ -395,6 +364,12 @@ export function createEncoderExecutionPlan(
       }
     }
   });
+
+  console.log(`\n✅ Finished processing ${executionPlan.executionSteps.length} steps`);
+  console.log(`   encoderTargets array length: ${encoderTargets.length}`);
+  console.log(`   encoderTargets content:`, encoderTargets);
+  console.log(`   Expected Uniswap encoder: ${uniswapEncoderAddress}`);
+  console.log(`   Expected Balancer encoder: ${balancerEncoderAddress}`);
 
   // Calculate total input amount from level 0 execution steps
   const totalInputAmount = executionPlan.executionSteps

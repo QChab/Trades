@@ -18,7 +18,7 @@ const PARAMS = {
   tokenSymbol: 'AAVE', // For display purposes only
 
   // Your WalletBundler address
-  bundlerAddress: '0xDb0d5062C851407bBCc450b7c9E7505Dc0Fbc38a',
+  bundlerAddress: '0xD160b3047f08b3610063FAcEf5f12cf87Af86c75',
 
   // Amount to approve (leave as 'max' for unlimited, or specify a number like '1000')
   approvalAmount: 'max'

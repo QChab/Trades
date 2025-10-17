@@ -18,7 +18,7 @@ const TEST_PARAMS = {
     decimals: 18
   },
   tokenOutObject: {
-    address: '0x45804880de22913dafe09f4980848ece6ecbaf78', // AAVE
+    address: '0x45804880De22913dAFE09f4980848ECE6EcbAf78', // AAVE
     symbol: 'PAXG',
     decimals: 18
   },
@@ -34,8 +34,8 @@ const TEST_PARAMS = {
 // ===== DEPLOYED CONTRACT ADDRESSES =====
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28',
-  uniswapEncoder: '0x34981aD6A5F65268EF251185334531329020e7FD',  // V4 with correct action codes
-  balancerEncoder: '0x155CCfeA3c02deF5D8506dCCe569E94Ff4Facba7'
+  uniswapEncoder: '0xC4C550daC072f5A9cf68aaafb98a7A573805061c',  // V4 with correct action codes
+  balancerEncoder: '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080'
 };
 
 describe("Real Swap Integration Test", function () {
@@ -269,7 +269,7 @@ describe("Real Swap Integration Test", function () {
         value: msgValue,
         maxFeePerGas: maxFeePerGas,
         maxPriorityFeePerGas: maxPriorityFeePerGas,
-        // gasLimit: 1200000  // Fixed gas limit to skip estimation and see actual error
+        gasLimit: 1200000  // Fixed gas limit to skip estimation and see actual error
       }
     );
 
