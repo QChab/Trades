@@ -12,3 +12,8 @@ releases/
 p.crypt
 
 artifacts/build-info
+
+# Foundry
+out/
+cache/
+cache_hardhat/
