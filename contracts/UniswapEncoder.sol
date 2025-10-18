@@ -17,9 +17,8 @@ contract UniswapEncoder {
 
     // V4 Action codes - hardcoded as constant bytes
     // [SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL] = [0x06, 0x0c, 0x0f]
-    // NOTE: For pre-transfer approach, we only use SWAP and TAKE (no SETTLE needed)
-    bytes private constant ACTIONS = hex"060f";  // SWAP + TAKE_ALL only
-    bytes private constant ACTIONS_WITH_SETTLE = hex"060c0f";  // Legacy: SWAP + SETTLE_ALL + TAKE_ALL
+    // NOTE: For pre-transfer approach, SETTLE_ALL settles the delta created by pre-transfer
+    bytes private constant ACTIONS = hex"060c0f";  // SWAP + SETTLE_ALL + TAKE_ALL
 
     // Empty hookData (used in all swaps)
     bytes private constant EMPTY_HOOK_DATA = hex"";
@@ -62,8 +61,8 @@ contract UniswapEncoder {
     function encodeSingleSwap(
         SingleSwapParams calldata swapParams
     ) external view returns (address target, bytes memory callData, uint256 inputAmount, address _tokenIn) {
-        // Build params array - only 2 params now (SWAP + TAKE, no SETTLE)
-        bytes[] memory params = new bytes[](2);
+        // Build params array - 3 params: SWAP + SETTLE_ALL + TAKE_ALL
+        bytes[] memory params = new bytes[](3);
 
         // Param 0: Swap parameters
         params[0] = abi.encode(
@@ -74,9 +73,12 @@ contract UniswapEncoder {
             EMPTY_HOOK_DATA
         );
 
-        // Param 1: TAKE_ALL - currency and minAmount to send
+        // Param 1: SETTLE_ALL - settles the pre-transferred delta (amount=0 means settle existing delta)
+        params[1] = abi.encode(swapParams.tokenIn, uint256(0));
+
+        // Param 2: TAKE_ALL - currency and minAmount to send
         address currencyOut = swapParams.zeroForOne ? swapParams.poolKey.currency1 : swapParams.poolKey.currency0;
-        params[1] = abi.encode(currencyOut, swapParams.minAmountOut);
+        params[2] = abi.encode(currencyOut, swapParams.minAmountOut);
 
         // Encode inputs as [actions, params]
         bytes[] memory inputs = new bytes[](1);
@@ -119,8 +121,8 @@ contract UniswapEncoder {
             ? msg.sender.balance
             : _getTokenBalance(balanceToken, msg.sender);
 
-        // Build params array - only 2 params now (SWAP + TAKE, no SETTLE)
-        bytes[] memory params = new bytes[](2);
+        // Build params array - 3 params: SWAP + SETTLE_ALL + TAKE_ALL
+        bytes[] memory params = new bytes[](3);
 
         // Param 0: Swap parameters
         params[0] = abi.encode(
@@ -131,9 +133,12 @@ contract UniswapEncoder {
             EMPTY_HOOK_DATA
         );
 
-        // Param 1: TAKE_ALL - currency and minAmount to send
+        // Param 1: SETTLE_ALL - settles the pre-transferred delta (amount=0 means settle existing delta)
+        params[1] = abi.encode(balanceToken, uint256(0));
+
+        // Param 2: TAKE_ALL - currency and minAmount to send
         address currencyOut = swapParams.zeroForOne ? swapParams.poolKey.currency1 : swapParams.poolKey.currency0;
-        params[1] = abi.encode(currencyOut, swapParams.minAmountOut);
+        params[2] = abi.encode(currencyOut, swapParams.minAmountOut);
 
         // Encode inputs as [actions, params]
         bytes[] memory inputs = new bytes[](1);

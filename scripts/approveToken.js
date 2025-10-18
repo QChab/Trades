@@ -18,7 +18,7 @@ const PARAMS = {
   tokenSymbol: 'AAVE', // For display purposes only
 
   // Your WalletBundler address
-  bundlerAddress: '0xD160b3047f08b3610063FAcEf5f12cf87Af86c75',
+  bundlerAddress: '0xCe79a23728b85163D08474c91adFbd13ca4E683A',
 
   // Amount to approve (leave as 'max' for unlimited, or specify a number like '1000')
   approvalAmount: 'max'
@@ -112,7 +112,7 @@ async function main() {
 
   try {
     const tx = await tokenContract.approve(PARAMS.bundlerAddress, approvalAmount, {
-      gasPrice: gasPrice.mul(110).div(100) // 10% buffer
+      gasPrice: gasPrice.mul(140).div(100) // 10% buffer
     });
 
     console.log(`\n🚀 Transaction sent: ${tx.hash}`);

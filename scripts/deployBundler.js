@@ -21,7 +21,7 @@ async function main() {
   const feeData = await ethers.provider.getFeeData();
 
   const baseFee = feeData.lastBaseFeePerGas || ethers.BigNumber.from(0);
-  const priorityFee = ethers.BigNumber.from(1000); // Minimum priority fee (0 gwei)
+  const priorityFee = ethers.BigNumber.from(10000000); // Minimum priority fee (0 gwei)
   const maxFeePerGas = baseFee.mul(2).add(priorityFee); // 2x base fee buffer + 0 priority
 
   console.log(`  Base Fee: ${ethers.utils.formatUnits(baseFee, "gwei")} gwei`);
@@ -32,12 +32,12 @@ async function main() {
   const gasParams = {
     maxFeePerGas: maxFeePerGas,
     maxPriorityFeePerGas: priorityFee,
-    gasLimit: undefined // Let ethers estimate
+    gasLimit: 1900000 // Let ethers estimate
   };
 
   // Deploy WalletBundler
   console.log("4️⃣  Deploying WalletBundler...");
-  const WalletBundler = await ethers.getContractFactory("WalletBundler");
+  const WalletBundler = await ethers.getContractFactory("WalletBundlerUnlockCallback");
   const walletBundler = await WalletBundler.deploy(gasParams);
   await walletBundler.deployed();
   console.log(`   ✓ WalletBundler: ${walletBundler.address}`);

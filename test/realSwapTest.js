@@ -12,9 +12,14 @@ const TEST_PARAMS = {
   //   symbol: 'ONE',
   //   decimals: 18
   // },
-  tokenOutObject: {
+  tokenInObject: {
     address: '0x0000000000000000000000000000000000000000', // osETH
     symbol: 'ETH',
+    decimals: 18
+  },
+  tokenOutObject: {
+    address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // AAVE
+    symbol: 'USDC',
     decimals: 18
   },
   // tokenOutObject: {
@@ -22,19 +27,19 @@ const TEST_PARAMS = {
   //   symbol: 'PAXG',
   //   decimals: 18
   // },
-  tokenInObject: {
-    address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
-    symbol: 'AAVE',
-    decimals: 18
-  },
-  amountIn: '0.000964', // In human-readable format, not wei
+  // tokenInObject: {
+  //   address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
+  //   symbol: 'AAVE',
+  //   decimals: 18
+  // },
+  amountIn: '0.000264', // In human-readable format, not wei
   slippageTolerance: 20 // 0.5%
 };
 
 // ===== DEPLOYED CONTRACT ADDRESSES =====
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28',
-  uniswapEncoder: '0xC4C550daC072f5A9cf68aaafb98a7A573805061c',  // V4 with correct action codes
+  uniswapEncoder: '0x191a695243dbAD53e0a999b2B2B130909e68CDd4',  // V4 with correct action codes
   balancerEncoder: '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080'
 };
 
@@ -106,7 +111,8 @@ describe("Real Swap Integration Test", function () {
 
     // Get bundler address for this wallet
     console.log("Querying BundlerRegistry for wallet's bundler...");
-    bundlerAddress = await bundlerManager.getBundlerAddress(wallet.address);
+    // bundlerAddress = await bundlerManager.getBundlerAddress(wallet.address);
+    bundlerAddress = '0xCe79a23728b85163D08474c91adFbd13ca4E683A';
 
     if (!bundlerAddress || bundlerAddress === ethers.constants.AddressZero) {
       throw new Error(
@@ -248,7 +254,7 @@ describe("Real Swap Integration Test", function () {
     // Get current gas price and set custom gas parameters
     const currentGasPrice = await provider.getGasPrice();
     const maxFeePerGas = currentGasPrice.mul(2); // 2x base gas price
-    const maxPriorityFeePerGas = ethers.BigNumber.from(1000000); // 10 wei
+    const maxPriorityFeePerGas = ethers.BigNumber.from(20000000); // 10 wei
 
     console.log(`   Base Gas Price: ${ethers.utils.formatUnits(currentGasPrice, 'gwei')} gwei`);
     console.log(`   Max Fee Per Gas: ${ethers.utils.formatUnits(maxFeePerGas, 'gwei')} gwei`);
@@ -269,7 +275,7 @@ describe("Real Swap Integration Test", function () {
         value: msgValue,
         maxFeePerGas: maxFeePerGas,
         maxPriorityFeePerGas: maxPriorityFeePerGas,
-        gasLimit: 1500000  // Fixed gas limit to skip estimation and see actual error
+        gasLimit: 4200000  // Fixed gas limit to skip estimation and see actual error
       }
     );
 

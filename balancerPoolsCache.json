@@ -1537,8 +1537,143 @@
       "totalLiquidity": 534.969110058215,
       "swapFee": "0.003",
       "queriedAt": "2025-10-17T01:48:30.816Z"
+    },
+    "0x2d95a65b71105202c18e9cfd22f2d1d9623e3641": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x2d95a65b71105202c18e9cfd22f2d1d9623e3641",
+      "id": "0x2d95a65b71105202c18e9cfd22f2d1d9623e3641",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "193.861633106728367478",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "6.646276595744681857",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 200.50790970247306,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-18T16:30:14.194Z"
+    },
+    "0x408b2bfd309cb05f12c21a584f449aa197814e91": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x408b2bfd309cb05f12c21a584f449aa197814e91",
+      "id": "0x408b2bfd309cb05f12c21a584f449aa197814e91",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.001940074964496628",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "666393.336000000076075818",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 666393.3379400751,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-18T16:30:29.138Z"
+    },
+    "0x97cd18cdc934a4cfe6af7656fb46d43425c4e2cd": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x97cd18cdc934a4cfe6af7656fb46d43425c4e2cd",
+      "id": "0x97cd18cdc934a4cfe6af7656fb46d43425c4e2cd",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000277959854158252",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "658405.547977099216593214",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 658405.548255059,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-18T16:33:32.711Z"
+    },
+    "0x0b9e9b749c78b7f45e5f5a7ce54e32d0974983d9": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x0b9e9b749c78b7f45e5f5a7ce54e32d0974983d9",
+      "id": "0x0b9e9b749c78b7f45e5f5a7ce54e32d0974983d9",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "193.510689436911274814",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "6.575689519887852049",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 200.0863789567991,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-18T22:20:59.988Z"
+    },
+    "0x41be01df13492c1d475266353c0ceaba3683f5cf": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x41be01df13492c1d475266353c0ceaba3683f5cf",
+      "id": "0x41be01df13492c1d475266353c0ceaba3683f5cf",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000516700694114051",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "657380.317276591574956659",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 657380.3177932922,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-18T22:21:07.711Z"
     }
   },
-  "lastUpdated": "2025-10-17T01:48:30.816Z",
+  "lastUpdated": "2025-10-18T22:21:07.711Z",
   "version": "1.0.0"
 }
