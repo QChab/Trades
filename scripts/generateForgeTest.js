@@ -37,9 +37,9 @@ const CONFIG = {
   slippageTolerance: 20, // 20%
 
   // Contract addresses
-  bundlerAddress: '0xA41467444E65433FdA9692c0116f2236DD8Ae637',
+  bundlerAddress: '0x8B9Af27381b9a12cB20b2b09ae005dC7f0c2eac8',
   uniswapEncoder: '0x11d264629b6277a6fABb2870318982CC9353fffb',
-  balancerEncoder: '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080',
+  balancerEncoder: '0x9fAb0aEaA4B54C2Ab94d1a2414CF96B4102eFc4B',
 
   // File paths
   testFilePath: './test/RealSwapTest.t.sol'

@@ -26,34 +26,6 @@ contract BalancerEncoder {
     uint256 private constant DEADLINE = type(uint256).max; // No deadline
 
     /**
-     * @notice Encode a single swap for Balancer V3 via Router
-     * @param pool The pool address to swap through
-     * @param tokenIn Address of input token
-     * @param tokenOut Address of output token
-     * @param amountIn Amount of input tokens
-     * @param minAmountOut Minimum acceptable output
-     * @return target The Router contract address
-     * @return callData The encoded swap call
-     * @return inputAmount The actual amount to be used
-     * @return tokenIn The tokenIn address
-     */
-    function encodeSingleSwap(
-        address pool,
-        address tokenIn,
-        address tokenOut,
-        uint256 amountIn,
-        uint256 minAmountOut
-    ) external pure returns (address target, bytes memory callData, uint256 inputAmount, address) {
-
-        callData = abi.encodeCall(
-            IBalancerRouter.swapSingleTokenExactIn,
-            (pool, tokenIn, tokenOut, amountIn, minAmountOut, DEADLINE, false, "")
-        );
-
-        return (ROUTER, callData, amountIn, tokenIn);
-    }
-
-    /**
      * @notice Encode a swap using all available balance
      * @dev Special function for intermediate hops that use entire balance
      * @param pool The pool address to swap through

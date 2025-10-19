@@ -39,28 +39,28 @@ async function main() {
   };
 
   // Deploy UniswapEncoder
-  console.log("1️⃣  Deploying UniswapEncoder...");
-  const UniswapEncoder = await ethers.getContractFactory("UniswapEncoder");
-  const uniswapEncoder = await UniswapEncoder.deploy(gasParams);
-  await uniswapEncoder.deployed();
-  console.log(`   ✓ UniswapEncoder deployed: ${uniswapEncoder.address}`);
+  // console.log("1️⃣  Deploying UniswapEncoder...");
+  // const UniswapEncoder = await ethers.getContractFactory("UniswapEncoder");
+  // const uniswapEncoder = await UniswapEncoder.deploy(gasParams);
+  // await uniswapEncoder.deployed();
+  // console.log(`   ✓ UniswapEncoder deployed: ${uniswapEncoder.address}`);
 
-  const uniswapReceipt = await uniswapEncoder.deployTransaction.wait();
-  const uniswapGasCost = uniswapReceipt.gasUsed.mul(uniswapReceipt.effectiveGasPrice);
-  console.log(`   Gas used: ${uniswapReceipt.gasUsed.toString()}`);
-  console.log(`   Gas cost: ${ethers.utils.formatEther(uniswapGasCost)} ETH\n`);
+  // const uniswapReceipt = await uniswapEncoder.deployTransaction.wait();
+  // const uniswapGasCost = uniswapReceipt.gasUsed.mul(uniswapReceipt.effectiveGasPrice);
+  // console.log(`   Gas used: ${uniswapReceipt.gasUsed.toString()}`);
+  // console.log(`   Gas cost: ${ethers.utils.formatEther(uniswapGasCost)} ETH\n`);
 
   // Deploy BalancerEncoder
-  // console.log("2️⃣  Deploying BalancerEncoder...");
-  // const BalancerEncoder = await ethers.getContractFactory("BalancerEncoder");
-  // const balancerEncoder = await BalancerEncoder.deploy(gasParams);
-  // await balancerEncoder.deployed();
-  // console.log(`   ✓ BalancerEncoder deployed: ${balancerEncoder.address}`);
+  console.log("2️⃣  Deploying BalancerEncoder...");
+  const BalancerEncoder = await ethers.getContractFactory("BalancerEncoder");
+  const balancerEncoder = await BalancerEncoder.deploy(gasParams);
+  await balancerEncoder.deployed();
+  console.log(`   ✓ BalancerEncoder deployed: ${balancerEncoder.address}`);
 
-  // const balancerReceipt = await balancerEncoder.deployTransaction.wait();
-  // const balancerGasCost = balancerReceipt.gasUsed.mul(balancerReceipt.effectiveGasPrice);
-  // console.log(`   Gas used: ${balancerReceipt.gasUsed.toString()}`);
-  // console.log(`   Gas cost: ${ethers.utils.formatEther(balancerGasCost)} ETH\n`);
+  const balancerReceipt = await balancerEncoder.deployTransaction.wait();
+  const balancerGasCost = balancerReceipt.gasUsed.mul(balancerReceipt.effectiveGasPrice);
+  console.log(`   Gas used: ${balancerReceipt.gasUsed.toString()}`);
+  console.log(`   Gas cost: ${ethers.utils.formatEther(balancerGasCost)} ETH\n`);
 
   // console.log("=========================================");
   console.log("✅ Encoders deployed successfully!");

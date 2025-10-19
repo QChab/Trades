@@ -5,12 +5,17 @@ import {
   createUniswapV4UseAllStep,
   UNIVERSAL_ROUTER
 } from './uniswapV4Encoder.js';
+import {
+  encodeBalancerSwap,
+  createBalancerUseAllStep,
+  BALANCER_ROUTER
+} from './balancerEncoder.js';
 
 // Constants
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
-const balancerEncoderAddress = '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080';
+const balancerEncoderAddress = '0x9fAb0aEaA4B54C2Ab94d1a2414CF96B4102eFc4B';
 const uniswapEncoderAddress = '0x11d264629b6277a6fABb2870318982CC9353fffb';  // V4 with correct action codes
 
 /**
@@ -177,15 +182,17 @@ export function createEncoderExecutionPlan(
 
   // Process each execution step in the order they appear
   executionPlan.executionSteps.forEach((step, stepIndex) => {
-    // Determine input amount based on smart analysis
-    let inputAmount;
-    if (step.useAllBalance) {
-      // Use all available balance for this token
-      inputAmount = ethers.constants.MaxUint256; // Special marker for "use all"
-      console.log(`   🔄 Step ${step.level} marked as useAllBalance (will use MaxUint256)`);
-    } else {
-      // Use exact calculated amount
-      inputAmount = step.inputAmount || BigNumber.from(0);
+    // OPTIMIZATION: Always use exact amounts, determine encoding strategy via flag
+    const inputAmount = step.inputAmount || BigNumber.from(0);
+
+    // CRITICAL: Only use "useAll" encoder for level 1+ (intermediate hops)
+    // Level 0 always has exact split amounts from optimizer - no encoder overhead!
+    const shouldUseAllBalance = step.level > 0 && step.useAllBalance;
+
+    if (shouldUseAllBalance) {
+      console.log(`   🔄 Step at level ${step.level} will use encoder (useAllBalance)`);
+    } else if (step.level === 0) {
+      console.log(`   📊 Level 0 step: using exact amount ${inputAmount.toString()} (no encoder)`);
     }
 
     // Map of common token symbols to addresses
@@ -251,13 +258,6 @@ export function createEncoderExecutionPlan(
     let poolId, fee, currency0, currency1, tickSpacing, hooks, zeroForOne;
 
     // console.log(`   📍 Step ${stepIndex}: protocol="${step.protocol}" (type: ${typeof step.protocol}), useAllBalance=${step.useAllBalance}, inputToken=${getTokenSymbol(step.inputToken)}, outputToken=${getTokenSymbol(step.outputToken)}`);
-
-    // Helper to extract token symbol
-    function getTokenSymbol(token) {
-      if (typeof token === 'string') return token;
-      return token?.symbol || 'UNKNOWN';
-    }
-
     // DEBUG: Check protocol matching
     // console.log(`      Testing protocol: step.protocol === 'balancer' → ${step.protocol === 'balancer'}`);
     // console.log(`      Testing protocol: step.protocol === 'uniswap' → ${step.protocol === 'uniswap'}`);
@@ -291,47 +291,40 @@ export function createEncoderExecutionPlan(
 
     // Create encoder calldata
     if (step.protocol === 'balancer') {
-      console.log(`      ✅ Pushing Balancer encoder: ${balancerEncoderAddress}`);
-      encoderTargets.push(balancerEncoderAddress);
+      if (shouldUseAllBalance) {
+        // USE_ALL: Use encoder contract to query balance (level 1+)
+        console.log(`      ✅ Pushing Balancer encoder (USE_ALL): ${balancerEncoderAddress}`);
+        encoderTargets.push(balancerEncoderAddress);
 
-      if (inputAmount.eq(ethers.constants.MaxUint256)) {
-        // Use all balance swap - encoder will query actual balance
-        const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['address', 'address', 'address', 'uint256', 'uint8'],
-          [
-            poolId,  // V3 uses address, not bytes32
-            inputTokenAddress,
-            outputTokenAddress === ETH_ADDRESS ? WETH_ADDRESS : outputTokenAddress,
-            minAmountOut,
-            step.wrapOperation || 0
-          ]
+        // Use helper function to create USE_ALL step
+        const balancerStep = createBalancerUseAllStep(
+          balancerEncoderAddress,
+          poolId,  // V3 uses address as pool identifier
+          inputTokenAddress,
+          outputTokenAddress === ETH_ADDRESS ? WETH_ADDRESS : outputTokenAddress,
+          minAmountOut,
+          step.wrapOperation || 0
         );
 
-        // Encode the function selector for encodeUseAllBalanceSwap (V3 signature)
-        const selector = ethers.utils.id('encodeUseAllBalanceSwap(address,address,address,uint256,uint8)').slice(0, 10);
-        const fullEncoderData = selector + encoderCalldata.slice(2);
-        encoderData.push(fullEncoderData);
+        encoderData.push(balancerStep.encoderData);
       } else {
-        // Regular swap with exact amount
-        const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['address', 'address', 'address', 'uint256', 'uint256'],
-          [
-            poolId,  // V3 uses address, not bytes32
-            inputTokenAddress,
-            outputTokenAddress === ETH_ADDRESS ? WETH_ADDRESS : outputTokenAddress,
-            inputAmount,
-            minAmountOut
-          ]
+        // EXACT AMOUNT: Encode swapSingleTokenExactIn directly in JS (zero overhead!)
+        console.log(`      ✅ Pushing Balancer direct encoding (exact amount): address(1)`);
+        encoderTargets.push('0x0000000000000000000000000000000000000001');  // Flag: data is pre-encoded
+
+        const { data } = encodeBalancerSwap(
+          poolId,  // V3 uses address as pool identifier
+          inputTokenAddress,
+          outputTokenAddress === ETH_ADDRESS ? WETH_ADDRESS : outputTokenAddress,
+          inputAmount,
+          minAmountOut
         );
 
-        // Encode the function selector for encodeSingleSwap (V3 signature)
-        const selector = ethers.utils.id('encodeSingleSwap(address,address,address,uint256,uint256)').slice(0, 10);
-        const fullEncoderData = selector + encoderCalldata.slice(2);
-        encoderData.push(fullEncoderData);
+        encoderData.push(data);
       }
     } else if (step.protocol === 'uniswap') {
-      if (inputAmount.eq(ethers.constants.MaxUint256)) {
-        // USE_ALL: Use encoder contract to query balance
+      if (shouldUseAllBalance) {
+        // USE_ALL: Use encoder contract to query balance (level 1+)
         console.log(`      ✅ Pushing Uniswap encoder (USE_ALL): ${uniswapEncoderAddress}`);
         encoderTargets.push(uniswapEncoderAddress);
 

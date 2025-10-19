@@ -7,11 +7,11 @@ import { BundlerManager } from '../src/bundler/BundlerManager.js';
 
 // ===== TEST PARAMETERS =====
 const TEST_PARAMS = {
-  // tokenInObject: {
-  //   address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // ETH
-  //   symbol: 'ONE',
-  //   decimals: 18
-  // },
+  tokenOutObject: {
+    address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // ETH
+    symbol: 'ONE',
+    decimals: 18
+  },
   tokenInObject: {
     address: '0x0000000000000000000000000000000000000000', // osETH
     symbol: 'ETH',
@@ -22,11 +22,11 @@ const TEST_PARAMS = {
   //   symbol: 'USDC',
   //   decimals: 18
   // },
-  tokenOutObject: {
-    address: '0x45804880De22913dAFE09f4980848ECE6EcbAf78', // AAVE
-    symbol: 'PAXG',
-    decimals: 18
-  },
+  // tokenOutObject: {
+  //   address: '0x45804880De22913dAFE09f4980848ECE6EcbAf78', // AAVE
+  //   symbol: 'PAXG',
+  //   decimals: 18
+  // },
   // tokenInObject: {
   //   address: '0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9', // AAVE
   //   symbol: 'AAVE',
@@ -38,9 +38,9 @@ const TEST_PARAMS = {
 
 // ===== DEPLOYED CONTRACT ADDRESSES =====
 const DEPLOYED_ADDRESSES = {
-  bundlerRegistry: '0xb529eB70a7c93d07eaCe6cd6A986AF8B8A2692bC',
+  bundlerRegistry: '0xc1049981BbC12aF9e8e9F999e70AdAa6E3371ec1',
   uniswapEncoder: '0x11d264629b6277a6fABb2870318982CC9353fffb',  // V4 with correct action codes
-  balancerEncoder: '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080'
+  balancerEncoder: '0x9fAb0aEaA4B54C2Ab94d1a2414CF96B4102eFc4B'
 };
 
 describe("Real Swap Integration Test", function () {
@@ -112,7 +112,7 @@ describe("Real Swap Integration Test", function () {
     // Get bundler address for this wallet
     console.log("Querying BundlerRegistry for wallet's bundler...");
     // bundlerAddress = await bundlerManager.getBundlerAddress(wallet.address);
-    bundlerAddress = '0xA41467444E65433FdA9692c0116f2236DD8Ae637';
+    bundlerAddress = '0x8B9Af27381b9a12cB20b2b09ae005dC7f0c2eac8';
 
     if (!bundlerAddress || bundlerAddress === ethers.constants.AddressZero) {
       throw new Error(
@@ -151,7 +151,7 @@ describe("Real Swap Integration Test", function () {
       amountIn: amountInWei,
       provider: provider,
       slippageTolerance: TEST_PARAMS.slippageTolerance,
-      useUniswap: true,
+      useUniswap: false,
       useBalancer: true
     });
 
@@ -262,7 +262,7 @@ describe("Real Swap Integration Test", function () {
 
     console.log(contractCallArgs.encoderData)
 
-    if (contractCallArgs.encoderTargets.length <= 1) return console.log('not interesting tx to try')
+    // if (contractCallArgs.encoderTargets.length <= 1) return console.log('not interesting tx to try')
     // Execute the swap
     const tx = await walletBundler.encodeAndExecuteaaaaaYops(
       contractCallArgs.fromToken,

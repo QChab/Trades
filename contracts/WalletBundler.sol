@@ -46,7 +46,8 @@ contract WalletBundler is IUnlockCallback {
     address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address private constant POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90; // Uniswap V4
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
-    address private constant BUNDLER_REGISTRY = 0xb529eB70a7c93d07eaCe6cd6A986AF8B8A2692bC; // Well-known registry
+    address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3
+    address private constant BUNDLER_REGISTRY = 0xc1049981BbC12aF9e8e9F999e70AdAa6E3371ec1; // Well-known registry
     uint48 private constant EXPIRATION_OFFSET = 281474976710655; // MAx uint48
     uint256 private constant APPROVAL_THRESHOLD = 1e45; // Gas-optimized approval check threshold
 
@@ -208,7 +209,7 @@ contract WalletBundler is IUnlockCallback {
         address[] calldata encoderTargets,
         bytes[] calldata encoderData,
         uint8[] calldata wrapOperations
-    ) external payable auth returns (bool[] memory results) {
+    ) external payable auth {
         uint256 stepsLength = encoderTargets.length;
 
         // Transfer input tokens if needed
@@ -216,8 +217,6 @@ contract WalletBundler is IUnlockCallback {
             _transferFromToken(fromToken, owner, self, fromAmount);
         }
         // Note: If fromToken is address(0), ETH is already received via msg.value
-
-        results = new bool[](stepsLength);
         uint256 i;
 
         for (; i < stepsLength;) {
@@ -265,22 +264,17 @@ contract WalletBundler is IUnlockCallback {
             // Ensure approval for the input token to the target protocol
             // OPTIMIZATION: Uniswap doesn't need approval (we pre-transfer on line 329)
             // ----------------------------------------------------------
-            if (tokenIn != address(0) && target != UNIVERSAL_ROUTER) {
+            if (tokenIn != address(0) && target == BALANCER_ROUTER) {
                 // Balancer uses Permit2 approval system
                 // Smart contracts can call approve() but cannot sign permit messages
-
-                // Balancer: Vault pulls tokens via Permit2 (not Router!)
-                address permit2Spender = target;
-
                 uint256 permit2Allowance;
-                address contractAddr = self;
                 assembly {
                     let ptr := mload(0x40)
                     // Store allowance(address,address,address) selector
                     mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
-                    mstore(add(ptr, 0x04), contractAddr)  // owner (this contract)
+                    mstore(add(ptr, 0x04), address())  // owner : this contract
                     mstore(add(ptr, 0x24), tokenIn)       // tokenIn
-                    mstore(add(ptr, 0x44), permit2Spender) // spender
+                    mstore(add(ptr, 0x44), target) // spender
 
                     // Use separate memory location for output (ptr + 0x80 = 128 bytes after input)
                     let outPtr := add(ptr, 0x80)
@@ -301,7 +295,7 @@ contract WalletBundler is IUnlockCallback {
                         // Store approve(address,address,uint160,uint48) selector
                         mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
                         mstore(add(ptr, 0x04), tokenIn)                // tokenIn
-                        mstore(add(ptr, 0x24), permit2Spender)         // spender (Vault for Balancer, Router for Uniswap)
+                        mstore(add(ptr, 0x24), target)         // spender (Vault for Balancer, Router for Uniswap)
                         mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
                         mstore(add(ptr, 0x64), EXPIRATION_OFFSET) // expiration
 
@@ -322,20 +316,13 @@ contract WalletBundler is IUnlockCallback {
                 // JS encodes it directly - just pass through to unlock!
                 // UniswapEncoder.sol handles useAllBalance internally
                 // Zero decode/re-encode overhead = maximum gas savings
-
-                bytes memory result = IPoolManager(POOL_MANAGER).unlock(callData);
-                uint256 swapOutput = abi.decode(result, (uint256));
-
-                returnData = abi.encode(swapOutput);
+                returnData = IPoolManager(POOL_MANAGER).unlock(callData);
                 success = true;
             } else {
                 // For other targets (Balancer, etc.), use direct call
-                uint256 callValue = tokenIn == address(0) ? inputAmount : 0;
-                (success, returnData) = target.call{value: callValue}(callData);
+                (success, returnData) = target.call(callData);
                 if (!success) revert CallFailed();
             }
-
-            results[i] = success;
 
             // Decode the output amount from return data
             uint256 outputAmount;
@@ -367,6 +354,9 @@ contract WalletBundler is IUnlockCallback {
 
     /**
      * @dev Call encoder contract to get target, calldata, and input amount
+     * Special encoding flags:
+     *   - address(0): Pre-encoded Uniswap unlock callback
+     *   - address(1): Pre-encoded Balancer swapSingleTokenExactIn
      */
     function _callEncoder(address encoder, bytes calldata data) private view returns (address target, bytes memory callData, uint256 inputAmount, address tokenIn) {
         if (encoder == address(0)) {
@@ -391,8 +381,25 @@ contract WalletBundler is IUnlockCallback {
 
             target = UNIVERSAL_ROUTER;  // Flag for Uniswap
             callData = data;  // ZERO overhead - use as-is!
+        } else if (encoder == address(1)) {
+            // For Balancer exact amount: data is already swapSingleTokenExactIn calldata (encoded in JS)
+            // Function: swapSingleTokenExactIn(address pool, address tokenIn, address tokenOut, uint256 exactAmountIn, ...)
+            // Extract tokenIn and exactAmountIn using assembly (~2k gas savings!)
+
+            // Layout: selector(0x00-0x03) + pool(0x04) + tokenIn(0x24) + tokenOut(0x44) + exactAmountIn(0x64) + ...
+
+            assembly {
+                // tokenIn is at offset 0x24 (36 bytes from start)
+                tokenIn := calldataload(add(data.offset, 0x24))
+
+                // exactAmountIn is at offset 0x64 (100 bytes from start)
+                inputAmount := calldataload(add(data.offset, 0x64))
+            }
+
+            target = BALANCER_ROUTER;  // Flag for Balancer
+            callData = data;  // ZERO overhead - use as-is!
         } else {
-            // For USE_ALL or Balancer: call encoder contract
+            // For USE_ALL: call encoder contract
             (bool success, bytes memory result) = encoder.staticcall(data);
             if (!success) revert CallFailed();
             (target, callData, inputAmount, tokenIn) = abi.decode(result, (address, bytes, uint256, address));
