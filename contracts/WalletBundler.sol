@@ -44,14 +44,14 @@ struct SwapParams {
  * @notice Gas-optimized standalone bundler contract for MEV-protected multi-DEX trading
  * @dev Deploy one instance per wallet for complete fund isolation
  */
-contract WalletBundler {
+contract WalletBundler is IUnlockCallback {
     address public immutable owner;
     address private immutable self;
 
     // Pack constants to save deployment gas
     address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address private constant UNISWAP_POOLMANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90; // Uniswap V4
+    address private constant POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90; // Uniswap V4
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
     address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3 Router
     address private constant BALANCER_VAULT = 0xbA1333333333a1BA1108E8412f11850A5C319bA9; // Balancer V3 Vault
@@ -279,7 +279,7 @@ contract WalletBundler {
 
                 // Uniswap: Universal Router pulls tokens via Permit2
                 // Balancer: Vault pulls tokens via Permit2 (not Router!)
-                // address permit2Spender = target == BALANCER_ROUTER ? BALANCER_VAULT : target;
+                address permit2Spender = target == UNIVERSAL_ROUTER ? POOL_MANAGER : target;
 
                 uint256 permit2Allowance;
                 address contractAddr = self;
@@ -289,7 +289,7 @@ contract WalletBundler {
                     mstore(ptr, 0x927da10500000000000000000000000000000000000000000000000000000000)
                     mstore(add(ptr, 0x04), contractAddr)  // owner (this contract)
                     mstore(add(ptr, 0x24), tokenIn)       // tokenIn
-                    mstore(add(ptr, 0x44), target) // spender
+                    mstore(add(ptr, 0x44), permit2Spender) // spender
 
                     // Use separate memory location for output (ptr + 0x80 = 128 bytes after input)
                     let outPtr := add(ptr, 0x80)
@@ -310,7 +310,7 @@ contract WalletBundler {
                         // Store approve(address,address,uint160,uint48) selector
                         mstore(ptr, 0x87517c4500000000000000000000000000000000000000000000000000000000)
                         mstore(add(ptr, 0x04), tokenIn)                // tokenIn
-                        mstore(add(ptr, 0x24), target)         // spender (Vault for Balancer, Router for Uniswap)
+                        mstore(add(ptr, 0x24), permit2Spender)         // spender (Vault for Balancer, Router for Uniswap)
                         mstore(add(ptr, 0x44), 0xffffffffffffffffffffffffffffffff) // max uint160
                         mstore(add(ptr, 0x64), EXPIRATION_OFFSET) // expiration
 
@@ -321,20 +321,29 @@ contract WalletBundler {
             }
 
             // ----------------
-            // OPTION 1: Pre-transfer tokens to PoolManager for Universal Router ERC20 swaps
+            // Execute the swap - route through PoolManager if Universal Router
             // ----------------
-            if (target == UNIVERSAL_ROUTER && tokenIn != address(0)) {
-                // For ERC20 swaps via Universal Router, transfer tokens to PoolManager first
-                // This creates a delta so Universal Router's exttload check won't return zero
-                _transferToken(tokenIn, UNISWAP_POOLMANAGER, inputAmount);
+            bool success;
+            bytes memory returnData;
+
+            if (target == UNIVERSAL_ROUTER) {
+                // For Uniswap V4, callData is already in unlock callback format
+                // JS encodes it directly - just pass through to unlock!
+                // UniswapEncoder.sol handles useAllBalance internally
+                // Zero decode/re-encode overhead = maximum gas savings
+
+                bytes memory result = IPoolManager(POOL_MANAGER).unlock(callData);
+                uint256 swapOutput = abi.decode(result, (uint256));
+
+                returnData = abi.encode(swapOutput);
+                success = true;
+            } else {
+                // For other targets (Balancer, etc.), use direct call
+                uint256 callValue = tokenIn == address(0) ? inputAmount : 0;
+                (success, returnData) = target.call{value: callValue}(callData);
+                if (!success) revert CallFailed();
             }
 
-            // ----------------
-            // Execute the swap and capture return value
-            // ----------------
-            uint256 callValue = tokenIn == address(0) ? inputAmount : 0;
-            (bool success, bytes memory returnData) = target.call{value: callValue}(callData);
-            if (!success) revert CallFailed();
             results[i] = success;
 
             // Decode the output amount from return data
@@ -369,9 +378,27 @@ contract WalletBundler {
      * @dev Call encoder contract to get target, calldata, and input amount
      */
     function _callEncoder(address encoder, bytes calldata data) private view returns (address target, bytes memory callData, uint256 inputAmount, address tokenIn) {
-        (bool success, bytes memory result) = encoder.staticcall(data);
-        if (!success) revert CallFailed();
-        (target, callData, inputAmount, tokenIn) = abi.decode(result, (address, bytes, uint256, address));
+        if (encoder == address(0)) {
+            // For Uniswap exact amount: data is already unlock callback format (encoded in JS)
+            // Format: (tokenIn, tokenOut, poolKey, swapParams, minAmountOut)
+            // Extract tokenIn and inputAmount from the encoded data
+
+            // Decode to extract needed info
+            (address _tokenIn, , , SwapParams memory swapParams, ) = abi.decode(
+                data,
+                (address, address, PoolKey, SwapParams, uint256)
+            );
+
+            tokenIn = _tokenIn;
+            inputAmount = uint256(-swapParams.amountSpecified);  // Convert back to positive
+            target = UNIVERSAL_ROUTER;  // Flag for Uniswap
+            callData = data;  // Use data as-is for unlock
+        } else {
+            // For USE_ALL or other encoders: call encoder contract
+            (bool success, bytes memory result) = encoder.staticcall(data);
+            if (!success) revert CallFailed();
+            (target, callData, inputAmount, tokenIn) = abi.decode(result, (address, bytes, uint256, address));
+        }
     }
 
     /**
@@ -409,6 +436,69 @@ contract WalletBundler {
             let success := call(gas(), token, 0, ptr, 0x44, 0, 0)
             if iszero(success) { revert(0, 0) }
         }
+    }
+
+    /**
+     * @notice Unlock callback implementation for direct PoolManager swaps
+     * @dev Only callable by PoolManager during unlock flow
+     * @param data Encoded swap parameters from swapDirectV4
+     */
+        /**
+     * @notice Unlock callback - CORRECT FLOW
+     */
+    function unlockCallback(bytes calldata data) external returns (bytes memory) {
+        require(msg.sender == POOL_MANAGER, "Only PoolManager");
+
+        (
+            address tokenIn,
+            address tokenOut,
+            PoolKey memory poolKey,
+            SwapParams memory swapParams,
+            uint256 minAmountOut
+        ) = abi.decode(data, (address, address, PoolKey, SwapParams, uint256));
+
+        // STEP 1: Execute swap (this creates deltas)
+        // swap() returns a single BalanceDelta (int256) where:
+        // - upper 128 bits = delta0 (currency0 delta)
+        // - lower 128 bits = delta1 (currency1 delta)
+        int256 balanceDelta = IPoolManager(POOL_MANAGER).swap(
+            poolKey,
+            swapParams,
+            "" // no hook data
+        );
+
+        // Unpack the BalanceDelta
+        int128 delta0 = int128(balanceDelta >> 128);
+        int128 delta1 = int128(balanceDelta);
+
+        // STEP 2: Settle input token (pay our debt)
+        uint256 amountToSettle = swapParams.zeroForOne ? uint256(int256(-delta0)) : uint256(int256(-delta1));
+
+        if (tokenIn == address(0)) {
+            // For native ETH
+            IPoolManager(POOL_MANAGER).settle{value: amountToSettle}();
+        } else {
+            // For ERC20:
+            // a) Sync to establish the "before" balance baseline
+            IPoolManager(POOL_MANAGER).sync(tokenIn);
+
+            // b) Transfer tokens to PoolManager (changes the balance)
+            _transferToken(tokenIn, POOL_MANAGER, amountToSettle);
+
+            // c) Settle - compares current balance vs baseline from sync
+            IPoolManager(POOL_MANAGER).settle();
+        }
+
+        // STEP 3: Take output tokens (collect our credit)
+        uint256 amountOut = swapParams.zeroForOne ? uint256(int256(delta1)) : uint256(int256(delta0));
+
+        IPoolManager(POOL_MANAGER).take(tokenOut, self, amountOut);
+
+        // Validate minimum output
+        require(amountOut >= minAmountOut, "Insufficient output");
+
+        // Return output amount
+        return abi.encode(amountOut);
     }
 
     receive() external payable {}
