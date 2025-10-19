@@ -112,8 +112,8 @@
       ]
     },
     "/Users/qch/MyTech/SecDev/Trades/contracts/WalletBundler.sol": {
-      "lastModificationDate": 1760833381935,
-      "contentHash": "57bf23c5413c80a49c56afd741753a65",
+      "lastModificationDate": 1760838030932,
+      "contentHash": "7481aa04c1de80a6b49e1306e2caa160",
       "sourceName": "contracts/WalletBundler.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -145,50 +145,9 @@
       ],
       "artifacts": [
         "IBundlerRegistry",
-        "IPermit2",
         "IPoolManager",
         "IUnlockCallback",
         "WalletBundler"
-      ]
-    },
-    "/Users/qch/MyTech/SecDev/Trades/contracts/WalletBundlerUnlockCallback.sol": {
-      "lastModificationDate": 1760833165979,
-      "contentHash": "04450d7bca9b51b66f24a2e52a880eed",
-      "sourceName": "contracts/WalletBundlerUnlockCallback.sol",
-      "solcConfig": {
-        "version": "0.8.20",
-        "settings": {
-          "optimizer": {
-            "enabled": true,
-            "runs": 200
-          },
-          "evmVersion": "paris",
-          "outputSelection": {
-            "*": {
-              "*": [
-                "abi",
-                "evm.bytecode",
-                "evm.deployedBytecode",
-                "evm.methodIdentifiers",
-                "metadata"
-              ],
-              "": [
-                "ast"
-              ]
-            }
-          }
-        }
-      },
-      "imports": [],
-      "versionPragmas": [
-        "^0.8.19"
-      ],
-      "artifacts": [
-        "IBundlerRegistry",
-        "IPermit2",
-        "IPoolManager",
-        "IUnlockCallback",
-        "WalletBundlerUnlockCallback"
       ]
     }
   }

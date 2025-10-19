@@ -37,7 +37,7 @@ async function main() {
 
   // Deploy WalletBundler
   console.log("4️⃣  Deploying WalletBundler...");
-  const WalletBundler = await ethers.getContractFactory("WalletBundlerUnlockCallback");
+  const WalletBundler = await ethers.getContractFactory("WalletBundler");
   const walletBundler = await WalletBundler.deploy(gasParams);
   await walletBundler.deployed();
   console.log(`   ✓ WalletBundler: ${walletBundler.address}`);

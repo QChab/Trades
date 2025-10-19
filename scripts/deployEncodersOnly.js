@@ -25,7 +25,7 @@ async function main() {
   const feeData = await ethers.provider.getFeeData();
 
   const baseFee = feeData.lastBaseFeePerGas || ethers.BigNumber.from(0);
-  const priorityFee = ethers.BigNumber.from(10); // Minimum priority fee
+  const priorityFee = ethers.BigNumber.from(1000000); // Minimum priority fee
   const maxFeePerGas = baseFee.mul(2).add(priorityFee); // 2x base fee buffer + minimal priority
 
   console.log(`  Base Fee: ${ethers.utils.formatUnits(baseFee, "gwei")} gwei`);

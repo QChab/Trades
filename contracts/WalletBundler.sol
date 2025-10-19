@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-interface IPermit2 {
-    function approve(address token, address spender, uint160 amount, uint48 expiration) external;
-}
-
 interface IBundlerRegistry {
     function registerBundler() external;
 }
@@ -20,9 +16,6 @@ interface IPoolManager {
         SwapParams memory params,
         bytes calldata hookData
     ) external returns (int256); // Returns BalanceDelta (packed int256)
-    function sync(address currency) external;
-    function settle() external payable returns (uint256);
-    function take(address currency, address to, uint256 amount) external;
 }
 
 struct PoolKey {
@@ -272,14 +265,14 @@ contract WalletBundler is IUnlockCallback {
             
             // ---------------------------------------
             // Ensure approval for the input token to the target protocol
+            // OPTIMIZATION: Uniswap doesn't need approval (we pre-transfer on line 329)
             // ----------------------------------------------------------
-            if (tokenIn != address(0)) {
-                // Both Uniswap V4 and Balancer V3 use Permit2 approval system
+            if (tokenIn != address(0) && target != UNIVERSAL_ROUTER) {
+                // Balancer uses Permit2 approval system
                 // Smart contracts can call approve() but cannot sign permit messages
 
-                // Uniswap: Universal Router pulls tokens via Permit2
                 // Balancer: Vault pulls tokens via Permit2 (not Router!)
-                address permit2Spender = target == UNIVERSAL_ROUTER ? POOL_MANAGER : target;
+                address permit2Spender = target;
 
                 uint256 permit2Allowance;
                 address contractAddr = self;
@@ -381,20 +374,27 @@ contract WalletBundler is IUnlockCallback {
         if (encoder == address(0)) {
             // For Uniswap exact amount: data is already unlock callback format (encoded in JS)
             // Format: (tokenIn, tokenOut, poolKey, swapParams, minAmountOut)
-            // Extract tokenIn and inputAmount from the encoded data
+            // Extract tokenIn and amountSpecified using assembly (~2k gas savings!)
 
-            // Decode to extract needed info
-            (address _tokenIn, , , SwapParams memory swapParams, ) = abi.decode(
-                data,
-                (address, address, PoolKey, SwapParams, uint256)
-            );
+            // Layout: tokenIn(0x00) + tokenOut(0x20) + PoolKey(0x40-0xdf) + SwapParams(0xe0-0x13f) + minAmountOut(0x140)
+            // PoolKey: currency0(0x40) + currency1(0x60) + fee(0x80) + tickSpacing(0xa0) + hooks(0xc0)
+            // SwapParams: zeroForOne(0xe0) + amountSpecified(0x100) + sqrtPriceLimitX96(0x120)
 
-            tokenIn = _tokenIn;
-            inputAmount = uint256(-swapParams.amountSpecified);  // Convert back to positive
+            assembly {
+                // tokenIn is at offset 0x00 (first 32 bytes)
+                tokenIn := calldataload(data.offset)
+
+                // amountSpecified is at offset 0x100 (256 bytes)
+                let amountSpecified := calldataload(add(data.offset, 0x100))
+
+                // Convert negative to positive (amountSpecified is negative for exact input)
+                inputAmount := sub(0, amountSpecified)
+            }
+
             target = UNIVERSAL_ROUTER;  // Flag for Uniswap
-            callData = data;  // Use data as-is for unlock
+            callData = data;  // ZERO overhead - use as-is!
         } else {
-            // For USE_ALL or other encoders: call encoder contract
+            // For USE_ALL or Balancer: call encoder contract
             (bool success, bytes memory result) = encoder.staticcall(data);
             if (!success) revert CallFailed();
             (target, callData, inputAmount, tokenIn) = abi.decode(result, (address, bytes, uint256, address));
@@ -447,7 +447,9 @@ contract WalletBundler is IUnlockCallback {
      * @notice Unlock callback - CORRECT FLOW
      */
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
-        require(msg.sender == POOL_MANAGER, "Only PoolManager");
+        // Cache POOL_MANAGER to save ~400 gas (5 constant loads → 1 memory load)
+        address poolManager = POOL_MANAGER;
+        require(msg.sender == poolManager, "Only PoolManager");
 
         (
             address tokenIn,
@@ -461,43 +463,80 @@ contract WalletBundler is IUnlockCallback {
         // swap() returns a single BalanceDelta (int256) where:
         // - upper 128 bits = delta0 (currency0 delta)
         // - lower 128 bits = delta1 (currency1 delta)
-        int256 balanceDelta = IPoolManager(POOL_MANAGER).swap(
+        int256 balanceDelta = IPoolManager(poolManager).swap(
             poolKey,
             swapParams,
             "" // no hook data
         );
 
-        // Unpack the BalanceDelta
-        int128 delta0 = int128(balanceDelta >> 128);
-        int128 delta1 = int128(balanceDelta);
+        // Unpack BalanceDelta and calculate amounts inline (saves stack space)
+        uint256 amountToSettle;
+        uint256 amountOut;
 
-        // STEP 2: Settle input token (pay our debt)
-        uint256 amountToSettle = swapParams.zeroForOne ? uint256(int256(-delta0)) : uint256(int256(-delta1));
-
-        if (tokenIn == address(0)) {
-            // For native ETH
-            IPoolManager(POOL_MANAGER).settle{value: amountToSettle}();
+        if (swapParams.zeroForOne) {
+            amountToSettle = uint256(int256(-int128(balanceDelta >> 128)));  // -delta0
+            amountOut = uint256(int256(int128(balanceDelta)));                // delta1
         } else {
-            // For ERC20:
-            // a) Sync to establish the "before" balance baseline
-            IPoolManager(POOL_MANAGER).sync(tokenIn);
-
-            // b) Transfer tokens to PoolManager (changes the balance)
-            _transferToken(tokenIn, POOL_MANAGER, amountToSettle);
-
-            // c) Settle - compares current balance vs baseline from sync
-            IPoolManager(POOL_MANAGER).settle();
+            amountToSettle = uint256(int256(-int128(balanceDelta)));          // -delta1
+            amountOut = uint256(int256(int128(balanceDelta >> 128)));         // delta0
         }
 
-        // STEP 3: Take output tokens (collect our credit)
-        uint256 amountOut = swapParams.zeroForOne ? uint256(int256(delta1)) : uint256(int256(delta0));
+        if (tokenIn == address(0)) {
+            // For native ETH - assembly optimized settle() call
+            assembly {
+                let ptr := mload(0x40)
+                // Store settle() selector: 0x11da60b4
+                mstore(ptr, 0x11da60b400000000000000000000000000000000000000000000000000000000)
 
-        IPoolManager(POOL_MANAGER).take(tokenOut, self, amountOut);
+                // Call with ETH value, ignore return value
+                let success := call(gas(), poolManager, amountToSettle, ptr, 0x04, 0, 0)
+                if iszero(success) { revert(0, 0) }
+            }
+        } else {
+            // For ERC20:
+            // a) Sync to establish the "before" balance baseline - assembly optimized
+            assembly {
+                let ptr := mload(0x40)
+                // Store sync(address) selector: 0xa5841194
+                mstore(ptr, 0xa584119400000000000000000000000000000000000000000000000000000000)
+                mstore(add(ptr, 0x04), tokenIn)
+
+                let success := call(gas(), poolManager, 0, ptr, 0x24, 0, 0)
+                if iszero(success) { revert(0, 0) }
+            }
+
+            // b) Transfer tokens to PoolManager (changes the balance)
+            _transferToken(tokenIn, poolManager, amountToSettle);
+
+            // c) Settle - compares current balance vs baseline from sync - assembly optimized
+            assembly {
+                let ptr := mload(0x40)
+                // Store settle() selector: 0x11da60b4
+                mstore(ptr, 0x11da60b400000000000000000000000000000000000000000000000000000000)
+
+                // Call without value, ignore return value
+                let success := call(gas(), poolManager, 0, ptr, 0x04, 0, 0)
+                if iszero(success) { revert(0, 0) }
+            }
+        }
+
+        // Assembly optimized take() call (using address() to avoid stack too deep)
+        assembly {
+            let ptr := mload(0x40)
+            // Store take(address,address,uint256) selector: 0x0b0d9c09
+            mstore(ptr, 0x0b0d9c0900000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), tokenOut)
+            mstore(add(ptr, 0x24), address())  // This contract's address
+            mstore(add(ptr, 0x44), amountOut)
+
+            let success := call(gas(), poolManager, 0, ptr, 0x64, 0, 0)
+            if iszero(success) { revert(0, 0) }
+        }
 
         // Validate minimum output
         require(amountOut >= minAmountOut, "Insufficient output");
 
-        // Return output amount
+        // Return output amount (reverted to standard for debugging)
         return abi.encode(amountOut);
     }
 

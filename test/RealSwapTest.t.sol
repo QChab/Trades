@@ -13,7 +13,7 @@ contract RealSwapTest is Test {
     address constant AAVE = 0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9;
 
     // Deployed contracts
-    address constant BUNDLER_ADDRESS = 0x323A9EFF01AC59E0eBCDa000f32BFA4093767AE2;
+    address constant BUNDLER_ADDRESS = 0xA41467444E65433FdA9692c0116f2236DD8Ae637;
     address constant UNISWAP_ENCODER = 0xbB9417Cfd94383cA8EF2e323aE2e244CC58aF010;
     address constant BALANCER_ENCODER = 0xc9BC3dd2AAF14992Bf987dFEf1E9592151E8e1C4;
 
@@ -42,8 +42,8 @@ contract RealSwapTest is Test {
 
         // Build encoder targets
         address[] memory encoderTargets = new address[](2);
-        encoderTargets[0] = 0x992861b3b625D166564E0c01Adac8407DC62E2Dd;
-        encoderTargets[1] = 0x992861b3b625D166564E0c01Adac8407DC62E2Dd;
+        encoderTargets[0] = 0x11d264629b6277a6fABb2870318982CC9353fffb;
+        encoderTargets[1] = 0x11d264629b6277a6fABb2870318982CC9353fffb;
 
         // Build encoder data
         bytes[] memory encoderData = new bytes[](2);

@@ -11,7 +11,7 @@ const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
 const balancerEncoderAddress = '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080';
-const uniswapEncoderAddress = '0x992861b3b625D166564E0c01Adac8407DC62E2Dd';  // V4 with correct action codes
+const uniswapEncoderAddress = '0x11d264629b6277a6fABb2870318982CC9353fffb';  // V4 with correct action codes
 
 /**
  * Create execution plan for the selected route
