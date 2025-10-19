@@ -6,7 +6,7 @@ const { ethers } = hre;
 // Set these to deployed addresses to skip deployment
 // Leave as null to deploy fresh contracts
 const DEPLOYED_ADDRESSES = {
-  bundlerRegistry: '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28',
+  bundlerRegistry: '0xb529eB70a7c93d07eaCe6cd6A986AF8B8A2692bC',
   uniswapEncoder: '0x11d264629b6277a6fABb2870318982CC9353fffb',
   balancerEncoder: '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080',
   walletBundler: '0xA41467444E65433FdA9692c0116f2236DD8Ae637'

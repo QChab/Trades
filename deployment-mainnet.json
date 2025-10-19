@@ -9,7 +9,7 @@
   },
   "contracts": {
     "BundlerRegistry": {
-      "address": "0x4df4B688d6F7954F6F53787B2e2778720BaB5d28",
+      "address": "0xb529eB70a7c93d07eaCe6cd6A986AF8B8A2692bC",
       "gasUsed": "114789",
       "gasCost": "0.00003602018670564"
     },

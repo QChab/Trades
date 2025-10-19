@@ -46,9 +46,7 @@ contract WalletBundler is IUnlockCallback {
     address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address private constant POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90; // Uniswap V4
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
-    address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3 Router
-    address private constant BALANCER_VAULT = 0xbA1333333333a1BA1108E8412f11850A5C319bA9; // Balancer V3 Vault
-    address private constant BUNDLER_REGISTRY = 0x4df4B688d6F7954F6F53787B2e2778720BaB5d28; // Well-known registry
+    address private constant BUNDLER_REGISTRY = 0xb529eB70a7c93d07eaCe6cd6A986AF8B8A2692bC; // Well-known registry
     uint48 private constant EXPIRATION_OFFSET = 281474976710655; // MAx uint48
     uint256 private constant APPROVAL_THRESHOLD = 1e45; // Gas-optimized approval check threshold
 
