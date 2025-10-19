@@ -19,7 +19,7 @@ interface IPoolManager {
         PoolKey memory key,
         SwapParams memory params,
         bytes calldata hookData
-    ) external returns (int256, int256);
+    ) external returns (int256); // Returns BalanceDelta (packed int256)
     function sync(address currency) external;
     function settle() external payable returns (uint256);
     function take(address currency, address to, uint256 amount) external;

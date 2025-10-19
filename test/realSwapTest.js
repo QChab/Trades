@@ -39,7 +39,7 @@ const TEST_PARAMS = {
 // ===== DEPLOYED CONTRACT ADDRESSES =====
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28',
-  uniswapEncoder: '0x191a695243dbAD53e0a999b2B2B130909e68CDd4',  // V4 with correct action codes
+  uniswapEncoder: '0x992861b3b625D166564E0c01Adac8407DC62E2Dd',  // V4 with correct action codes
   balancerEncoder: '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080'
 };
 
@@ -112,7 +112,7 @@ describe("Real Swap Integration Test", function () {
     // Get bundler address for this wallet
     console.log("Querying BundlerRegistry for wallet's bundler...");
     // bundlerAddress = await bundlerManager.getBundlerAddress(wallet.address);
-    bundlerAddress = '0xCe79a23728b85163D08474c91adFbd13ca4E683A';
+    bundlerAddress = '0x323A9EFF01AC59E0eBCDa000f32BFA4093767AE2';
 
     if (!bundlerAddress || bundlerAddress === ethers.constants.AddressZero) {
       throw new Error(
@@ -275,7 +275,7 @@ describe("Real Swap Integration Test", function () {
         value: msgValue,
         maxFeePerGas: maxFeePerGas,
         maxPriorityFeePerGas: maxPriorityFeePerGas,
-        gasLimit: 4200000  // Fixed gas limit to skip estimation and see actual error
+        gasLimit: 2000000  // Fixed gas limit to skip estimation and see actual error
       }
     );
 

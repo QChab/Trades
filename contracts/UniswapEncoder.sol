@@ -3,27 +3,18 @@ pragma solidity ^0.8.19;
 
 /**
  * @title UniswapEncoder
- * @notice Encodes Uniswap V4 Universal Router swap calls dynamically
- * @dev Stateless encoder that can be deployed once and used by all WalletBundler instances
+ * @notice Encodes Uniswap V4 unlock callback data directly (optimized for WalletBundler)
+ * @dev Returns unlock callback format - NO Universal Router overhead
  */
 contract UniswapEncoder {
-    // Uniswap Universal Router address
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
-    address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // Gas optimization: constant WETH
-    uint48 private constant EXPIRATION_OFFSET = 281474976710655; // Max uint48
+    address private constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
 
-    // Command code for Universal Router V4 swaps
-    bytes private constant COMMANDS = hex"10";  // V4_SWAP command
+    // Price limits for Uniswap V4
+    uint160 private constant MIN_SQRT_PRICE_LIMIT = 4295128740;  // MIN_SQRT_PRICE + 1
+    uint160 private constant MAX_SQRT_PRICE_LIMIT = 1461446703485210103287273052203988822378723970341;  // MAX_SQRT_PRICE - 1
 
-    // V4 Action codes - hardcoded as constant bytes
-    // [SWAP_EXACT_IN_SINGLE, SETTLE_ALL, TAKE_ALL] = [0x06, 0x0c, 0x0f]
-    // NOTE: For pre-transfer approach, SETTLE_ALL settles the delta created by pre-transfer
-    bytes private constant ACTIONS = hex"060c0f";  // SWAP + SETTLE_ALL + TAKE_ALL
-
-    // Empty hookData (used in all swaps)
-    bytes private constant EMPTY_HOOK_DATA = hex"";
-
-    // V4 PoolKey structure
+    // PoolKey structure (matches PoolManager)
     struct PoolKey {
         address currency0;
         address currency1;
@@ -32,13 +23,11 @@ contract UniswapEncoder {
         address hooks;
     }
 
-    // Swap parameters for single swap
-    struct SingleSwapParams {
-        PoolKey poolKey;
+    // SwapParams structure (matches PoolManager)
+    struct SwapParams {
         bool zeroForOne;
-        uint256 amountIn;
-        uint256 minAmountOut;
-        address tokenIn;
+        int256 amountSpecified;
+        uint160 sqrtPriceLimitX96;
     }
 
     // Swap parameters for use-all-balance swap
@@ -51,55 +40,11 @@ contract UniswapEncoder {
     }
 
     /**
-     * @notice Encode a single swap on Uniswap V4
+     * @notice Encode unlock callback data using all available balance
+     * @dev For intermediate hops - calculates actual balance dynamically
      * @param swapParams Struct containing all swap parameters
-     * @return target The Universal Router address
-     * @return callData The encoded V4 swap call
-     * @return inputAmount The actual amount to be used
-     * @return _tokenIn The tokenIn address (echo back)
-     */
-    function encodeSingleSwap(
-        SingleSwapParams calldata swapParams
-    ) external view returns (address target, bytes memory callData, uint256 inputAmount, address _tokenIn) {
-        // Build params array - 3 params: SWAP + SETTLE_ALL + TAKE_ALL
-        bytes[] memory params = new bytes[](3);
-
-        // Param 0: Swap parameters
-        params[0] = abi.encode(
-            swapParams.poolKey,
-            swapParams.zeroForOne,
-            uint128(swapParams.amountIn),
-            uint128(swapParams.minAmountOut),
-            EMPTY_HOOK_DATA
-        );
-
-        // Param 1: SETTLE_ALL - settles the pre-transferred delta (amount=0 means settle existing delta)
-        params[1] = abi.encode(swapParams.tokenIn, uint256(0));
-
-        // Param 2: TAKE_ALL - currency and minAmount to send
-        address currencyOut = swapParams.zeroForOne ? swapParams.poolKey.currency1 : swapParams.poolKey.currency0;
-        params[2] = abi.encode(currencyOut, swapParams.minAmountOut);
-
-        // Encode inputs as [actions, params]
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(ACTIONS, params);
-
-        callData = abi.encodeWithSignature(
-            "execute(bytes,bytes[],uint256)",
-            COMMANDS,
-            inputs,
-            EXPIRATION_OFFSET
-        );
-
-        return (UNIVERSAL_ROUTER, callData, swapParams.amountIn, swapParams.tokenIn);
-    }
-
-    /**
-     * @notice Encode a swap using all available balance (V4)
-     * @dev For intermediate hops that should use entire balance
-     * @param swapParams Struct containing all swap parameters
-     * @return target The Universal Router address
-     * @return callData The encoded swap with actual balance
+     * @return target The Universal Router address (flag for WalletBundler)
+     * @return callData The encoded unlock callback data
      * @return inputAmount Returns the actual balance amount
      * @return _tokenIn The tokenIn address
      */
@@ -109,11 +54,11 @@ contract UniswapEncoder {
         // Determine which balance to query based on wrap operation
         address balanceToken = swapParams.tokenIn;
         if (swapParams.wrapOp == 1) {
-            // Will wrap ETH to WETH before swap, so query ETH balance
+            // Will wrap ETH to WETH before swap, query ETH balance
             balanceToken = address(0);
         } else if (swapParams.wrapOp == 3) {
-            // Will unwrap WETH to ETH before swap, so query WETH balance
-            balanceToken = WETH; // Gas optimization: use constant
+            // Will unwrap WETH to ETH before swap, query WETH balance
+            balanceToken = WETH;
         }
 
         // Get the actual balance (ETH or token)
@@ -121,34 +66,27 @@ contract UniswapEncoder {
             ? msg.sender.balance
             : _getTokenBalance(balanceToken, msg.sender);
 
-        // Build params array - 3 params: SWAP + SETTLE_ALL + TAKE_ALL
-        bytes[] memory params = new bytes[](3);
+        // Determine output token
+        address tokenOut = swapParams.zeroForOne
+            ? swapParams.poolKey.currency1
+            : swapParams.poolKey.currency0;
 
-        // Param 0: Swap parameters
-        params[0] = abi.encode(
-            swapParams.poolKey,
-            swapParams.zeroForOne,
-            uint128(actualBalance),
-            uint128(swapParams.minAmountOut),
-            EMPTY_HOOK_DATA
-        );
+        // Determine price limit
+        uint160 sqrtPriceLimitX96 = swapParams.zeroForOne
+            ? MIN_SQRT_PRICE_LIMIT
+            : MAX_SQRT_PRICE_LIMIT;
 
-        // Param 1: SETTLE_ALL - settles the pre-transferred delta (amount=0 means settle existing delta)
-        params[1] = abi.encode(balanceToken, uint256(0));
-
-        // Param 2: TAKE_ALL - currency and minAmount to send
-        address currencyOut = swapParams.zeroForOne ? swapParams.poolKey.currency1 : swapParams.poolKey.currency0;
-        params[2] = abi.encode(currencyOut, swapParams.minAmountOut);
-
-        // Encode inputs as [actions, params]
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(ACTIONS, params);
-
-        callData = abi.encodeWithSignature(
-            "execute(bytes,bytes[],uint256)",
-            COMMANDS,
-            inputs,
-            EXPIRATION_OFFSET
+        // Encode unlock callback format with actual balance
+        callData = abi.encode(
+            swapParams.tokenIn,                     // tokenIn
+            tokenOut,                               // tokenOut
+            swapParams.poolKey,                     // poolKey
+            SwapParams({
+                zeroForOne: swapParams.zeroForOne,
+                amountSpecified: -int256(actualBalance),  // Use actual balance!
+                sqrtPriceLimitX96: sqrtPriceLimitX96
+            }),
+            swapParams.minAmountOut                 // minAmountOut
         );
 
         return (UNIVERSAL_ROUTER, callData, actualBalance, swapParams.tokenIn);

@@ -1,11 +1,17 @@
 import { ethers } from 'ethers';
+import {
+  encodeUniswapV4Swap,
+  createUniswapV4Step,
+  createUniswapV4UseAllStep,
+  UNIVERSAL_ROUTER
+} from './uniswapV4Encoder.js';
 
 // Constants
 const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
 const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 const { BigNumber } = ethers;
 const balancerEncoderAddress = '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080';
-const uniswapEncoderAddress = '0x191a695243dbAD53e0a999b2B2B130909e68CDd4';  // V4 with correct action codes
+const uniswapEncoderAddress = '0x992861b3b625D166564E0c01Adac8407DC62E2Dd';  // V4 with correct action codes
 
 /**
  * Create execution plan for the selected route
@@ -324,43 +330,59 @@ export function createEncoderExecutionPlan(
         encoderData.push(fullEncoderData);
       }
     } else if (step.protocol === 'uniswap') {
-      console.log(`      ✅ Pushing Uniswap encoder: ${uniswapEncoderAddress}`);
-      encoderTargets.push(uniswapEncoderAddress);
-
       if (inputAmount.eq(ethers.constants.MaxUint256)) {
-        // Use all balance swap - encoder will query actual balance
-        // V4 signature: encodeUseAllBalanceSwap((PoolKey,bool,uint256,uint8,address))
-        // PoolKey = (address,address,uint24,int24,address)
-        const poolKey = [currency0, currency1, fee, tickSpacing, hooks];
-        const swapParams = [poolKey, zeroForOne, minAmountOut, step.wrapOperation || 0, inputTokenAddress];
+        // USE_ALL: Use encoder contract to query balance
+        console.log(`      ✅ Pushing Uniswap encoder (USE_ALL): ${uniswapEncoderAddress}`);
+        encoderTargets.push(uniswapEncoderAddress);
 
-        const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['tuple(tuple(address,address,uint24,int24,address),bool,uint256,uint8,address)'],
-          [swapParams]
+        // Build poolKey object for createUniswapV4UseAllStep
+        const poolKey = {
+          currency0: currency0,
+          currency1: currency1,
+          fee: fee,
+          tickSpacing: tickSpacing,
+          hooks: hooks
+        };
+
+        // Use helper function to create USE_ALL step
+        const uniswapStep = createUniswapV4UseAllStep(
+          uniswapEncoderAddress,
+          inputTokenAddress,
+          poolKey,
+          minAmountOut,
+          step.wrapOperation || 0
         );
 
-        // Encode the function selector for encodeUseAllBalanceSwap with struct param
-        // Note: Double parentheses - outer for UseAllBalanceParams struct, inner for PoolKey struct
-        const selector = ethers.utils.id('encodeUseAllBalanceSwap(((address,address,uint24,int24,address),bool,uint256,uint8,address))').slice(0, 10);
-        const fullEncoderData = selector + encoderCalldata.slice(2);
-        encoderData.push(fullEncoderData);
+        encoderData.push(uniswapStep.encoderData);
       } else {
-        // Regular swap with exact amount
-        // V4 signature: encodeSingleSwap((PoolKey,bool,uint256,uint256,address))
-        // PoolKey = (address,address,uint24,int24,address)
-        const poolKey = [currency0, currency1, fee, tickSpacing, hooks];
-        const swapParams = [poolKey, zeroForOne, inputAmount, minAmountOut, inputTokenAddress];
+        // EXACT AMOUNT: Encode unlock callback format directly in JS (zero overhead!)
+        console.log(`      ✅ Pushing Uniswap direct encoding (exact amount): address(0)`);
+        encoderTargets.push(ethers.constants.AddressZero);  // Flag: data is pre-encoded
 
-        const encoderCalldata = ethers.utils.defaultAbiCoder.encode(
-          ['tuple(tuple(address,address,uint24,int24,address),bool,uint256,uint256,address)'],
-          [swapParams]
+        // Build poolKey object for encodeUniswapV4Swap
+        const poolKey = {
+          currency0: currency0,
+          currency1: currency1,
+          fee: fee,
+          tickSpacing: tickSpacing,
+          hooks: hooks
+        };
+
+        // Determine output token address
+        const outputTokenForSwap = outputTokenAddress === ETH_ADDRESS ? ETH_ADDRESS : outputTokenAddress;
+
+        // Encode unlock callback format directly using pure JS function
+        const { data } = encodeUniswapV4Swap(
+          inputTokenAddress,
+          outputTokenForSwap,
+          poolKey,
+          inputAmount,
+          minAmountOut
         );
 
-        // Encode the function selector for encodeSingleSwap with struct param
-        // Note: Double parentheses - outer for SingleSwapParams struct, inner for PoolKey struct
-        const selector = ethers.utils.id('encodeSingleSwap(((address,address,uint24,int24,address),bool,uint256,uint256,address))').slice(0, 10);
-        const fullEncoderData = selector + encoderCalldata.slice(2);
-        encoderData.push(fullEncoderData);
+        // Push pre-encoded unlock format (WalletBundler will use as-is!)
+        encoderData.push(data);
+        console.log(`         📦 Pre-encoded unlock format (${data.length} bytes) - zero contract overhead!`);
       }
     }
   });

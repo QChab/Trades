@@ -37,8 +37,8 @@ const CONFIG = {
   slippageTolerance: 20, // 20%
 
   // Contract addresses
-  bundlerAddress: '0xCe79a23728b85163D08474c91adFbd13ca4E683A',
-  uniswapEncoder: '0x191a695243dbAD53e0a999b2B2B130909e68CDd4',
+  bundlerAddress: '0x323A9EFF01AC59E0eBCDa000f32BFA4093767AE2',
+  uniswapEncoder: '0x992861b3b625D166564E0c01Adac8407DC62E2Dd',
   balancerEncoder: '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080',
 
   // File paths

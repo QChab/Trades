@@ -7,9 +7,9 @@ const { ethers } = hre;
 // Leave as null to deploy fresh contracts
 const DEPLOYED_ADDRESSES = {
   bundlerRegistry: '0x4df4B688d6F7954F6F53787B2e2778720BaB5d28',
-  uniswapEncoder: '0x191a695243dbAD53e0a999b2B2B130909e68CDd4',
+  uniswapEncoder: '0x992861b3b625D166564E0c01Adac8407DC62E2Dd',
   balancerEncoder: '0x5d0927B13E2e0ecDEb20aD2c0E76e62acd36b080',
-  walletBundler: '0xCe79a23728b85163D08474c91adFbd13ca4E683A'
+  walletBundler: '0x323A9EFF01AC59E0eBCDa000f32BFA4093767AE2'
 };
 
 const encodeAndExecuteArgs = {

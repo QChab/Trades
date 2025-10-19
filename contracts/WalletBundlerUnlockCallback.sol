@@ -327,19 +327,14 @@ contract WalletBundlerUnlockCallback is IUnlockCallback {
             bytes memory returnData;
 
             if (target == UNIVERSAL_ROUTER) {
-                // For Universal Router, use direct PoolManager unlock approach
-                // This avoids the double-payment issue with SETTLE_ALL
+                // For Uniswap V4, callData is already in unlock callback format
+                // JS encodes it directly - just pass through to unlock!
+                // UniswapEncoder.sol handles useAllBalance internally
+                // Zero decode/re-encode overhead = maximum gas savings
 
-                // Decode router calldata to extract swap parameters
-                (PoolKey memory poolKey, bool zeroForOne, uint128 minAmountOut) = _decodeRouterCallData(callData);
+                bytes memory result = IPoolManager(POOL_MANAGER).unlock(callData);
+                uint256 swapOutput = abi.decode(result, (uint256));
 
-                // Determine output token
-                address tokenOut = zeroForOne ? poolKey.currency1 : poolKey.currency0;
-
-                // Execute via PoolManager
-                uint256 swapOutput = _executeViaPoolManager(tokenIn, inputAmount, tokenOut, poolKey, zeroForOne, minAmountOut);
-
-                // Encode output for consistency
                 returnData = abi.encode(swapOutput);
                 success = true;
             } else {
@@ -383,9 +378,27 @@ contract WalletBundlerUnlockCallback is IUnlockCallback {
      * @dev Call encoder contract to get target, calldata, and input amount
      */
     function _callEncoder(address encoder, bytes calldata data) private view returns (address target, bytes memory callData, uint256 inputAmount, address tokenIn) {
-        (bool success, bytes memory result) = encoder.staticcall(data);
-        if (!success) revert CallFailed();
-        (target, callData, inputAmount, tokenIn) = abi.decode(result, (address, bytes, uint256, address));
+        if (encoder == address(0)) {
+            // For Uniswap exact amount: data is already unlock callback format (encoded in JS)
+            // Format: (tokenIn, tokenOut, poolKey, swapParams, minAmountOut)
+            // Extract tokenIn and inputAmount from the encoded data
+
+            // Decode to extract needed info
+            (address _tokenIn, , , SwapParams memory swapParams, ) = abi.decode(
+                data,
+                (address, address, PoolKey, SwapParams, uint256)
+            );
+
+            tokenIn = _tokenIn;
+            inputAmount = uint256(-swapParams.amountSpecified);  // Convert back to positive
+            target = UNIVERSAL_ROUTER;  // Flag for Uniswap
+            callData = data;  // Use data as-is for unlock
+        } else {
+            // For USE_ALL or other encoders: call encoder contract
+            (bool success, bytes memory result) = encoder.staticcall(data);
+            if (!success) revert CallFailed();
+            (target, callData, inputAmount, tokenIn) = abi.decode(result, (address, bytes, uint256, address));
+        }
     }
 
     /**
@@ -486,82 +499,6 @@ contract WalletBundlerUnlockCallback is IUnlockCallback {
 
         // Return output amount
         return abi.encode(amountOut);
-    }
-    
-    /**
-     * @dev Execute Universal Router call via direct PoolManager unlock
-     * @notice This function avoids the double-payment issue with SETTLE_ALL
-     * @param tokenIn Input token address
-     * @param inputAmount Amount to swap
-     * @param tokenOut Output token address
-     * @param poolKey Pool parameters
-     * @param zeroForOne Swap direction
-     * @param minAmountOut Minimum output amount
-     * @return outputAmount The output amount received
-     */
-    function _executeViaPoolManager(
-        address tokenIn,
-        uint256 inputAmount,
-        address tokenOut,
-        PoolKey memory poolKey,
-        bool zeroForOne,
-        uint256 minAmountOut
-    ) private returns (uint256 outputAmount) {
-        // DON'T pre-transfer - let callback handle it
-        
-        bytes memory data = abi.encode(
-            tokenIn,
-            tokenOut,
-            poolKey,
-            SwapParams({
-                zeroForOne: zeroForOne,
-                amountSpecified: -int256(inputAmount),
-                sqrtPriceLimitX96: zeroForOne ? 4295128740 : 1461446703485210103287273052203988822378723970341
-            }),
-            minAmountOut
-        );
-        
-        bytes memory result = IPoolManager(POOL_MANAGER).unlock(data);
-        outputAmount = abi.decode(result, (uint256));
-    }
-    /**
-     * @dev Decode Universal Router calldata to extract swap parameters
-     * @param routerCallData Original Universal Router execute() calldata
-     * @return poolKey Pool parameters
-     * @return zeroForOne Swap direction
-     * @return minAmountOut Minimum output amount
-     */
-    function _decodeRouterCallData(
-        bytes memory routerCallData
-    ) private pure returns (PoolKey memory poolKey, bool zeroForOne, uint128 minAmountOut) {
-        // Skip function selector (4 bytes) and decode
-        (, bytes[] memory inputs,) = abi.decode(
-            _slice(routerCallData, 4, routerCallData.length - 4),
-            (bytes, bytes[], uint256)
-        );
-
-        // Decode inputs[0]: [actions, params[]]
-        (, bytes[] memory params) = abi.decode(inputs[0], (bytes, bytes[]));
-
-        // Decode SWAP parameters from params[0]
-        (poolKey, zeroForOne, , minAmountOut,) = abi.decode(
-            params[0],
-            (PoolKey, bool, uint128, uint128, bytes)
-        );
-    }
-
-    /**
-     * @dev Helper function to slice bytes
-     * @param data Original bytes data
-     * @param start Start index
-     * @param length Length of slice
-     * @return result Sliced bytes
-     */
-    function _slice(bytes memory data, uint256 start, uint256 length) private pure returns (bytes memory result) {
-        result = new bytes(length);
-        for (uint256 i = 0; i < length; i++) {
-            result[i] = data[start + i];
-        }
     }
 
     receive() external payable {}
