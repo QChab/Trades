@@ -150,7 +150,7 @@ export async function getQuoteWalletBundler({
     });
 
     if (!mixedResult || !mixedResult.bestRoute || !mixedResult.bestRoute.totalOutput) {
-      return null;
+      return { error: null, result: null };
     }
 
     const route = mixedResult.bestRoute;
@@ -160,22 +160,32 @@ export async function getQuoteWalletBundler({
     const gasEstimate = calculateWalletBundlerGas(route);
 
     return {
-      protocol: 'WalletBundler',
-      outputAmount: route.totalOutput,
-      gasEstimate,
-      trades: [{
-        route: route,
-        executionPlan: mixedResult.executionPlan,
+      error: null,
+      result: {
+        protocol: 'WalletBundler',
         outputAmount: route.totalOutput,
-        isMixed: true
-      }],
-      rawData: mixedResult,
-      splits: route.splits // Keep split info for display
+        gasEstimate,
+        trades: [{
+          route: route,
+          executionPlan: mixedResult.executionPlan,
+          outputAmount: route.totalOutput,
+          isMixed: true
+        }],
+        rawData: mixedResult,
+        splits: route.splits // Keep split info for display
+      }
     };
 
   } catch (error) {
     console.error('❌ WalletBundler quote error:', error.message);
-    return null;
+
+    // Check if it's a rate limit error
+    const errorMsg = error.message?.toLowerCase() || '';
+    if (errorMsg.includes('rate limit') || errorMsg.includes('429')) {
+      return { error: 429, result: null };
+    }
+
+    return { error: null, result: null };
   }
 }
 
@@ -348,7 +358,7 @@ export async function getAllQuotes({
   const allowedProtocols = getAllowedProtocols(walletMode);
   console.log(`🔍 Querying protocols: ${allowedProtocols.join(', ')}`);
 
-  const TIMEOUT_MS = 10000; // 30 seconds
+  const TIMEOUT_MS = 30000; // 30 seconds
   const quotePromises = [];
   const queriedProtocols = []; // Track which protocols are actually queried
 
@@ -430,10 +440,25 @@ export async function getAllQuotes({
   results.forEach((result, index) => {
     const protocolName = queriedProtocols[index]; // Use queriedProtocols, not allowedProtocols
     if (result.status === 'fulfilled') {
-      if (result.value !== null) {
-        console.log(`  ✅ ${protocolName}: Quote received`);
+      // Check if this is WalletBundler with error response
+      if (protocolName === 'WalletBundler' && result.value && result.value.error === 429) {
+        throw new Error('⚠️ Rate limit error when quoting WalletBundler');
+      }
+
+      // Handle WalletBundler's {error, result} format
+      if (protocolName === 'WalletBundler') {
+        if (result.value && result.value.result !== null) {
+          console.log(`  ✅ ${protocolName}: Quote received`);
+        } else {
+          console.log(`  ⚠️ ${protocolName}: Returned null (failed or timed out)`);
+        }
       } else {
-        console.log(`  ⚠️ ${protocolName}: Returned null (failed or timed out)`);
+        // Handle other protocols
+        if (result.value !== null) {
+          console.log(`  ✅ ${protocolName}: Quote received`);
+        } else {
+          console.log(`  ⚠️ ${protocolName}: Returned null (failed or timed out)`);
+        }
       }
     } else {
       console.log(`  ❌ ${protocolName}: Promise rejected - ${result.reason?.message || result.reason}`);
@@ -442,8 +467,23 @@ export async function getAllQuotes({
 
   // Extract successful results
   const quotes = results
-    .filter(r => r.status === 'fulfilled' && r.value !== null)
-    .map(r => r.value);
+    .map((r, index) => {
+      if (r.status !== 'fulfilled') return null;
+
+      const protocolName = queriedProtocols[index];
+
+      // Handle WalletBundler's {error, result} format
+      if (protocolName === 'WalletBundler') {
+        if (r.value && r.value.result !== null) {
+          return r.value.result;
+        }
+        return null;
+      }
+
+      // Handle other protocols (return value directly)
+      return r.value;
+    })
+    .filter(quote => quote !== null);
 
   console.log(`✅ Received ${quotes.length} valid quotes from ${queriedProtocols.length} queried protocols`);
 

@@ -9,7 +9,7 @@
   },
   "contracts": {
     "BundlerRegistry": {
-      "address": "0xc1049981BbC12aF9e8e9F999e70AdAa6E3371ec1",
+      "address": "0xa743740436a19052D3E22427F580090fb963b37a",
       "gasUsed": "114789",
       "gasCost": "0.00003602018670564"
     },
@@ -24,7 +24,7 @@
       "gasCost": "0.000076681914437282"
     },
     "WalletBundler": {
-      "address": "0x8B9Af27381b9a12cB20b2b09ae005dC7f0c2eac8",
+      "address": "0x93F0d03D9DDa1CBF1a35490Aa0eBD8676ebb6E8a",
       "gasUsed": "836403",
       "gasCost": "0.000261952856506086"
     }

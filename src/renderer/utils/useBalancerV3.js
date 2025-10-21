@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import axios from 'axios';
 import Decimal from 'decimal.js';
+import { isRateLimitError } from './rpcErrorHandler.js';
 
 // Balancer V3 uses a different architecture than V2
 const BALANCER_V3_SUBGRAPH = 'https://gateway.thegraph.com/api/d692082c59f956790647e889e75fa84d/subgraphs/id/4rixbLvpuBCwXTJSwyAzQgsLR8KprnyMfyCuXT8Fj5cd';
@@ -194,7 +195,12 @@ async function getPoolData(poolAddress, provider, poolInfo = null) {
   // Not in cache, detect pool type and get data
   console.log(`⚙ Detecting type for pool ${poolAddress.slice(0, 10)}...`);
   const poolData = await detectPoolType(poolAddress, provider);
-  
+
+  // Check if detectPoolType returned a 429 error
+  if (poolData?.error === 429) {
+    return { error: 429 };
+  }
+
   // Calculate total liquidity (sum of token balances)
   let totalLiquidity = 0;
   if (poolInfo && poolInfo.tokens && poolInfo.tokens.length > 0) {
@@ -206,7 +212,7 @@ async function getPoolData(poolAddress, provider, poolInfo = null) {
   }
   
   // Skip pools with less than 1 total tokens (too small to be useful)
-  if (totalLiquidity < 1) {
+  if (totalLiquidity < .01) {
     console.log(`  ⚠️ Pool has insufficient liquidity (${totalLiquidity.toFixed(4)} total tokens)`);
     return null;
   }
@@ -301,14 +307,13 @@ export async function fetchAllBalancerPools(tokenAddresses, provider) {
     const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'.toLowerCase();
     const usdt = '0xdAC17F958D2ee523a2206206994597C13D831ec7'.toLowerCase();
     const dai = '0x6B175474E89094C44Da98b954EedeAC495271d0F'.toLowerCase();
-    const wbtc = '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'.toLowerCase();
 
-    const allTokens = [...new Set([...normalizedTokens, weth, usdc, usdt, dai, wbtc])];
+    const allTokens = [...new Set([...normalizedTokens, weth, usdc, usdt, dai])];
 
     const query = `
       {
         pools(
-          first: 200,
+          first: 500,
           where: {
             isInitialized: true,
             isPaused: false,
@@ -347,18 +352,24 @@ export async function fetchAllBalancerPools(tokenAddresses, provider) {
       const totalBalance = pool.tokens.reduce((sum, token) => {
         return sum + parseFloat(token.balance || '0');
       }, 0);
-      return totalBalance >= 1;
+      return totalBalance >= 0.2;
     });
 
     console.log(`✅ Found ${validPools.length} Balancer pools with sufficient liquidity`);
 
     // Enrich with on-chain data (cached)
-    const enrichedPools = await enrichPoolData(validPools, provider);
+    const { counts429, pools: enrichedPools } = await enrichPoolData(validPools, provider);
 
-    return enrichedPools;
+    return {
+      error: counts429 > 0 ? 429 : null,
+      pools: enrichedPools
+    };
   } catch (error) {
     console.error('❌ Error bulk fetching Balancer pools:', error);
-    return [];
+    return {
+      error: null,
+      pools: []
+    };
   }
 }
 
@@ -387,10 +398,14 @@ export async function useBalancerV3({ tokenInAddress, tokenOutAddress, amountIn,
       if (hasInter > 0) optimalPoolsCount += hasInter;
     }
     console.log(`Found ${optimalPoolsCount} pools with optimal intermediates (WETH, USDC, USDT, DAI, WBTC)`);
-    
+
     // Enrich pools with on-chain data (weights, pool types)
-    const enrichedPools = await enrichPoolData(pools, provider);
-    
+    const { counts429, pools: enrichedPools } = await enrichPoolData(pools, provider);
+
+    if (counts429 > 0) {
+      throw new Error(`⚠️ ${counts429} pools skipped due to rate limiting in useBalancerV3`);
+    }
+
     const paths = await findOptimalPaths(
       tokenInAddress,
       tokenOutAddress,
@@ -481,7 +496,7 @@ async function discoverV3Pools(tokenA, tokenB, provider) {
     const query = `
       {
         pools(
-          first: 200,
+          first: 500,
           where: {
             isInitialized: true,
             isPaused: false,
@@ -515,24 +530,6 @@ async function discoverV3Pools(tokenA, tokenB, provider) {
     
     const allPools = response.data.data.pools || [];
 
-    // DEBUG: Check if osETH pool is in raw results
-    const osETH = '0xf1c9acdc66974dfb6decb12aa385b9cd01190e38'.toLowerCase();
-    const osETHPools = allPools.filter(p =>
-      p.tokens.some(t => t.address.toLowerCase() === osETH)
-    );
-    if (osETHPools.length > 0) {
-      console.log(`📍 Found ${osETHPools.length} pool(s) containing osETH in raw results:`);
-      osETHPools.forEach(p => {
-        console.log(`   - ${p.address}: ${p.name}`);
-        console.log(`     Tokens: ${p.tokens.map(t => t.symbol || t.address.slice(0,6)).join(', ')}`);
-        console.log(`     Total balance: ${p.tokens.reduce((sum, t) => sum + parseFloat(t.balance || '0'), 0)}`);
-      });
-    } else {
-      console.log(`❌ No osETH pools found in subgraph results`);
-      console.log(`   Query searched for: ${searchTokens.slice(0,3).join(', ')}...`);
-      console.log(`   Total pools returned: ${allPools.length}`);
-    }
-
     // Filter out pools with insufficient liquidity
     const validPools = allPools.filter(pool => {
       const totalBalance = pool.tokens.reduce((sum, token) => {
@@ -556,27 +553,36 @@ async function discoverV3Pools(tokenA, tokenB, provider) {
 
 async function enrichPoolData(pools, provider) {
   const enrichedPools = [];
-  
+  let rateLimitErrors = 0;
+
   // Prioritize pools with WETH for better routing
   const weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'.toLowerCase();
-  const wethPools = pools.filter(p => 
+  const wethPools = pools.filter(p =>
     p.tokens.some(t => t.address.toLowerCase() === weth)
   );
-  const otherPools = pools.filter(p => 
+  const otherPools = pools.filter(p =>
     !p.tokens.some(t => t.address.toLowerCase() === weth)
   );
-  
+
   // Process WETH pools first, then others, limit to 20 total
-  const poolsToProcess = [...wethPools.slice(0, 25), ...otherPools.slice(0, 20)];
+  const poolsToProcess = pools;
+  // const poolsToProcess = [...wethPools, ...otherPools];
   console.log(`Processing ${poolsToProcess.length} pools (${wethPools.length} with WETH)...`);
-  
+
   for (const pool of poolsToProcess) {
     try {
       const poolAddress = pool.address || pool.id;
-      
+
       // Use cached pool data or detect if not cached
       const poolData = await getPoolData(poolAddress, provider, pool);
-      
+
+      // Skip if rate limited
+      if (poolData?.error === 429) {
+        rateLimitErrors++;
+        console.warn(`⚠️ Rate limit error for pool ${poolAddress.slice(0, 10)}... (${rateLimitErrors} total)`);
+        continue;
+      }
+
       if (poolData.poolType === 'ConstantProduct') continue;
 
       enrichedPools.push({
@@ -587,7 +593,7 @@ async function enrichPoolData(pools, provider) {
         poolAddress: poolAddress,
         cachedData: true
       });
-      
+
     } catch (error) {
       console.error(`Failed to enrich pool ${pool.id}:`, error.message);
       enrichedPools.push({
@@ -598,8 +604,15 @@ async function enrichPoolData(pools, provider) {
       });
     }
   }
-  
-  return enrichedPools;
+
+  if (rateLimitErrors > 0) {
+    console.warn(`⚠️ Encountered ${rateLimitErrors} rate limit errors during pool enrichment`);
+  }
+
+  return {
+    counts429: rateLimitErrors,
+    pools: enrichedPools
+  };
 }
 
 async function detectPoolType(poolAddress, provider) {
@@ -609,43 +622,51 @@ async function detectPoolType(poolAddress, provider) {
     try {
       const weights = await weightedPool.getNormalizedWeights();
       console.log(`Pool ${poolAddress.slice(0, 10)}... is a Weighted Pool`);
-      
+
       // Convert weights from uint256 to percentages
       const totalWeight = ethers.utils.parseEther('1');
       const normalizedWeights = weights.map(w => {
         const percentage = ethers.BigNumber.from(w).mul(100).div(totalWeight);
         return percentage.toNumber();
       });
-      
+
       return {
         poolType: 'WeightedPool',
         weights: normalizedWeights,
         amplificationParameter: null
       };
     } catch (e) {
+      // Check if it's a 429 error
+      if (isRateLimitError(e)) {
+        return { error: 429 };
+      }
       // Not a weighted pool, continue
     }
-    
+
     // Try to detect if it's a stable pool
     const stablePool = new ethers.Contract(poolAddress, STABLE_POOL_ABI, provider);
     try {
       const ampData = await stablePool.getAmplificationParameter();
       console.log(`Pool ${poolAddress.slice(0, 10)}... is a Stable Pool`);
-      
+
       return {
         poolType: 'StablePool',
         weights: null, // Stable pools don't have weights
         amplificationParameter: ampData.value.toString()
       };
     } catch (e) {
+      // Check if it's a 429 error
+      if (isRateLimitError(e)) {
+        return { error: 429 };
+      }
       // Not a stable pool, continue
     }
-    
+
     // Check if it has basic pool functions (might be composable stable or other type)
     const basicPool = new ethers.Contract(poolAddress, POOL_ABI, provider);
     try {
       const name = await basicPool.name();
-      
+
       // Try to infer pool type from name
       if (name.toLowerCase().includes('weighted')) {
         return {
@@ -667,17 +688,26 @@ async function detectPoolType(poolAddress, provider) {
         };
       }
     } catch (e) {
+      // Check if it's a 429 error
+      if (isRateLimitError(e)) {
+        return { error: 429 };
+      }
       // Can't determine from name
     }
-    
+
     // Default to constant product if we can't determine
     return {
       poolType: 'ConstantProduct',
       weights: [50, 50],
       amplificationParameter: null
     };
-    
+
   } catch (error) {
+    // Check if it's a 429 error
+    if (isRateLimitError(error)) {
+      return { error: 429 };
+    }
+
     console.error(`Error detecting pool type for ${poolAddress}:`, error.message);
     return {
       poolType: 'Unknown',

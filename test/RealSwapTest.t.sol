@@ -13,7 +13,7 @@ contract RealSwapTest is Test {
     address constant AAVE = 0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9;
 
     // Deployed contracts
-    address constant BUNDLER_ADDRESS = 0x8B9Af27381b9a12cB20b2b09ae005dC7f0c2eac8;
+    address constant BUNDLER_ADDRESS = 0x93F0d03D9DDa1CBF1a35490Aa0eBD8676ebb6E8a;
     address constant UNISWAP_ENCODER = 0xbB9417Cfd94383cA8EF2e323aE2e244CC58aF010;
     address constant BALANCER_ENCODER = 0xc9BC3dd2AAF14992Bf987dFEf1E9592151E8e1C4;
 

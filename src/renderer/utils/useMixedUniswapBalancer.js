@@ -57,7 +57,7 @@ export async function useMixedUniswapBalancer({
   if (!useUniswap && !useBalancer) {
     throw new Error('At least one DEX must be enabled');
   }
-  console.log(`   Using: ${useUniswap ? 'Uniswap' : ''}${useUniswap && useBalancer ? ' + ' : ''}${useBalancer ? 'Balancer' : ''}`);
+  // console.log(`   Using: ${useUniswap ? 'Uniswap' : ''}${useUniswap && useBalancer ? ' + ' : ''}${useBalancer ? 'Balancer' : ''}`);
   
   // Normalize ETH/WETH for unified routing
   const normalizedTokenIn = normalizeETHToken(tokenInObject);
@@ -122,7 +122,13 @@ export async function useMixedUniswapBalancer({
       // Fetch Balancer pools
       if (useBalancer) {
         // console.log('📦 Fetching Balancer pools...');
-        allBalancerPools = await fetchAllBalancerPools(allTokens, provider);
+        const { error, pools } = await fetchAllBalancerPools(allTokens, provider);
+
+        if (error === 429) {
+          throw new Error('⚠️ Rate limit error when fetching Balancer pools');
+        }
+
+        allBalancerPools = pools;
       }
 
       console.log(`✅ Using ${allBalancerPools.length} Balancer pools and ${allUniswapPools.length} Uniswap pools`);

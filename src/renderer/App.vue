@@ -541,7 +541,7 @@
       ( async () => ethPrice.value = await getEthUsd())();
       setInterval(async () => { 
         ethPrice.value = await getEthUsd();
-       }, 30000);
+       }, 60000);
 
       const readDataFromString = async (args) => { 
         let { fileContent, ext } = args;

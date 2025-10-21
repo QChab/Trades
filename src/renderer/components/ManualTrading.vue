@@ -1643,6 +1643,10 @@ export default {
               console.log('Outdated token pair in first check');
               return 'outdated';
             }
+            if (senderMode !== senderDetails.value?.mode) {
+              console.log('Outdated sender mode in first check');
+              return 'outdated';
+            }
             if (_newAmt !== fromAmount.value) {
               console.log('Outdated input amount in first check');
               return 'outdated';
@@ -1678,7 +1682,7 @@ export default {
 
             // Check if approval is needed
             if (_newFrom !== ethers.constants.AddressZero) {
-              console.log(`📋 About to check allowances. Protocol: "${bestTradeResult.protocol}", Token: ${_newFrom}`);
+              // console.log(`📋 About to check allowances. Protocol: "${bestTradeResult.protocol}", Token: ${_newFrom}`);
               await checkAllowances(_newFrom, null, bestTradeResult.trades, bestTradeResult.protocol);
             } else {
               needsToApprove.value = false;
@@ -1705,7 +1709,7 @@ export default {
     );
 
     const checkAllowances = async (tokenAddress, isUsingUniswap, localTrades, protocol) => {
-      console.log(`🔍 Checking allowances for protocol: "${protocol}" (type: ${typeof protocol})`);
+      // console.log(`🔍 Checking allowances for protocol: "${protocol}" (type: ${typeof protocol})`);
 
       if (!protocol) {
         console.error('❌ Protocol is undefined/null - cannot check allowances');

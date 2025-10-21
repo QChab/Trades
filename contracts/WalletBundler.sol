@@ -47,7 +47,7 @@ contract WalletBundler is IUnlockCallback {
     address private constant POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90; // Uniswap V4
     address private constant UNIVERSAL_ROUTER = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af; // Uniswap V4
     address private constant BALANCER_ROUTER = 0xAE563E3f8219521950555F5962419C8919758Ea2; // Balancer V3
-    address private constant BUNDLER_REGISTRY = 0xc1049981BbC12aF9e8e9F999e70AdAa6E3371ec1; // Well-known registry
+    address private constant BUNDLER_REGISTRY = 0xa743740436a19052D3E22427F580090fb963b37a; // Well-known registry
     uint48 private constant EXPIRATION_OFFSET = 281474976710655; // MAx uint48
     uint256 private constant APPROVAL_THRESHOLD = 1e45; // Gas-optimized approval check threshold
 
@@ -224,7 +224,6 @@ contract WalletBundler is IUnlockCallback {
 
             // Call encoder to get target, calldata, input amount, and input token
             (address target, bytes memory callData, uint256 inputAmount, address tokenIn) = _callEncoder(encoderTargets[i], encoderData[i]);
-
 
             // Handle wrap/unwrap before (for output token conversions)
             if (wrapOp == 1) {
