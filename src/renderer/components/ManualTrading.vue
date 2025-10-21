@@ -1818,7 +1818,7 @@ export default {
           senderDetails.value.address,
           bundlerAddress
         );
-        console.log(`Current allowance: ${allowance.toString()}`);
+        // console.log(`Current allowance: ${allowance.toString()}`);
 
         if (BigNumber.from(allowance).lt(BigNumber.from('100000000000000000000000000'))) {
           console.log('✅ Approval needed! Setting needsToApprove = true');
