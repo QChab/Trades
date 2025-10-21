@@ -2681,28 +2681,40 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
   // CRITICAL: Remove dead-end routes - groups that produce a token that:
   // 1. Is NOT the final output token
   // 2. Is NOT consumed by any downstream group
-  beforeFilterCount = groupsWithLevels.length;
-  groupsWithLevels = groupsWithLevels.filter(group => {
-    // If this group outputs the final token, keep it
-    if (group.outputToken === tokenOut.symbol) {
-      return true;
-    }
+  // IMPORTANT: Iterate multiple times to handle cascading dead-ends
+  // E.g., if USDC→ETH is removed, then ETH→USDC also becomes a dead-end
+  let filteredThisRound = 0;
+  let totalFiltered = 0;
+  do {
+    filteredThisRound = 0;
+    const beforeFilterCount = groupsWithLevels.length;
 
-    // Check if any downstream group consumes this group's output
-    const isConsumed = groupsWithLevels.some(otherGroup =>
-      otherGroup.level > group.level &&
-      otherGroup.inputToken === group.outputToken
-    );
+    groupsWithLevels = groupsWithLevels.filter(group => {
+      // If this group outputs the final token, keep it
+      if (group.outputToken === tokenOut.symbol) {
+        return true;
+      }
 
-    if (!isConsumed) {
-      console.log(`   🚫 Filtering dead-end route: ${group.tokenPairKey} (produces ${group.outputToken} which is not consumed)`);
-    }
+      // Check if any downstream group consumes this group's output
+      const isConsumed = groupsWithLevels.some(otherGroup =>
+        otherGroup !== group &&
+        otherGroup.level > group.level &&
+        otherGroup.inputToken === group.outputToken
+      );
 
-    return isConsumed;
-  });
+      if (!isConsumed) {
+        console.log(`   🚫 Filtering dead-end route: ${group.tokenPairKey} (produces ${group.outputToken} which is not consumed)`);
+      }
 
-  if (groupsWithLevels.length < beforeFilterCount) {
-    console.log(`\n🚫 Filtered out ${beforeFilterCount - groupsWithLevels.length} dead-end route(s)`);
+      return isConsumed;
+    });
+
+    filteredThisRound = beforeFilterCount - groupsWithLevels.length;
+    totalFiltered += filteredThisRound;
+  } while (filteredThisRound > 0);
+
+  if (totalFiltered > 0) {
+    console.log(`\n🚫 Filtered out ${totalFiltered} dead-end route(s) total`);
   }
 
   console.log(`\n📋 Execution Levels:`);
@@ -3049,16 +3061,12 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
 
           // MIXED CONSUMPTION: If consuming level needs BOTH WETH and ETH, don't convert at output
           // Instead, individual consuming pools will handle conversion via "before" operations
-          if (needsWETH && needsETH) {
-            // Keep output in its native form, let consumers convert
-            wrapOperation = 0;
-          }
-          // SINGLE TYPE CONSUMPTION: Convert at output if all consumers need the same form
-          else if (pool.protocol === 'balancer' && needsETH && !needsWETH) {
-            wrapOperation = 4; // Unwrap WETH to ETH after call (all consumers need ETH)
-          }
-          else if (pool.protocol === 'uniswap' && needsWETH && !needsETH) {
+          if (needsETH && pool.protocol === 'balancer') {
+            wrapOperation = 4; 
+          } else if (pool.protocol === 'uniswap' && needsWETH && !needsETH) {
             wrapOperation = 2; // Wrap ETH to WETH after call (all consumers need WETH)
+          } else {
+            wrapOperation = 0;
           }
         }
         // FINAL OUTPUT: If no consuming levels, this is final output to user

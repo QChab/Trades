@@ -79,7 +79,7 @@ async function main() {
   let currentAllowance;
   try {
     currentAllowance = await tokenContract.allowance(signer.address, PARAMS.bundlerAddress);
-    console.log(`Current Allowance: ${ethers.utils.formatUnits(currentAllowance, tokenDecimals)} ${tokenSymbol}`);
+    // console.log(`Current Allowance: ${ethers.utils.formatUnits(currentAllowance, tokenDecimals)} ${tokenSymbol}`);
   } catch (error) {
     console.warn(`Could not check allowance: ${error.message}`);
     currentAllowance = ethers.BigNumber.from(0);

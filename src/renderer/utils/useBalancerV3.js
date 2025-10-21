@@ -352,7 +352,7 @@ export async function fetchAllBalancerPools(tokenAddresses, provider) {
       const totalBalance = pool.tokens.reduce((sum, token) => {
         return sum + parseFloat(token.balance || '0');
       }, 0);
-      return totalBalance >= 0.2;
+      return totalBalance >= 0.01;
     });
 
     console.log(`✅ Found ${validPools.length} Balancer pools with sufficient liquidity`);
@@ -536,7 +536,7 @@ async function discoverV3Pools(tokenA, tokenB, provider) {
         return sum + parseFloat(token.balance || '0');
       }, 0);
       
-      return totalBalance >= 1; // Skip tiny pools
+      return totalBalance >= .01; // Skip tiny pools
     });
     
     console.log(`Found ${validPools.length} pools with sufficient liquidity`);

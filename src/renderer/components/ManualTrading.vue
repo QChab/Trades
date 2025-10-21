@@ -1515,6 +1515,16 @@ export default {
         throw new Error('No quotes available from any protocol');
       }
 
+      // Test RPC connection used by useBalancerV3
+      try {
+        const blockNumber = await props.provider.getBlockNumber();
+        if (!blockNumber || typeof blockNumber !== 'number' || blockNumber <= 0) {
+          throw new Error('Invalid RPC response');
+        }
+      } catch (rpcError) {
+        throw new Error(`RPC error: ${rpcError.message}`);
+      }
+
       // Select best quote based on output after gas costs
       const bestQuote = selectBestQuote(
         quotes,
@@ -1795,7 +1805,7 @@ export default {
       if (protocol === 'Contract' || protocol === 'WalletBundler') {
         console.log('✅ Detected Contract/WalletBundler protocol');
         const bundlerAddress = contractAddress[senderDetails.value.address];
-        console.log(`Bundler address for ${senderDetails.value.address}:`, bundlerAddress);
+        // console.log(`Bundler address for ${senderDetails.value.address}:`, bundlerAddress);
 
         if (!bundlerAddress) {
           console.error('❌ No bundler contract found for Contract protocol');

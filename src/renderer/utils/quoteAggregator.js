@@ -59,8 +59,8 @@ export async function getQuoteUniswap({
       return null;
     }
 
-    // Calculate gas estimate (120k base + 60k per hop)
-    const gasEstimate = 120000 + (60000 * trades100.validTrades.length);
+    // Calculate gas estimate (110k base + 60k per hop)
+    const gasEstimate = 80000 + (60000 * trades100.validTrades.length);
 
     return {
       protocol: 'Uniswap',
@@ -194,9 +194,9 @@ export async function getQuoteWalletBundler({
  * Formula: 50k base + 100k per Uniswap pool + 200k per Balancer pool
  */
 function calculateWalletBundlerGas(route) {
-  const BASE_GAS = 50000;
-  const UNISWAP_POOL_GAS = 80000;
-  const BALANCER_POOL_GAS = 150000;
+  const BASE_GAS = 80000;
+  const UNISWAP_POOL_GAS = 100000;
+  const BALANCER_POOL_GAS = 180000;
 
   let uniswapPools = 0;
   let balancerPools = 0;
@@ -231,8 +231,8 @@ function calculateWalletBundlerGas(route) {
 
   let gasEstimate = BASE_GAS + (uniswapPools * UNISWAP_POOL_GAS) + (balancerPools * BALANCER_POOL_GAS);
   
-  if (uniswapPools + balancerPools > 1) {
-    gasEstimate = gasEstimate * 0.6; // we decrease because the goal is to favorize more pools to avoid arbitrage
+  if (balancerPools >= 1 && uniswapPools >= 1) {
+    gasEstimate = gasEstimate * 0.3; // we decrease because the goal is to favorize more pools to avoid arbitrage
   }
 
   console.log(`  ⛽ Gas estimate: ${gasEstimate} (base: ${BASE_GAS} + ${uniswapPools} Uniswap pools + ${balancerPools} Balancer pools)`);
