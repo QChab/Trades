@@ -7,16 +7,21 @@ import { BundlerManager } from '../src/bundler/BundlerManager.js';
 
 // ===== TEST PARAMETERS =====
 const TEST_PARAMS = {
-  tokenOutObject: {
+  tokenInObject: {
     address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', // ETH
     symbol: 'ONE',
     decimals: 18
   },
-  tokenInObject: {
-    address: '0x0000000000000000000000000000000000000000', // osETH
-    symbol: 'ETH',
+  tokenOutObject: {
+    address: '0x965b64ae2C04cfF248e6502C10cF3A4931e1F1d9', // ETH
+    symbol: 'SEV',
     decimals: 18
   },
+  // tokenInObject: {
+  //   address: '0x0000000000000000000000000000000000000000', // osETH
+  //   symbol: 'ETH',
+  //   decimals: 18
+  // },
   // tokenOutObject: {
   //   address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // AAVE
   //   symbol: 'USDC',
@@ -32,7 +37,7 @@ const TEST_PARAMS = {
   //   symbol: 'AAVE',
   //   decimals: 18
   // },
-  amountIn: '0.005', // In human-readable format, not wei
+  amountIn: '0.00001', // In human-readable format, not wei
   slippageTolerance: 20 // 0.5%
 };
 

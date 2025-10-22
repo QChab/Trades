@@ -1672,8 +1672,5207 @@
       "totalLiquidity": 657380.3177932922,
       "swapFee": "0.001",
       "queriedAt": "2025-10-18T22:21:07.711Z"
+    },
+    "0x056ae37bb8e54b1054f68687eb56f06c3a3d3950": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x056ae37bb8e54b1054f68687eb56f06c3a3d3950",
+      "id": "0x056ae37bb8e54b1054f68687eb56f06c3a3d3950",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000133770759",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.122764519238232898",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.12276451937200365,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:26.286Z"
+    },
+    "0x05a7044c00afeaa8da56e91f5ca0b7f46263be9f": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x05a7044c00afeaa8da56e91f5ca0b7f46263be9f",
+      "id": "0x05a7044c00afeaa8da56e91f5ca0b7f46263be9f",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001866836446",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.680951445839797742",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6809514477066342,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:26.935Z"
+    },
+    "0x078232a62c7db0807327c37191be12f059b37cf4": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x078232a62c7db0807327c37191be12f059b37cf4",
+      "id": "0x078232a62c7db0807327c37191be12f059b37cf4",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000019351249",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.686390826951990489",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.686390827145503,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:27.585Z"
+    },
+    "0x084d485fc221d633ae102de83186fa9aa78777c1": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x084d485fc221d633ae102de83186fa9aa78777c1",
+      "id": "0x084d485fc221d633ae102de83186fa9aa78777c1",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000504722457",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.131340266335879656",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.13134026684060213,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:28.235Z"
+    },
+    "0x0a52a4ef91ea9b793d682b32ccabebbda1398206": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x0a52a4ef91ea9b793d682b32ccabebbda1398206",
+      "id": "0x0a52a4ef91ea9b793d682b32ccabebbda1398206",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000148248327",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.040907442937042706",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.04090744308529103,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:28.878Z"
+    },
+    "0x0ee0867f3564b57274582683998e2066dd19c2d2": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x0ee0867f3564b57274582683998e2066dd19c2d2",
+      "id": "0x0ee0867f3564b57274582683998e2066dd19c2d2",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000041142007",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.634800503746304336",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6348005037874463,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:29.530Z"
+    },
+    "0x0ef1514745349c573695ee5bafdcd2acd60479f2": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x0ef1514745349c573695ee5bafdcd2acd60479f2",
+      "id": "0x0ef1514745349c573695ee5bafdcd2acd60479f2",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000006684602",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.688993148003884486",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6889931480105691,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:30.194Z"
+    },
+    "0x0fb0cd9c8b8ca6ad5ef15b8762d21ef2715e90ef": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x0fb0cd9c8b8ca6ad5ef15b8762d21ef2715e90ef",
+      "id": "0x0fb0cd9c8b8ca6ad5ef15b8762d21ef2715e90ef",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000178062649",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.652320938747697409",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.65232093892576,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:30.844Z"
+    },
+    "0x1486d24eee15fc7d285a5ebb096e64a0373d55d5": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x1486d24eee15fc7d285a5ebb096e64a0373d55d5",
+      "id": "0x1486d24eee15fc7d285a5ebb096e64a0373d55d5",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000352347341",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.648823545139153157",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6488235454915006,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:31.033Z"
+    },
+    "0x18675bc30804c6eca161a345ba8efecaf1a81ac6": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x18675bc30804c6eca161a345ba8efecaf1a81ac6",
+      "id": "0x18675bc30804c6eca161a345ba8efecaf1a81ac6",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000087235422",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.656313810594084587",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.65631381068132,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:31.109Z"
+    },
+    "0x18d5d21e2bc80974cb21897a946e78ceebacebca": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x18d5d21e2bc80974cb21897a946e78ceebacebca",
+      "id": "0x18d5d21e2bc80974cb21897a946e78ceebacebca",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000147957344",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.04226617723936885",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.042266177387326194,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:31.193Z"
+    },
+    "0x1b6ae5bd8a54cf151ff68b79e2a184d467ec1d71": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x1b6ae5bd8a54cf151ff68b79e2a184d467ec1d71",
+      "id": "0x1b6ae5bd8a54cf151ff68b79e2a184d467ec1d71",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000083285472",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.553396612239771414",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5533966123230569,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:31.277Z"
+    },
+    "0x213a5c449771b0317678257f71eea183bcd46e1c": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x213a5c449771b0317678257f71eea183bcd46e1c",
+      "id": "0x213a5c449771b0317678257f71eea183bcd46e1c",
+      "tokens": [
+        {
+          "address": "0x06f7a703fb888b2ae12652dedf40f132816df995",
+          "balance": "0.201223208472281582",
+          "decimals": 18,
+          "symbol": "NIN3"
+        },
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.498996403537323682",
+          "decimals": 18,
+          "symbol": "WETH"
+        }
+      ],
+      "totalLiquidity": 0.7002196120096053,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:31.359Z"
+    },
+    "0x2158ad5afd023ec4096be471eadf5af9781e6187": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x2158ad5afd023ec4096be471eadf5af9781e6187",
+      "id": "0x2158ad5afd023ec4096be471eadf5af9781e6187",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001892792248",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.666393336000555886",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6663933378933481,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:31.441Z"
+    },
+    "0x2202a497da0993d392ce2c47508eb9669e2d6585": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x2202a497da0993d392ce2c47508eb9669e2d6585",
+      "id": "0x2202a497da0993d392ce2c47508eb9669e2d6585",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000125603529",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.667582040959682568",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6675820410852861,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:31.519Z"
+    },
+    "0x248faa97fbf0377c83f6ce7e25a67d5c136f55e1": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x248faa97fbf0377c83f6ce7e25a67d5c136f55e1",
+      "id": "0x248faa97fbf0377c83f6ce7e25a67d5c136f55e1",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000185116853",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.680952119982396931",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6809521218335655,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:31.603Z"
+    },
+    "0x28f5bac8174f425a32f274e2050b5860b53b0048": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x28f5bac8174f425a32f274e2050b5860b53b0048",
+      "id": "0x28f5bac8174f425a32f274e2050b5860b53b0048",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000015394262",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.042184695581299675",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.0421846957352423,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:31.684Z"
+    },
+    "0x2b70a911c3a7c61fead6c4330d4ed621821def54": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x2b70a911c3a7c61fead6c4330d4ed621821def54",
+      "id": "0x2b70a911c3a7c61fead6c4330d4ed621821def54",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000002182462",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.116720300985681234",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.11672030098786369,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:31.773Z"
+    },
+    "0x2bb2ea80c7a2850b91c5551ec07f852e7efaef3a": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x2bb2ea80c7a2850b91c5551ec07f852e7efaef3a",
+      "id": "0x2bb2ea80c7a2850b91c5551ec07f852e7efaef3a",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000012635306188865",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.387004035158477028",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.3870166704646659,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:31.850Z"
+    },
+    "0x2db8307aa95a875df5a865e6566358cd07431836": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x2db8307aa95a875df5a865e6566358cd07431836",
+      "id": "0x2db8307aa95a875df5a865e6566358cd07431836",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001918847527",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.683229228792057384",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6832292307109049,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:31.938Z"
+    },
+    "0x2e2d9983afd8a45c2fa4299648c29492dbebd28a": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x2e2d9983afd8a45c2fa4299648c29492dbebd28a",
+      "id": "0x2e2d9983afd8a45c2fa4299648c29492dbebd28a",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000106743394",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.549908562460028461",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5499085625667719,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:32.022Z"
+    },
+    "0x2f418ca6b8c60f9420c65c8b31758a3e9c95d136": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x2f418ca6b8c60f9420c65c8b31758a3e9c95d136",
+      "id": "0x2f418ca6b8c60f9420c65c8b31758a3e9c95d136",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001837890331",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.647080986775593706",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.647080988613484,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:32.110Z"
+    },
+    "0x30de440dc0b37ebc0cbd1d916390cdce2eed55a9": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x30de440dc0b37ebc0cbd1d916390cdce2eed55a9",
+      "id": "0x30de440dc0b37ebc0cbd1d916390cdce2eed55a9",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000474569014",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.661758892317820636",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6617588927923896,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:32.205Z"
+    },
+    "0x329b8aabd807509e0320a9f650c0b979d5fda8a6": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x329b8aabd807509e0320a9f650c0b979d5fda8a6",
+      "id": "0x329b8aabd807509e0320a9f650c0b979d5fda8a6",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000009242377",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.670541762801439248",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6705417628106817,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:32.293Z"
+    },
+    "0x35b0f65763f0b8ad388ace13a0a2fe33660029ef": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x35b0f65763f0b8ad388ace13a0a2fe33660029ef",
+      "id": "0x35b0f65763f0b8ad388ace13a0a2fe33660029ef",
+      "tokens": [
+        {
+          "address": "0x8dbe1f9d7b2a25652510bc080a0fee3522841073",
+          "balance": "0.419912511597645881",
+          "decimals": 18,
+          "symbol": "SEV2"
+        },
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.23951072382019782",
+          "decimals": 18,
+          "symbol": "WETH"
+        }
+      ],
+      "totalLiquidity": 0.6594232354178436,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:32.383Z"
+    },
+    "0x38980666b03b4e003af52a5042ffbd2ace6849b7": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x38980666b03b4e003af52a5042ffbd2ace6849b7",
+      "id": "0x38980666b03b4e003af52a5042ffbd2ace6849b7",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000216304892498",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.109924999152978244",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.10992716220190323,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:32.471Z"
+    },
+    "0x38b948bafdecd04f081b1645cf37161bb1e0eac6": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x38b948bafdecd04f081b1645cf37161bb1e0eac6",
+      "id": "0x38b948bafdecd04f081b1645cf37161bb1e0eac6",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001504343007",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.669369617962633807",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6693696194669768,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:32.549Z"
+    },
+    "0x3b8f2d3188dc600af4f0b6eaa67d8f3c6ca93d48": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x3b8f2d3188dc600af4f0b6eaa67d8f3c6ca93d48",
+      "id": "0x3b8f2d3188dc600af4f0b6eaa67d8f3c6ca93d48",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000102257503",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.564201647811273278",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5642016479135308,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:32.643Z"
+    },
+    "0x3efa210451c7d0c28f104a859bff0b1bf277725f": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x3efa210451c7d0c28f104a859bff0b1bf277725f",
+      "id": "0x3efa210451c7d0c28f104a859bff0b1bf277725f",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000495298116",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.13244615472288733",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.13244615521818545,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:32.737Z"
+    },
+    "0x4090cccb43c07a99617214e64c6fa5793760b476": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x4090cccb43c07a99617214e64c6fa5793760b476",
+      "id": "0x4090cccb43c07a99617214e64c6fa5793760b476",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000164191224",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.112276402182306463",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.11227640234649769,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:32.813Z"
+    },
+    "0x40e6213d4dd6703055413f06d2d49050ec84347b": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x40e6213d4dd6703055413f06d2d49050ec84347b",
+      "id": "0x40e6213d4dd6703055413f06d2d49050ec84347b",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000133158966",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.693059925362065732",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6930599254952247,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:32.891Z"
+    },
+    "0x41150fbfc79b9978077496fd29425092b88e23aa": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x41150fbfc79b9978077496fd29425092b88e23aa",
+      "id": "0x41150fbfc79b9978077496fd29425092b88e23aa",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000503581528",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.13258120142925363",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.13258120193283518,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:32.966Z"
+    },
+    "0x42d927d33b324b0e30777d3b1d11a26916f8fd0f": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x42d927d33b324b0e30777d3b1d11a26916f8fd0f",
+      "id": "0x42d927d33b324b0e30777d3b1d11a26916f8fd0f",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000110509302",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.651912295071885708",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.651912295182395,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:33.046Z"
+    },
+    "0x43096f76670a00c82a339dcc940077d243bc9120": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x43096f76670a00c82a339dcc940077d243bc9120",
+      "id": "0x43096f76670a00c82a339dcc940077d243bc9120",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000119124057",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.62788871148419248",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6278887116033165,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:33.127Z"
+    },
+    "0x43eaeba097fb01ae927afdc3dd83a3ed9d42123c": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x43eaeba097fb01ae927afdc3dd83a3ed9d42123c",
+      "id": "0x43eaeba097fb01ae927afdc3dd83a3ed9d42123c",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001896539953",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.581491469744470969",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5814914716410109,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:33.202Z"
+    },
+    "0x4902698f0464a6c2bce2e82fad78cc4ed90dd378": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x4902698f0464a6c2bce2e82fad78cc4ed90dd378",
+      "id": "0x4902698f0464a6c2bce2e82fad78cc4ed90dd378",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001898706057",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.681932067099685205",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6819320689983913,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:33.294Z"
+    },
+    "0x49a626ca468902982ba8e6cd104bc923a3ebe2b9": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x49a626ca468902982ba8e6cd104bc923a3ebe2b9",
+      "id": "0x49a626ca468902982ba8e6cd104bc923a3ebe2b9",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000108796665",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.647585031753738284",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6475850318625349,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:33.373Z"
+    },
+    "0x4d4935b01cb3d2a030ba36becc671b91011bebdc": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x4d4935b01cb3d2a030ba36becc671b91011bebdc",
+      "id": "0x4d4935b01cb3d2a030ba36becc671b91011bebdc",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000062794222345456",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "651805.745121910115995822",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 651805.7451847043,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:33.464Z"
+    },
+    "0x5704943c0f537cae0049dfeed4afb149873e8ab1": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x5704943c0f537cae0049dfeed4afb149873e8ab1",
+      "id": "0x5704943c0f537cae0049dfeed4afb149873e8ab1",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000109743589",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.650845620600468574",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6508456207102121,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:33.552Z"
+    },
+    "0x574894f6c4fe405f80c1386fa9b99d2c006b3e0a": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x574894f6c4fe405f80c1386fa9b99d2c006b3e0a",
+      "id": "0x574894f6c4fe405f80c1386fa9b99d2c006b3e0a",
+      "tokens": [
+        {
+          "address": "0xb2f1134accf58b762efca758def19b2b88e8b978",
+          "balance": "0.21317682674583717",
+          "decimals": 18,
+          "symbol": "EIG3"
+        },
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.47126132368714076",
+          "decimals": 18,
+          "symbol": "WETH"
+        }
+      ],
+      "totalLiquidity": 0.684438150432978,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:33.639Z"
+    },
+    "0x577d20ed647244f79157d7e7ddd27ce730c63c88": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x577d20ed647244f79157d7e7ddd27ce730c63c88",
+      "id": "0x577d20ed647244f79157d7e7ddd27ce730c63c88",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000504328762",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.128327452987187768",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.12832745349151653,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:33.722Z"
+    },
+    "0x5a32fcef79b45813312d80bcf5ce4e50c0d9c3bb": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x5a32fcef79b45813312d80bcf5ce4e50c0d9c3bb",
+      "id": "0x5a32fcef79b45813312d80bcf5ce4e50c0d9c3bb",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000149674719",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.042076791759150979",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.0420767919088257,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:33.791Z"
+    },
+    "0x5cdbbce59565e3a796eadbc4952009bb079304a3": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x5cdbbce59565e3a796eadbc4952009bb079304a3",
+      "id": "0x5cdbbce59565e3a796eadbc4952009bb079304a3",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000500726328",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.133714794766412596",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.13371479526713892,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:33.859Z"
+    },
+    "0x628cfd3cb6834cc21e5c2caaa274e44d3bde64e2": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x628cfd3cb6834cc21e5c2caaa274e44d3bde64e2",
+      "id": "0x628cfd3cb6834cc21e5c2caaa274e44d3bde64e2",
+      "tokens": [
+        {
+          "address": "0x0001a500a6b18995b03f44bb040a5ffc28e45cb0",
+          "balance": "0.2",
+          "decimals": 18,
+          "symbol": "OLAS"
+        },
+        {
+          "address": "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
+          "balance": "0.00000085",
+          "decimals": 8,
+          "symbol": "WBTC"
+        },
+        {
+          "address": "0x6b175474e89094c44da98b954eedeac495271d0f",
+          "balance": "0.186118477978373749",
+          "decimals": 18,
+          "symbol": "DAI"
+        },
+        {
+          "address": "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
+          "balance": "0.000033544705875146",
+          "decimals": 18,
+          "symbol": "wstETH"
+        },
+        {
+          "address": "0x8236a87084f8b84306f72007f36f2618a5634494",
+          "balance": "0.000001",
+          "decimals": 8,
+          "symbol": "LBTC"
+        },
+        {
+          "address": "0x90551c1795392094fe6d29b758eccd233cfaa260",
+          "balance": "0.000034685895524476",
+          "decimals": 18,
+          "symbol": "fWETH"
+        },
+        {
+          "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "balance": "0.143899",
+          "decimals": 6,
+          "symbol": "USDC"
+        },
+        {
+          "address": "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf",
+          "balance": "0.00000094",
+          "decimals": 8,
+          "symbol": "cbBTC"
+        }
+      ],
+      "totalLiquidity": 0.5300884985797732,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:33.935Z"
+    },
+    "0x64dd44a3ad3cda3f59f92b1dc55f9f2d1e79ec32": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x64dd44a3ad3cda3f59f92b1dc55f9f2d1e79ec32",
+      "id": "0x64dd44a3ad3cda3f59f92b1dc55f9f2d1e79ec32",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000233138661",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.65040602732790967",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6504060275610483,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.010Z"
+    },
+    "0x650e483e1aa503f3a606c5960e7fabca42471e1d": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x650e483e1aa503f3a606c5960e7fabca42471e1d",
+      "id": "0x650e483e1aa503f3a606c5960e7fabca42471e1d",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001332383607",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.684096373633183491",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6840963749655672,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.084Z"
+    },
+    "0x683d5eaffaf8d03d7c8a3bcd8b7b9045837334aa": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x683d5eaffaf8d03d7c8a3bcd8b7b9045837334aa",
+      "id": "0x683d5eaffaf8d03d7c8a3bcd8b7b9045837334aa",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000136805959",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.680960146559467062",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.680960146696273,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.158Z"
+    },
+    "0x6b6ccb25c7459f587aabf704cdf4343fd0c1f27a": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x6b6ccb25c7459f587aabf704cdf4343fd0c1f27a",
+      "id": "0x6b6ccb25c7459f587aabf704cdf4343fd0c1f27a",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000040886717",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.68093648049113503",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6809364805320217,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.239Z"
+    },
+    "0x6dc3eb3962887835db4088837d7cacd1f93ab885": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x6dc3eb3962887835db4088837d7cacd1f93ab885",
+      "id": "0x6dc3eb3962887835db4088837d7cacd1f93ab885",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000193794136",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.652886923896675456",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6528869258346168,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.319Z"
+    },
+    "0x6f47694b85077d240b428b172d06ab4bc0b83729": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x6f47694b85077d240b428b172d06ab4bc0b83729",
+      "id": "0x6f47694b85077d240b428b172d06ab4bc0b83729",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000186566899",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.693098150062820583",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6930981519284896,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.418Z"
+    },
+    "0x701e5ac711f60f3beaa5d2b5f40226a0ac6f5f97": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x701e5ac711f60f3beaa5d2b5f40226a0ac6f5f97",
+      "id": "0x701e5ac711f60f3beaa5d2b5f40226a0ac6f5f97",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000496165432",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.133386127029197893",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.13338612752536333,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.487Z"
+    },
+    "0x70faa65d353fb79052c3d5e3d2f5059ec7d9bcde": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x70faa65d353fb79052c3d5e3d2f5059ec7d9bcde",
+      "id": "0x70faa65d353fb79052c3d5e3d2f5059ec7d9bcde",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000006720090951629",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.36995923129023388",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.36996595138118554,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.556Z"
+    },
+    "0x7310afc52e57be9468fa60c48bf768a7de033454": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x7310afc52e57be9468fa60c48bf768a7de033454",
+      "id": "0x7310afc52e57be9468fa60c48bf768a7de033454",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000069347645",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.565471165215648889",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5654711652849965,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.632Z"
+    },
+    "0x7535d6f994e4e6d88c5df5683b11be09f3bce40b": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x7535d6f994e4e6d88c5df5683b11be09f3bce40b",
+      "id": "0x7535d6f994e4e6d88c5df5683b11be09f3bce40b",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000268333989",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.410404406249377655",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.4104044065177116,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.713Z"
+    },
+    "0x7746ce5329f693442332f09ca980fbfa6da3bec2": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x7746ce5329f693442332f09ca980fbfa6da3bec2",
+      "id": "0x7746ce5329f693442332f09ca980fbfa6da3bec2",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000000495253",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.388166524414691805",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.38816652441518706,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.776Z"
+    },
+    "0x777c206c7f8c6166d41ae99d947ee1a99b60fc0c": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x777c206c7f8c6166d41ae99d947ee1a99b60fc0c",
+      "id": "0x777c206c7f8c6166d41ae99d947ee1a99b60fc0c",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000151812934",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.680871981034560461",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6808719811863734,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.855Z"
+    },
+    "0x77902575218c1d677c5e011338ed90d5f5059763": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x77902575218c1d677c5e011338ed90d5f5059763",
+      "id": "0x77902575218c1d677c5e011338ed90d5f5059763",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001788104467",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.538428108456944739",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5384281102450492,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:34.937Z"
+    },
+    "0x78507f188a016ea3d2ee4c79d27ae6f3ba8634a1": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x78507f188a016ea3d2ee4c79d27ae6f3ba8634a1",
+      "id": "0x78507f188a016ea3d2ee4c79d27ae6f3ba8634a1",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000174924366",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.41906039219484872",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.41906039236977305,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.018Z"
+    },
+    "0x79c1d9faf48f522ea4298b0e5afe8048e6099697": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x79c1d9faf48f522ea4298b0e5afe8048e6099697",
+      "id": "0x79c1d9faf48f522ea4298b0e5afe8048e6099697",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001880507061",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.584626163419953571",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5846261653004606,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.083Z"
+    },
+    "0x79fee80f701dcca12aa246a5bcb360fb0be4bb16": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x79fee80f701dcca12aa246a5bcb360fb0be4bb16",
+      "id": "0x79fee80f701dcca12aa246a5bcb360fb0be4bb16",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000148407382",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.042100566593358598",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.04210056674176598,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.149Z"
+    },
+    "0x7d2bda9bf124ae139dad9440716a1d9acd479e9d": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x7d2bda9bf124ae139dad9440716a1d9acd479e9d",
+      "id": "0x7d2bda9bf124ae139dad9440716a1d9acd479e9d",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000152859306",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.042133282424574892",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.0421332825774342,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.242Z"
+    },
+    "0x7d47dbcbda4bbc75fdfa87aa2f008fa26fcee121": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x7d47dbcbda4bbc75fdfa87aa2f008fa26fcee121",
+      "id": "0x7d47dbcbda4bbc75fdfa87aa2f008fa26fcee121",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000145605348",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.040933001449662302",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.04093300159526765,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.351Z"
+    },
+    "0x8082559cedcba92099d2f0c2a901b217d8e0c874": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x8082559cedcba92099d2f0c2a901b217d8e0c874",
+      "id": "0x8082559cedcba92099d2f0c2a901b217d8e0c874",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000145023198",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.042192684740026255",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.04219268488504945,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.425Z"
+    },
+    "0x80f2da21d405432289367f596f4cf4d5c419566a": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x80f2da21d405432289367f596f4cf4d5c419566a",
+      "id": "0x80f2da21d405432289367f596f4cf4d5c419566a",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000048158819544904",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.295964561226169719",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.2960127200457146,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.511Z"
+    },
+    "0x8118390cf8031617415f6a5d36cfec542b5e8067": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x8118390cf8031617415f6a5d36cfec542b5e8067",
+      "id": "0x8118390cf8031617415f6a5d36cfec542b5e8067",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000138698421",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.591245266141197682",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.591245266279896,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.581Z"
+    },
+    "0x8353567db3eb0eb5bfbeef532583dd7174314e0f": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x8353567db3eb0eb5bfbeef532583dd7174314e0f",
+      "id": "0x8353567db3eb0eb5bfbeef532583dd7174314e0f",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000036041931",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.11430379540290857",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.1143037954389505,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.660Z"
+    },
+    "0x8393c3d0c6ec9f68bf331183a50b275e2a117f1e": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x8393c3d0c6ec9f68bf331183a50b275e2a117f1e",
+      "id": "0x8393c3d0c6ec9f68bf331183a50b275e2a117f1e",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000235249574",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.599279505629700767",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5992795058649504,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.740Z"
+    },
+    "0x87641e2c06aa49811e9a862296af2d791b38d7c5": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x87641e2c06aa49811e9a862296af2d791b38d7c5",
+      "id": "0x87641e2c06aa49811e9a862296af2d791b38d7c5",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000500401937",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.12977583284504584",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.1297758333454478,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.819Z"
+    },
+    "0x87db2f039a4972d6e7f45133955f667b327b97a7": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x87db2f039a4972d6e7f45133955f667b327b97a7",
+      "id": "0x87db2f039a4972d6e7f45133955f667b327b97a7",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000065964126",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.591245687464005528",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5912456875299696,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:35.975Z"
+    },
+    "0x887eac1e7b0ca47ed81759477603fd10784037ba": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x887eac1e7b0ca47ed81759477603fd10784037ba",
+      "id": "0x887eac1e7b0ca47ed81759477603fd10784037ba",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00001236480454596",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.406955439411489986",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.40696780421603596,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:36.122Z"
+    },
+    "0x897ff352a5f46c61f4ebe8e5e5d20817c0b06d2d": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x897ff352a5f46c61f4ebe8e5e5d20817c0b06d2d",
+      "id": "0x897ff352a5f46c61f4ebe8e5e5d20817c0b06d2d",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000502324589",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.129344276605040356",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.12934427710736496,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:36.204Z"
+    },
+    "0x89dd2777bdfdb11754ff1cba01038d2d11086b32": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x89dd2777bdfdb11754ff1cba01038d2d11086b32",
+      "id": "0x89dd2777bdfdb11754ff1cba01038d2d11086b32",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001733580677",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.424290673097693725",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.4242906748312744,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:36.282Z"
+    },
+    "0x8ce9240ae0d9b5b67f0d7fd87f189f2dd540b0fb": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x8ce9240ae0d9b5b67f0d7fd87f189f2dd540b0fb",
+      "id": "0x8ce9240ae0d9b5b67f0d7fd87f189f2dd540b0fb",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001757152334",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.520421325110803924",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5204213268679563,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:36.349Z"
+    },
+    "0x8ee7ba38b0116c2130b942d564bbbc16aa08126f": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x8ee7ba38b0116c2130b942d564bbbc16aa08126f",
+      "id": "0x8ee7ba38b0116c2130b942d564bbbc16aa08126f",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000061301933",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.117673168140138184",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.11767316820144012,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:36.414Z"
+    },
+    "0x8ef9bc5abcbdaa29ad374fa7f2a4c340b2d1cf60": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x8ef9bc5abcbdaa29ad374fa7f2a4c340b2d1cf60",
+      "id": "0x8ef9bc5abcbdaa29ad374fa7f2a4c340b2d1cf60",
+      "tokens": [
+        {
+          "address": "0x1422336b4c46a808d61e9c19cde79091a2b9ac2a",
+          "balance": "0.111750920978185604",
+          "decimals": 18,
+          "symbol": "SEV3"
+        },
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.901720641685198326",
+          "decimals": 18,
+          "symbol": "WETH"
+        }
+      ],
+      "totalLiquidity": 1.013471562663384,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:36.487Z"
+    },
+    "0x8f2e38cfa995c367f3301c541f42a3affe20b156": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x8f2e38cfa995c367f3301c541f42a3affe20b156",
+      "id": "0x8f2e38cfa995c367f3301c541f42a3affe20b156",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000116842929",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.567874463358104579",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5678744634749475,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:36.558Z"
+    },
+    "0x8f75e00548ddb2c4477659a561533a1c9025cb1c": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x8f75e00548ddb2c4477659a561533a1c9025cb1c",
+      "id": "0x8f75e00548ddb2c4477659a561533a1c9025cb1c",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001793037671",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.545300322361071448",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5453003241541091,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:36.623Z"
+    },
+    "0x94e09cbcde922858603c0d91bf80e8d867ca9eea": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x94e09cbcde922858603c0d91bf80e8d867ca9eea",
+      "id": "0x94e09cbcde922858603c0d91bf80e8d867ca9eea",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000521185545",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.664789702495381303",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6647897030165668,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:36.689Z"
+    },
+    "0x96f6eeb4d008e55dcb30ad80e94e82d1158291e0": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x96f6eeb4d008e55dcb30ad80e94e82d1158291e0",
+      "id": "0x96f6eeb4d008e55dcb30ad80e94e82d1158291e0",
+      "tokens": [
+        {
+          "address": "0x2998049c6bc35ccfabafda1d50eedb8b669774a9",
+          "balance": "0.354188494595975503",
+          "decimals": 18,
+          "symbol": "NIN2"
+        },
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.142044479622991837",
+          "decimals": 18,
+          "symbol": "WETH"
+        }
+      ],
+      "totalLiquidity": 0.49623297421896734,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:36.761Z"
+    },
+    "0x98b34b03228036aa04cd87b72d07e9c2469c6a3c": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x98b34b03228036aa04cd87b72d07e9c2469c6a3c",
+      "id": "0x98b34b03228036aa04cd87b72d07e9c2469c6a3c",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000140716702",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.040990194983269374",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.04099019512398608,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:36.831Z"
+    },
+    "0x9b6f041f654080f2e90026e53ab5b26906e76098": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x9b6f041f654080f2e90026e53ab5b26906e76098",
+      "id": "0x9b6f041f654080f2e90026e53ab5b26906e76098",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000154710266",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.646227756715169094",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6462277568698793,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:36.894Z"
+    },
+    "0x9cc4577f045d7b58206491ac7920c89d60188b58": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x9cc4577f045d7b58206491ac7920c89d60188b58",
+      "id": "0x9cc4577f045d7b58206491ac7920c89d60188b58",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000007717263",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.568190338382191985",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5681903384593646,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:36.964Z"
+    },
+    "0x9f6b8a50c4062d6c47ccecf8e85cf2a722190dac": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x9f6b8a50c4062d6c47ccecf8e85cf2a722190dac",
+      "id": "0x9f6b8a50c4062d6c47ccecf8e85cf2a722190dac",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000014316692",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.04201499822623242",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.04201499836939934,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:37.031Z"
+    },
+    "0x9fa4ea66f622e2dbbde75b10d910165c660314fd": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x9fa4ea66f622e2dbbde75b10d910165c660314fd",
+      "id": "0x9fa4ea66f622e2dbbde75b10d910165c660314fd",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000080776923",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.659300330140581586",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6593003302213585,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:37.108Z"
+    },
+    "0x9fb4ad59599dfce1080735aa6fa90a3445cecd19": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x9fb4ad59599dfce1080735aa6fa90a3445cecd19",
+      "id": "0x9fb4ad59599dfce1080735aa6fa90a3445cecd19",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000070857984",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.679507544465776798",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6795075445366348,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:37.186Z"
+    },
+    "0xa12575bbac1ea658d682660379dfe59abccc519d": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xa12575bbac1ea658d682660379dfe59abccc519d",
+      "id": "0xa12575bbac1ea658d682660379dfe59abccc519d",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000015154826",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.042316991996921236",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.0423169921484695,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:37.259Z"
+    },
+    "0xa4557f5bad7ffd261260cc965d95fc8eacb7c9a3": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xa4557f5bad7ffd261260cc965d95fc8eacb7c9a3",
+      "id": "0xa4557f5bad7ffd261260cc965d95fc8eacb7c9a3",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.030427757835362065",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "110.244947530113352637",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 110.27537528794872,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:37.340Z"
+    },
+    "0xa77854f62a617203246ea604e6d4fbd6bf8fdc0b": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xa77854f62a617203246ea604e6d4fbd6bf8fdc0b",
+      "id": "0xa77854f62a617203246ea604e6d4fbd6bf8fdc0b",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.423659979819536334",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xc83e27f270cce0a3a3a29521173a83f402c1768b",
+          "balance": "797.736397",
+          "decimals": 6,
+          "symbol": "USDQ"
+        }
+      ],
+      "totalLiquidity": 798.1600569798195,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:37.419Z"
+    },
+    "0xa84e0d6c96168ef09ac0c845ffe679a28e7ea33a": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xa84e0d6c96168ef09ac0c845ffe679a28e7ea33a",
+      "id": "0xa84e0d6c96168ef09ac0c845ffe679a28e7ea33a",
+      "tokens": [
+        {
+          "address": "0x23878914efe38d27c4d67ab83ed1b93a74d4086a",
+          "balance": "0.229585",
+          "decimals": 6,
+          "symbol": "aEthUSDT"
+        },
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000638629147729",
+          "decimals": 18,
+          "symbol": "WETH"
+        }
+      ],
+      "totalLiquidity": 0.2295913862914773,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:37.489Z"
+    },
+    "0xa8c95df8769f88e7b9249efd8f7c38c3b7e8b082": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xa8c95df8769f88e7b9249efd8f7c38c3b7e8b082",
+      "id": "0xa8c95df8769f88e7b9249efd8f7c38c3b7e8b082",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.021086374755336514",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xc26cfa8065264525257feba23278510b7713abc9",
+          "balance": "1438716.444451072287340575",
+          "decimals": 18,
+          "symbol": "AOGX"
+        }
+      ],
+      "totalLiquidity": 1438716.465537447,
+      "swapFee": "0.01",
+      "queriedAt": "2025-10-21T21:19:37.565Z"
+    },
+    "0xaa312857f09902a470df689662112fe0f5577701": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xaa312857f09902a470df689662112fe0f5577701",
+      "id": "0xaa312857f09902a470df689662112fe0f5577701",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000746261291",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.559208610529399038",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5592086112756603,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:37.640Z"
+    },
+    "0xab54accd95f70975672648e165b17caed4bee77e": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xab54accd95f70975672648e165b17caed4bee77e",
+      "id": "0xab54accd95f70975672648e165b17caed4bee77e",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000058287322",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.561496876378879686",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5614968764371671,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:37.721Z"
+    },
+    "0xac29f91474b85146c5ec1b77612c8a8bd7e0c3b0": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xac29f91474b85146c5ec1b77612c8a8bd7e0c3b0",
+      "id": "0xac29f91474b85146c5ec1b77612c8a8bd7e0c3b0",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001832644125",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.680952794132809237",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6809527959654534,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:37.794Z"
+    },
+    "0xadc65e7b867fee7fb186e72b62854562d9d21f12": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xadc65e7b867fee7fb186e72b62854562d9d21f12",
+      "id": "0xadc65e7b867fee7fb186e72b62854562d9d21f12",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.029491422661008723",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "106.200060274279436027",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 106.22955169694045,
+      "swapFee": "0.01",
+      "queriedAt": "2025-10-21T21:19:37.863Z"
+    },
+    "0xae67d8cbda78930b65a992a84100b104b1badf11": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xae67d8cbda78930b65a992a84100b104b1badf11",
+      "id": "0xae67d8cbda78930b65a992a84100b104b1badf11",
+      "tokens": [
+        {
+          "address": "0x1cdd2eab61112697626f7b4bb0e23da4febf7b7c",
+          "balance": "25017.603882",
+          "decimals": 6,
+          "symbol": "USDT"
+        },
+        {
+          "address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+          "balance": "19522.608533",
+          "decimals": 6,
+          "symbol": "USDT"
+        },
+        {
+          "address": "0xde60adfddaabaaac3dafa57b26acc91cb63728c4",
+          "balance": "7500.775833120837033998",
+          "decimals": 18,
+          "symbol": "USDT"
+        }
+      ],
+      "totalLiquidity": 52040.98824812084,
+      "swapFee": "0.01",
+      "queriedAt": "2025-10-21T21:19:37.926Z"
+    },
+    "0xb0c34da22bc6e485eeac5815bd55c10375807143": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb0c34da22bc6e485eeac5815bd55c10375807143",
+      "id": "0xb0c34da22bc6e485eeac5815bd55c10375807143",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000096537191",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.574194782164241592",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5741947822607788,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:37.995Z"
+    },
+    "0xb0cb0ef42c2632d5feaa714c7ff8cc780af1cdd7": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb0cb0ef42c2632d5feaa714c7ff8cc780af1cdd7",
+      "id": "0xb0cb0ef42c2632d5feaa714c7ff8cc780af1cdd7",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000164486379",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.651913384272032846",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6519133844365192,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:38.067Z"
+    },
+    "0xb17f203507d2014e49961fb0d9dd241a220f118b": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb17f203507d2014e49961fb0d9dd241a220f118b",
+      "id": "0xb17f203507d2014e49961fb0d9dd241a220f118b",
+      "tokens": [
+        {
+          "address": "0x0fe906e030a44ef24ca8c7dc7b7c53a6c4f00ce9",
+          "balance": "10.142197430442165762",
+          "decimals": 18,
+          "symbol": "waEthLidoWETH"
+        },
+        {
+          "address": "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
+          "balance": "0.36921621",
+          "decimals": 8,
+          "symbol": "WBTC"
+        },
+        {
+          "address": "0xbe1936a67f503e0eaf2434b0cf9f4e3d7100008a",
+          "balance": "1000802.900061276831528331",
+          "decimals": 18,
+          "symbol": "PROS"
+        }
+      ],
+      "totalLiquidity": 1000813.4114749173,
+      "swapFee": "0.004",
+      "queriedAt": "2025-10-21T21:19:38.135Z"
+    },
+    "0xb1f62fc950e30a64a5032bbd8619a70b2c2b27c6": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb1f62fc950e30a64a5032bbd8619a70b2c2b27c6",
+      "id": "0xb1f62fc950e30a64a5032bbd8619a70b2c2b27c6",
+      "tokens": [
+        {
+          "address": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+          "balance": "474.794856258684815236",
+          "decimals": 18,
+          "symbol": "UNI"
+        },
+        {
+          "address": "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
+          "balance": "0.02755133",
+          "decimals": 8,
+          "symbol": "WBTC"
+        },
+        {
+          "address": "0x6982508145454ce325ddbe47a25d4ec3d2311933",
+          "balance": "427522528.766806662887038464",
+          "decimals": 18,
+          "symbol": "PEPE"
+        },
+        {
+          "address": "0x9e9fbde7c7a83c43913bddc8779158f1368f0413",
+          "balance": "7.092917342605027669",
+          "decimals": 18,
+          "symbol": "PANDORA"
+        },
+        {
+          "address": "0xbe1936a67f503e0eaf2434b0cf9f4e3d7100008a",
+          "balance": "643665.060810324165608345",
+          "decimals": 18,
+          "symbol": "PROS"
+        },
+        {
+          "address": "0xd4fa2d31b7968e448877f69a96de69f5de8cd23e",
+          "balance": "2686.901839",
+          "decimals": 6,
+          "symbol": "waEthUSDC"
+        },
+        {
+          "address": "0xda5e1988097297dcdc1f90d4dfe7909e847cbef6",
+          "balance": "23442.853883595405055524",
+          "decimals": 18,
+          "symbol": "WLFI"
+        }
+      ],
+      "totalLiquidity": 428192805.49866456,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:38.213Z"
+    },
+    "0xb2a62984faf35b8f3b9457577eecd645985d12d4": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb2a62984faf35b8f3b9457577eecd645985d12d4",
+      "id": "0xb2a62984faf35b8f3b9457577eecd645985d12d4",
+      "tokens": [
+        {
+          "address": "0xb398b75ce02249656b6ade3725b2360d6b905d20",
+          "balance": "0.01",
+          "decimals": 18,
+          "symbol": "sETH"
+        },
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.01",
+          "decimals": 18,
+          "symbol": "WETH"
+        }
+      ],
+      "totalLiquidity": 0.02,
+      "swapFee": "0.0005",
+      "queriedAt": "2025-10-21T21:19:38.302Z"
+    },
+    "0xb30114180b2ca209ae2592271fe9bfe3cabb2bf3": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb30114180b2ca209ae2592271fe9bfe3cabb2bf3",
+      "id": "0xb30114180b2ca209ae2592271fe9bfe3cabb2bf3",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000146157671",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.042071733554256811",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.04207173370041448,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:38.382Z"
+    },
+    "0xb34f21e74562e66cddd96da8e8c229bd64ac4e43": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb34f21e74562e66cddd96da8e8c229bd64ac4e43",
+      "id": "0xb34f21e74562e66cddd96da8e8c229bd64ac4e43",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "13.116720173621801101",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xc597a71a49c49b4a0554b3110bab25a51c76847b",
+          "balance": "55508.97811541827972841",
+          "decimals": 18,
+          "symbol": "HCT"
+        }
+      ],
+      "totalLiquidity": 55522.0948355919,
+      "swapFee": "0.01",
+      "queriedAt": "2025-10-21T21:19:38.449Z"
+    },
+    "0xb3a811d8d3a27a49febf2176c05318703e15d243": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb3a811d8d3a27a49febf2176c05318703e15d243",
+      "id": "0xb3a811d8d3a27a49febf2176c05318703e15d243",
+      "tokens": [
+        {
+          "address": "0x6b175474e89094c44da98b954eedeac495271d0f",
+          "balance": "1",
+          "decimals": 18,
+          "symbol": "DAI"
+        },
+        {
+          "address": "0x9c9e6f83f882908dca2c28c31d8198b46e7a652f",
+          "balance": "100",
+          "decimals": 18,
+          "symbol": "BABE"
+        }
+      ],
+      "totalLiquidity": 101,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:38.515Z"
+    },
+    "0xb51f412f00985d374d6efcdfecca912ff2bccc5c": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb51f412f00985d374d6efcdfecca912ff2bccc5c",
+      "id": "0xb51f412f00985d374d6efcdfecca912ff2bccc5c",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000136034865",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.531710773805501716",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5317107739415365,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:38.582Z"
+    },
+    "0xb5a8e9f72d735b18ac55f0e6b56653dfae599a4f": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb5a8e9f72d735b18ac55f0e6b56653dfae599a4f",
+      "id": "0xb5a8e9f72d735b18ac55f0e6b56653dfae599a4f",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000405586066852",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.369959159713808613",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.36996321557447714,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:38.649Z"
+    },
+    "0xb656683dc3f409c6a8cc1ec7bc172c0d50a799d7": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb656683dc3f409c6a8cc1ec7bc172c0d50a799d7",
+      "id": "0xb656683dc3f409c6a8cc1ec7bc172c0d50a799d7",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000674982918",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.633725501186285244",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6337255018612682,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:38.716Z"
+    },
+    "0xb6c7366457d796a8bc572d22afa48886aa5aaa47": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb6c7366457d796a8bc572d22afa48886aa5aaa47",
+      "id": "0xb6c7366457d796a8bc572d22afa48886aa5aaa47",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000504953539",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.13221863698657317",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.1322186374915267,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:38.784Z"
+    },
+    "0xb73b34ab4af545b82dddc04698ac2d7e89c3cc92": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb73b34ab4af545b82dddc04698ac2d7e89c3cc92",
+      "id": "0xb73b34ab4af545b82dddc04698ac2d7e89c3cc92",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "188.317961624224554596",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.308754039837848787",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 188.6267156640624,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:38.853Z"
+    },
+    "0xb79eac7b08011e402c25b95aa4f9bc0aa0529242": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb79eac7b08011e402c25b95aa4f9bc0aa0529242",
+      "id": "0xb79eac7b08011e402c25b95aa4f9bc0aa0529242",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000140455733",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.626849779596496846",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6268497797369526,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:38.923Z"
+    },
+    "0xb8288872fa40f6350dcb8c9a66c8dd439e707f76": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb8288872fa40f6350dcb8c9a66c8dd439e707f76",
+      "id": "0xb8288872fa40f6350dcb8c9a66c8dd439e707f76",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000133999175089065",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "21.515177522046644659",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 21.515311521221733,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:38.998Z"
+    },
+    "0xb96008d1d926a6129bd91a12c924bd49b79d7bf5": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb96008d1d926a6129bd91a12c924bd49b79d7bf5",
+      "id": "0xb96008d1d926a6129bd91a12c924bd49b79d7bf5",
+      "tokens": [
+        {
+          "address": "0x6982508145454ce325ddbe47a25d4ec3d2311933",
+          "balance": "48634.071881406638979266",
+          "decimals": 18,
+          "symbol": "PEPE"
+        },
+        {
+          "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "balance": "0.312969",
+          "decimals": 6,
+          "symbol": "USDC"
+        },
+        {
+          "address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+          "balance": "0.412001",
+          "decimals": 6,
+          "symbol": "USDT"
+        }
+      ],
+      "totalLiquidity": 48634.79685140664,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:39.064Z"
+    },
+    "0xb96dac9051653ebf20c081d1f902170c11b4589a": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xb96dac9051653ebf20c081d1f902170c11b4589a",
+      "id": "0xb96dac9051653ebf20c081d1f902170c11b4589a",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000047972856",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.117656906978214706",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.11765690702618757,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:39.131Z"
+    },
+    "0xbb251b2d036808e48ca069f6e075f1cbcb77dc1e": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xbb251b2d036808e48ca069f6e075f1cbcb77dc1e",
+      "id": "0xbb251b2d036808e48ca069f6e075f1cbcb77dc1e",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001867206282",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.635345971560620033",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6353459734278263,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:39.200Z"
+    },
+    "0xbc35cc7eb77b9e1ac252cd7e006d4a33c6f56ba7": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xbc35cc7eb77b9e1ac252cd7e006d4a33c6f56ba7",
+      "id": "0xbc35cc7eb77b9e1ac252cd7e006d4a33c6f56ba7",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001901561921",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.587014472011968561",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5870144739135305,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:39.268Z"
+    },
+    "0xbda917a67c7d9ae67da92c4ea87e10e5d6c11b54": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xbda917a67c7d9ae67da92c4ea87e10e5d6c11b54",
+      "id": "0xbda917a67c7d9ae67da92c4ea87e10e5d6c11b54",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "47.816390653922906217",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "166174.665691398671853739",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 166222.4820820526,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:39.336Z"
+    },
+    "0xbf4ca4df93374e6c89f5cfb944ef2314af576f66": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xbf4ca4df93374e6c89f5cfb944ef2314af576f66",
+      "id": "0xbf4ca4df93374e6c89f5cfb944ef2314af576f66",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000162297242",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.544948188582019803",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.544948188744317,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:39.400Z"
+    },
+    "0xbf5e285b45fb25e46659d660a3438c2632895f1e": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xbf5e285b45fb25e46659d660a3438c2632895f1e",
+      "id": "0xbf5e285b45fb25e46659d660a3438c2632895f1e",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000502546737",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.127099864668156382",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.1270998651707031,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:39.468Z"
+    },
+    "0xc23f0788273eda945809e5465a4a93b303392bb6": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xc23f0788273eda945809e5465a4a93b303392bb6",
+      "id": "0xc23f0788273eda945809e5465a4a93b303392bb6",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000010354935",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.660594175066311499",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6605941751698609,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:39.550Z"
+    },
+    "0xc41b237f2c0553ffada6cf705697feaeea544e3a": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xc41b237f2c0553ffada6cf705697feaeea544e3a",
+      "id": "0xc41b237f2c0553ffada6cf705697feaeea544e3a",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000219187392",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.640443245522972103",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6404432457421595,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:39.627Z"
+    },
+    "0xc706554aee02fa913459cc443d87e6899a35ef47": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xc706554aee02fa913459cc443d87e6899a35ef47",
+      "id": "0xc706554aee02fa913459cc443d87e6899a35ef47",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000309789914",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.63864857461258734",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6386485749223773,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:39.707Z"
+    },
+    "0xc94c4ce85c8210dcc42b25beae091c978b1925d4": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xc94c4ce85c8210dcc42b25beae091c978b1925d4",
+      "id": "0xc94c4ce85c8210dcc42b25beae091c978b1925d4",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001921994627",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.604996272118208448",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6049962740402032,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:39.778Z"
+    },
+    "0xc97182ddb330a165eaf322651930dba0a8a40e48": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xc97182ddb330a165eaf322651930dba0a8a40e48",
+      "id": "0xc97182ddb330a165eaf322651930dba0a8a40e48",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000022398301",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.126443195222608489",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.1264431952450068,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:39.844Z"
+    },
+    "0xca8ef815a1fb9608ad7f39b98c2d891462c7f150": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xca8ef815a1fb9608ad7f39b98c2d891462c7f150",
+      "id": "0xca8ef815a1fb9608ad7f39b98c2d891462c7f150",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000121580414",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.416879352631317434",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.41687935275289784,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:39.910Z"
+    },
+    "0xcc97feff194dfa75b3436bca3b975f6b5c97e69c": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xcc97feff194dfa75b3436bca3b975f6b5c97e69c",
+      "id": "0xcc97feff194dfa75b3436bca3b975f6b5c97e69c",
+      "tokens": [
+        {
+          "address": "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
+          "balance": "0.11457338",
+          "decimals": 8,
+          "symbol": "WBTC"
+        },
+        {
+          "address": "0xbe1936a67f503e0eaf2434b0cf9f4e3d7100008a",
+          "balance": "609567.188999694437565989",
+          "decimals": 18,
+          "symbol": "PROS"
+        },
+        {
+          "address": "0xc50673edb3a7b94e8cad8a7d4e0cd68864e33edf",
+          "balance": "223709.222383293719690613",
+          "decimals": 18,
+          "symbol": "PNKSTR"
+        }
+      ],
+      "totalLiquidity": 833276.5259563681,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:39.983Z"
+    },
+    "0xce363625a983d12151f19e2bdca05261e9820676": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xce363625a983d12151f19e2bdca05261e9820676",
+      "id": "0xce363625a983d12151f19e2bdca05261e9820676",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000164508107",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.68564487953909934",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6856448797036074,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:40.050Z"
+    },
+    "0xcefbfbb821f67fb2584775e908e8456699a42ed8": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xcefbfbb821f67fb2584775e908e8456699a42ed8",
+      "id": "0xcefbfbb821f67fb2584775e908e8456699a42ed8",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000054002273",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.693103810713497746",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6931038107674999,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:40.117Z"
+    },
+    "0xcf2c39a0c9097fc6fd3c813cafaab0dcf0604bf5": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xcf2c39a0c9097fc6fd3c813cafaab0dcf0604bf5",
+      "id": "0xcf2c39a0c9097fc6fd3c813cafaab0dcf0604bf5",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000008226825",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.416870258671602007",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.41687025875387024,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:40.190Z"
+    },
+    "0xd21203dde4af05a81f645faf769fcf2b254f0c44": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd21203dde4af05a81f645faf769fcf2b254f0c44",
+      "id": "0xd21203dde4af05a81f645faf769fcf2b254f0c44",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001836998987",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.641665900160656065",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.641665901997655,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:40.258Z"
+    },
+    "0xd24f587b7baa20530247cda4e7c268d3963da445": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd24f587b7baa20530247cda4e7c268d3963da445",
+      "id": "0xd24f587b7baa20530247cda4e7c268d3963da445",
+      "tokens": [
+        {
+          "address": "0x0edff9f275128ff397fcfaeb600f6e6cf922f7a6",
+          "balance": "0.216615344680651023",
+          "decimals": 18,
+          "symbol": "EIG2"
+        },
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.279334994658125965",
+          "decimals": 18,
+          "symbol": "WETH"
+        }
+      ],
+      "totalLiquidity": 0.49595033933877697,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:40.332Z"
+    },
+    "0xd2f795b7fc4f83fcc5f950ff80de3d9f00b89e4e": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd2f795b7fc4f83fcc5f950ff80de3d9f00b89e4e",
+      "id": "0xd2f795b7fc4f83fcc5f950ff80de3d9f00b89e4e",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000001455933",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.549468154684231966",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5494681546856879,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:40.402Z"
+    },
+    "0xd2fd71442297fb0541d22274572d1f440c545994": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd2fd71442297fb0541d22274572d1f440c545994",
+      "id": "0xd2fd71442297fb0541d22274572d1f440c545994",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00013447731995633",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "19.322976652880974168",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 19.32311113020093,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:40.473Z"
+    },
+    "0xd321300ef77067d4a868f117d37706eb81368e98": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd321300ef77067d4a868f117d37706eb81368e98",
+      "id": "0xd321300ef77067d4a868f117d37706eb81368e98",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "44.940562323379214267",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
+          "balance": "1181684.294969260520060739",
+          "decimals": 18,
+          "symbol": "COW"
+        }
+      ],
+      "totalLiquidity": 1181729.235531584,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:40.543Z"
+    },
+    "0xd350814bda540e05a78a86fbc6bb4448783ca949": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd350814bda540e05a78a86fbc6bb4448783ca949",
+      "id": "0xd350814bda540e05a78a86fbc6bb4448783ca949",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000150516824",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.040866444030840847",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.04086644418135767,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:40.614Z"
+    },
+    "0xd3af278a32f40e8fb707bfb3531b99c85947d194": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd3af278a32f40e8fb707bfb3531b99c85947d194",
+      "id": "0xd3af278a32f40e8fb707bfb3531b99c85947d194",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000431656467",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.658400097121777464",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.658400097553434,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:40.685Z"
+    },
+    "0xd44c9be3337353807780eccd97030b46cb07fe3b": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd44c9be3337353807780eccd97030b46cb07fe3b",
+      "id": "0xd44c9be3337353807780eccd97030b46cb07fe3b",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000374240839",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.662343787372422236",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6623437877466631,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:40.765Z"
+    },
+    "0xd4ed17bbf48af09b87fd7d8c60970f5da79d4852": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd4ed17bbf48af09b87fd7d8c60970f5da79d4852",
+      "id": "0xd4ed17bbf48af09b87fd7d8c60970f5da79d4852",
+      "tokens": [
+        {
+          "address": "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
+          "balance": "0.00007323",
+          "decimals": 8,
+          "symbol": "WBTC"
+        },
+        {
+          "address": "0x45804880de22913dafe09f4980848ece6ecbaf78",
+          "balance": "0.001803408498568137",
+          "decimals": 18,
+          "symbol": "PAXG"
+        },
+        {
+          "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "balance": "8.35694",
+          "decimals": 6,
+          "symbol": "USDC"
+        }
+      ],
+      "totalLiquidity": 8.358816638498569,
+      "swapFee": "0.01",
+      "queriedAt": "2025-10-21T21:19:40.856Z"
+    },
+    "0xd5249b5cebaaa4409a343f9b519b97491e9d9cc0": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd5249b5cebaaa4409a343f9b519b97491e9d9cc0",
+      "id": "0xd5249b5cebaaa4409a343f9b519b97491e9d9cc0",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000008887086958176",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.406951461686848973",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.40696034877380716,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:40.920Z"
+    },
+    "0xd57c7e0ac02a13c6df42452e3431a87050b5dee6": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd57c7e0ac02a13c6df42452e3431a87050b5dee6",
+      "id": "0xd57c7e0ac02a13c6df42452e3431a87050b5dee6",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000097459196",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.66713700279327077",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.66713700289073,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:40.989Z"
+    },
+    "0xd91d1e90285d3d0b2920b6c50630f3d526082dc4": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xd91d1e90285d3d0b2920b6c50630f3d526082dc4",
+      "id": "0xd91d1e90285d3d0b2920b6c50630f3d526082dc4",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "188.238083323713029358",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.790501715637183824",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 189.02858503935022,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.059Z"
+    },
+    "0xdbb1a58e71f03c871ed88d99abebc57d78ae97cb": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xdbb1a58e71f03c871ed88d99abebc57d78ae97cb",
+      "id": "0xdbb1a58e71f03c871ed88d99abebc57d78ae97cb",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000096607632",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.5566652860014611",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5566652860980688,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.131Z"
+    },
+    "0xdd32670bccf58068c1b87f71a57a25182a2632db": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xdd32670bccf58068c1b87f71a57a25182a2632db",
+      "id": "0xdd32670bccf58068c1b87f71a57a25182a2632db",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000109777073",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.548801869142728006",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5488018692525051,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.208Z"
+    },
+    "0xdec442c7d862f25221a2c93083459ef39eb8acab": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xdec442c7d862f25221a2c93083459ef39eb8acab",
+      "id": "0xdec442c7d862f25221a2c93083459ef39eb8acab",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.0000000001201793",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.675440837436326892",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6754408375565062,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.285Z"
+    },
+    "0xdfc37ec191ed941d21b58e9bed7bf4d15a26853c": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xdfc37ec191ed941d21b58e9bed7bf4d15a26853c",
+      "id": "0xdfc37ec191ed941d21b58e9bed7bf4d15a26853c",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000102718715",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.667653061467105276",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.667653061569824,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.357Z"
+    },
+    "0xe00ceb820df453fefc3c089afb4671453e25027a": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe00ceb820df453fefc3c089afb4671453e25027a",
+      "id": "0xe00ceb820df453fefc3c089afb4671453e25027a",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000165038036",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.560619988142030628",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5606199883070686,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.431Z"
+    },
+    "0xe1259bd52d32a5f024cd81867c0338ca889b8ad7": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe1259bd52d32a5f024cd81867c0338ca889b8ad7",
+      "id": "0xe1259bd52d32a5f024cd81867c0338ca889b8ad7",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000083989959",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.591068173747403852",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5910681738313938,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.507Z"
+    },
+    "0xe165880461efe3f523a07170f1de9c4d63d75423": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe165880461efe3f523a07170f1de9c4d63d75423",
+      "id": "0xe165880461efe3f523a07170f1de9c4d63d75423",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000071018075",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.611439069855362553",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6114390699263806,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.600Z"
+    },
+    "0xe250b38de9f6f3b8cc78fed6b06b51e320a734ac": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe250b38de9f6f3b8cc78fed6b06b51e320a734ac",
+      "id": "0xe250b38de9f6f3b8cc78fed6b06b51e320a734ac",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001848020742",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.454486384939491659",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.4544863867875124,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.681Z"
+    },
+    "0xe2df7df1ae894ac17ea4e6251bce1432b875df34": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe2df7df1ae894ac17ea4e6251bce1432b875df34",
+      "id": "0xe2df7df1ae894ac17ea4e6251bce1432b875df34",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000503796882",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.128477810692832071",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.12847781119662896,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.764Z"
+    },
+    "0xe2f0f4e5e4ee2158921e4681ab96361133dd92a2": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe2f0f4e5e4ee2158921e4681ab96361133dd92a2",
+      "id": "0xe2f0f4e5e4ee2158921e4681ab96361133dd92a2",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000117226506",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.591414369021464713",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5914143691386912,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.847Z"
+    },
+    "0xe30842365808b3456258127b9c4b03ba795cfa84": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe30842365808b3456258127b9c4b03ba795cfa84",
+      "id": "0xe30842365808b3456258127b9c4b03ba795cfa84",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001939570168",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.620312712638801737",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6203127145783719,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:41.927Z"
+    },
+    "0xe36b198c43ddbec2d25c4f0a0bc5b80330551009": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe36b198c43ddbec2d25c4f0a0bc5b80330551009",
+      "id": "0xe36b198c43ddbec2d25c4f0a0bc5b80330551009",
+      "tokens": [
+        {
+          "address": "0x11157da1fc6dcfd58b50ed79082183b2c6176245",
+          "balance": "8069.81440017889289409",
+          "decimals": 18,
+          "symbol": "PHANDS"
+        },
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.0051986",
+          "decimals": 18,
+          "symbol": "WETH"
+        }
+      ],
+      "totalLiquidity": 8069.819598778893,
+      "swapFee": "0.004",
+      "queriedAt": "2025-10-21T21:19:42.010Z"
+    },
+    "0xe42d5aeb164b00f0864e7aead35a8f4588f767a3": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe42d5aeb164b00f0864e7aead35a8f4588f767a3",
+      "id": "0xe42d5aeb164b00f0864e7aead35a8f4588f767a3",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000116192514",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.649912952701139891",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6499129528173324,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.091Z"
+    },
+    "0xe4f7c3f4bd5cf43da23e23243dc489edd17f6480": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe4f7c3f4bd5cf43da23e23243dc489edd17f6480",
+      "id": "0xe4f7c3f4bd5cf43da23e23243dc489edd17f6480",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000589799016",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.66935741436345681",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6693574149532558,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.174Z"
+    },
+    "0xe5bc246c3cfb130bcc1b67ff397a6bd1a2e9cea6": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe5bc246c3cfb130bcc1b67ff397a6bd1a2e9cea6",
+      "id": "0xe5bc246c3cfb130bcc1b67ff397a6bd1a2e9cea6",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000175606618",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.519735531192978571",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5197355329490447,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.260Z"
+    },
+    "0xe69d23b4b70afa1153ba68f77ad3caaa955c1c3f": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe69d23b4b70afa1153ba68f77ad3caaa955c1c3f",
+      "id": "0xe69d23b4b70afa1153ba68f77ad3caaa955c1c3f",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001788919086",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.534748719356106095",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5347487211450253,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.340Z"
+    },
+    "0xe9b5766df1664ce23e7ae908e418adb7537a0a12": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xe9b5766df1664ce23e7ae908e418adb7537a0a12",
+      "id": "0xe9b5766df1664ce23e7ae908e418adb7537a0a12",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000106451235",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.663564648437164909",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6635646485436161,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.425Z"
+    },
+    "0xea4d41aa99a854e73535ce6350db8ec07e6b775f": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xea4d41aa99a854e73535ce6350db8ec07e6b775f",
+      "id": "0xea4d41aa99a854e73535ce6350db8ec07e6b775f",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000072441698",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.67479686336523057",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6747968634376723,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.499Z"
+    },
+    "0xea7c9c9356ece93dc7726c0bcf6b8d6efa576a2d": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xea7c9c9356ece93dc7726c0bcf6b8d6efa576a2d",
+      "id": "0xea7c9c9356ece93dc7726c0bcf6b8d6efa576a2d",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000150305898",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.632212196604897925",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6322121967552038,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.570Z"
+    },
+    "0xebebde3e6e4e6de351764e84c89e24d1f902148b": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xebebde3e6e4e6de351764e84c89e24d1f902148b",
+      "id": "0xebebde3e6e4e6de351764e84c89e24d1f902148b",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001928081972",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.612077996609477743",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6120779985375597,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.673Z"
+    },
+    "0xec4992592a0ae1239e2fe169f0d73c52f7726daa": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xec4992592a0ae1239e2fe169f0d73c52f7726daa",
+      "id": "0xec4992592a0ae1239e2fe169f0d73c52f7726daa",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000117966388",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.627204996872731936",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6272049969906983,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.736Z"
+    },
+    "0xed1ab16e7ad1f7b5824d2e0539ca6069566f96c2": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xed1ab16e7ad1f7b5824d2e0539ca6069566f96c2",
+      "id": "0xed1ab16e7ad1f7b5824d2e0539ca6069566f96c2",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000377162259620576",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "651743.409267528272465297",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 651743.4096446905,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.803Z"
+    },
+    "0xed574006190f0dcaf1743cd968f785d11e002761": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xed574006190f0dcaf1743cd968f785d11e002761",
+      "id": "0xed574006190f0dcaf1743cd968f785d11e002761",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000093431691",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.454663234634688394",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.4546632347281201,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.869Z"
+    },
+    "0xedd8ebcdcf63f7a2b2551dd130f084a5c604590c": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xedd8ebcdcf63f7a2b2551dd130f084a5c604590c",
+      "id": "0xedd8ebcdcf63f7a2b2551dd130f084a5c604590c",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000160063237",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.666243222255080186",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6662432224151433,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:42.940Z"
+    },
+    "0xeeef18bb05f8f819a97448e762e2babaeae3d918": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xeeef18bb05f8f819a97448e762e2babaeae3d918",
+      "id": "0xeeef18bb05f8f819a97448e762e2babaeae3d918",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000045278904802",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.406951324848270348",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.4069517776373184,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:43.009Z"
+    },
+    "0xeff3681d307cb7bf53c725f4a96d07b83c65fe43": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xeff3681d307cb7bf53c725f4a96d07b83c65fe43",
+      "id": "0xeff3681d307cb7bf53c725f4a96d07b83c65fe43",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001927007674",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.693103061072467577",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6931030629994752,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:43.081Z"
+    },
+    "0xf1c1aa69872d546a037c5f24161732bb368da6f2": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xf1c1aa69872d546a037c5f24161732bb368da6f2",
+      "id": "0xf1c1aa69872d546a037c5f24161732bb368da6f2",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000155522298",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.042123300927549668",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.04212330108307197,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:43.163Z"
+    },
+    "0xf37daf0843e988ddbef359dba3028e23003ea19e": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xf37daf0843e988ddbef359dba3028e23003ea19e",
+      "id": "0xf37daf0843e988ddbef359dba3028e23003ea19e",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000603100484",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.675003489800050618",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6750034904031511,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:43.254Z"
+    },
+    "0xf491f6b94464997cb6a78d95fec0cdf9b7d4a6e1": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xf491f6b94464997cb6a78d95fec0cdf9b7d4a6e1",
+      "id": "0xf491f6b94464997cb6a78d95fec0cdf9b7d4a6e1",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00014878210911223",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xc83e27f270cce0a3a3a29521173a83f402c1768b",
+          "balance": "2755.955317",
+          "decimals": 6,
+          "symbol": "USDQ"
+        }
+      ],
+      "totalLiquidity": 2755.955465782109,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:43.346Z"
+    },
+    "0xf563f53d0921dfdd571c82ffb07b969e1b6d5ae8": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xf563f53d0921dfdd571c82ffb07b969e1b6d5ae8",
+      "id": "0xf563f53d0921dfdd571c82ffb07b969e1b6d5ae8",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001897597415",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.581009953484320416",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.5810099553819178,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:43.432Z"
+    },
+    "0xf652778fc0781c6b70f91c28b8e658b8439be9f6": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xf652778fc0781c6b70f91c28b8e658b8439be9f6",
+      "id": "0xf652778fc0781c6b70f91c28b8e658b8439be9f6",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000163654408",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.416879352631138636",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.41687935279479305,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:43.500Z"
+    },
+    "0xf6ae565c17cedc8647e4a7ccd9758d1dde7b07e2": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xf6ae565c17cedc8647e4a7ccd9758d1dde7b07e2",
+      "id": "0xf6ae565c17cedc8647e4a7ccd9758d1dde7b07e2",
+      "tokens": [
+        {
+          "address": "0x6440f144b7e50d6a8439336510312d2f54beb01d",
+          "balance": "1",
+          "decimals": 18,
+          "symbol": "BOLD"
+        },
+        {
+          "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "balance": "1",
+          "decimals": 6,
+          "symbol": "USDC"
+        }
+      ],
+      "totalLiquidity": 2,
+      "swapFee": "0.0005",
+      "queriedAt": "2025-10-21T21:19:43.569Z"
+    },
+    "0xf7251018f4225fa8fed6ea8a2bc5a2479221179b": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xf7251018f4225fa8fed6ea8a2bc5a2479221179b",
+      "id": "0xf7251018f4225fa8fed6ea8a2bc5a2479221179b",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000076420063",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.419915544897867058",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.41991554497428707,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:43.640Z"
+    },
+    "0xf79f4d4f45fdd7a614eefe9580e5c51226410918": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xf79f4d4f45fdd7a614eefe9580e5c51226410918",
+      "id": "0xf79f4d4f45fdd7a614eefe9580e5c51226410918",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.00000000009007128",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.644784479258990932",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6447844793490622,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:43.713Z"
+    },
+    "0xf91c11ba4220b7a72e1dc5e92f2b48d3fdf62726": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xf91c11ba4220b7a72e1dc5e92f2b48d3fdf62726",
+      "id": "0xf91c11ba4220b7a72e1dc5e92f2b48d3fdf62726",
+      "tokens": [
+        {
+          "address": "0x440017a1b021006d556d7fc06a54c32e42eb745b",
+          "balance": "64261.07698495877078996",
+          "decimals": 18,
+          "symbol": "@G"
+        },
+        {
+          "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "balance": "8151.970298",
+          "decimals": 6,
+          "symbol": "USDC"
+        }
+      ],
+      "totalLiquidity": 72413.04728295878,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:43.781Z"
+    },
+    "0xfb2a50433a2ab2eb67fb923ad5c2b47a1a2a0734": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xfb2a50433a2ab2eb67fb923ad5c2b47a1a2a0734",
+      "id": "0xfb2a50433a2ab2eb67fb923ad5c2b47a1a2a0734",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000143544019",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.041055142207009962",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.04105514235055398,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:43.854Z"
+    },
+    "0xfb5652dbf057431e19f57a417f1c3830a6a93694": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xfb5652dbf057431e19f57a417f1c3830a6a93694",
+      "id": "0xfb5652dbf057431e19f57a417f1c3830a6a93694",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000197565901",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.423798054867297761",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.4237980550648637,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:43.931Z"
+    },
+    "0xfdabee3bb82e6e8e1575c6fbc68c09ac03310719": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xfdabee3bb82e6e8e1575c6fbc68c09ac03310719",
+      "id": "0xfdabee3bb82e6e8e1575c6fbc68c09ac03310719",
+      "tokens": [
+        {
+          "address": "0x5c40f2b311b18ad839834278f1951b29d4cd4fd9",
+          "balance": "80",
+          "decimals": 9,
+          "symbol": "LBCX"
+        },
+        {
+          "address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+          "balance": "1",
+          "decimals": 6,
+          "symbol": "USDT"
+        }
+      ],
+      "totalLiquidity": 81,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-21T21:19:43.999Z"
+    },
+    "0xfe577d09f8e8a1999045d9974ca4f370019e70f0": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xfe577d09f8e8a1999045d9974ca4f370019e70f0",
+      "id": "0xfe577d09f8e8a1999045d9974ca4f370019e70f0",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000100233192",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.645606549793808122",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6456065498940413,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:19:44.068Z"
+    },
+    "0x13b2c8b34f4ab1fccafc9d4691807acf2a0eca4b": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x13b2c8b34f4ab1fccafc9d4691807acf2a0eca4b",
+      "id": "0x13b2c8b34f4ab1fccafc9d4691807acf2a0eca4b",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000163350746",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.648748315031960328",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6487483151953111,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-21T21:21:06.494Z"
+    },
+    "0x0fea3efd8e943869f5ae9885ef239f3efce63621": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x0fea3efd8e943869f5ae9885ef239f3efce63621",
+      "id": "0x0fea3efd8e943869f5ae9885ef239f3efce63621",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001898808717",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.680987994837577718",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6809879967363864,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-22T14:58:52.495Z"
+    },
+    "0x13682697fa9c73a257c294d28ac6c4d511237280": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x13682697fa9c73a257c294d28ac6c4d511237280",
+      "id": "0x13682697fa9c73a257c294d28ac6c4d511237280",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "195.943470801985366886",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.199022504222894427",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 196.14249330620825,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-22T14:58:53.167Z"
+    },
+    "0x1ca5d3f96aaee7bb4064cd15d7afb9d09a57bc4e": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x1ca5d3f96aaee7bb4064cd15d7afb9d09a57bc4e",
+      "id": "0x1ca5d3f96aaee7bb4064cd15d7afb9d09a57bc4e",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001879246792",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.680516427267803821",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6805164291470506,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-22T14:58:53.840Z"
+    },
+    "0x621917a08bc8f640dd16f8bcf3f202e503d87a65": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x621917a08bc8f640dd16f8bcf3f202e503d87a65",
+      "id": "0x621917a08bc8f640dd16f8bcf3f202e503d87a65",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000709866954",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.680974846471611476",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6809748471814784,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-22T14:58:54.599Z"
+    },
+    "0x69b49a2d3b3c4bb45c4bc6326ee3017ec2426766": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x69b49a2d3b3c4bb45c4bc6326ee3017ec2426766",
+      "id": "0x69b49a2d3b3c4bb45c4bc6326ee3017ec2426766",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000112747647245929",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "692104.473696750733846798",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 692104.4738094984,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-22T14:58:55.294Z"
+    },
+    "0x8ab64e5404321f1ef9cd8fada5ad10f7eb5749d7": {
+      "poolType": "WeightedPool",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x8ab64e5404321f1ef9cd8fada5ad10f7eb5749d7",
+      "id": "0x8ab64e5404321f1ef9cd8fada5ad10f7eb5749d7",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "3.546736156971024671",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "12583.45701584605690711",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 12587.00375200303,
+      "swapFee": "0.003",
+      "queriedAt": "2025-10-22T14:58:55.567Z"
+    },
+    "0x9b2600d7bb7812757e9c080078987621d65c5dad": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x9b2600d7bb7812757e9c080078987621d65c5dad",
+      "id": "0x9b2600d7bb7812757e9c080078987621d65c5dad",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "196.648875555302978471",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.268650117624555377",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 196.91752567292752,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-22T14:58:56.212Z"
+    },
+    "0xadc80b89df7e3267c3d35a46413bfc88970e7d1b": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xadc80b89df7e3267c3d35a46413bfc88970e7d1b",
+      "id": "0xadc80b89df7e3267c3d35a46413bfc88970e7d1b",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000000677677255",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.680983401042229104",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6809834017199063,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-22T14:58:56.864Z"
+    },
+    "0xbbbf930adbc84ecff9d7fad750e401b2d48f818b": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0xbbbf930adbc84ecff9d7fad750e401b2d48f818b",
+      "id": "0xbbbf930adbc84ecff9d7fad750e401b2d48f818b",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "0.000000001912969775",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.679500886016578323",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 0.6795008879295481,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-22T14:58:57.527Z"
+    },
+    "0x55a21e16e18381cb013856aaadbf9149138dda5e": {
+      "poolType": "ConstantProduct",
+      "weights": [
+        50,
+        50
+      ],
+      "amplificationParameter": null,
+      "address": "0x55a21e16e18381cb013856aaadbf9149138dda5e",
+      "id": "0x55a21e16e18381cb013856aaadbf9149138dda5e",
+      "tokens": [
+        {
+          "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "balance": "196.267030558446638699",
+          "decimals": 18,
+          "symbol": "WETH"
+        },
+        {
+          "address": "0xec53bf9167f50cdeb3ae105f56099aaab9061f83",
+          "balance": "0.262506004426378876",
+          "decimals": 18,
+          "symbol": "EIGEN"
+        }
+      ],
+      "totalLiquidity": 196.529536562873,
+      "swapFee": "0.001",
+      "queriedAt": "2025-10-22T16:13:10.060Z"
     }
   },
-  "lastUpdated": "2025-10-18T22:21:07.711Z",
+  "lastUpdated": "2025-10-22T16:13:10.060Z",
   "version": "1.0.0"
 }

@@ -375,7 +375,7 @@ export function createEncoderExecutionPlan(
 
         // Push pre-encoded unlock format (WalletBundler will use as-is!)
         encoderData.push(data);
-        console.log(`         📦 Pre-encoded unlock format (${data.length} bytes) - zero contract overhead!`);
+        // console.log(`         📦 Pre-encoded unlock format (${data.length} bytes) - zero contract overhead!`);
       }
     }
   });

@@ -428,7 +428,7 @@ export function useUniswapV4() {
     const unique = new Map();
     rawPools.forEach(p => unique.set(p.id, p));
     let candidatePools = Array.from(unique.values()).filter((pool) => (
-      pool.hooks === '0x0000000000000000000000000000000000000000' && pool.liquidity > 100000 && pool.totalValueLockedUSD && Number(pool.totalValueLockedUSD) >= 10000
+      pool.hooks === '0x0000000000000000000000000000000000000000' && pool.liquidity > 100000 && pool.totalValueLockedUSD && Number(pool.totalValueLockedUSD) >= 100
     ))
 
     if (candidatePools.length <= 6)

@@ -22,7 +22,8 @@ const MAX_SQRT_PRICE_LIMIT = '1461446703485210103287273052203988822378723970341'
  */
 function encodeUniswapV4Swap(tokenIn, tokenOut, poolKey, amountIn, minAmountOut) {
     // Determine swap direction
-    const zeroForOne = tokenIn === poolKey.currency0 || tokenIn === ethers.constants.AddressZero;
+    // CRITICAL: Compare addresses case-insensitively
+    const zeroForOne = tokenIn.toLowerCase() === poolKey.currency0.toLowerCase();
 
     // Select appropriate price limit
     const sqrtPriceLimitX96 = zeroForOne ? MIN_SQRT_PRICE_LIMIT : MAX_SQRT_PRICE_LIMIT;
@@ -81,7 +82,7 @@ async function encodeUniswapV4UseAllBalance(
     minAmountOut,
     wrapOp = 0
 ) {
-    const zeroForOne = tokenIn === poolKey.currency0 || tokenIn === ethers.constants.AddressZero;
+    const zeroForOne = tokenIn.toLowerCase() === poolKey.currency0.toLowerCase();
 
     const swapParams = {
         poolKey: {
@@ -153,7 +154,7 @@ function createUniswapV4UseAllStep(
     minAmountOut,
     wrapOp = 0
 ) {
-    const zeroForOne = tokenIn === poolKey.currency0 || tokenIn === ethers.constants.AddressZero;
+    const zeroForOne = tokenIn.toLowerCase() === poolKey.currency0.toLowerCase();
 
     // Encode call to UniswapEncoder.encodeUseAllBalanceSwap
     const iface = new ethers.utils.Interface([
