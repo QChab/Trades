@@ -580,7 +580,7 @@ async function enrichPoolData(pools, provider) {
       if (poolData?.error === 429) {
         rateLimitErrors++;
         console.warn(`⚠️ Rate limit error for pool ${poolAddress.slice(0, 10)}... (${rateLimitErrors} total)`);
-        continue;
+        break;
       }
 
       if (poolData.poolType === 'ConstantProduct') continue;

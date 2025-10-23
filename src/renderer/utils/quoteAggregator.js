@@ -328,9 +328,12 @@ export function getAllowedProtocols(walletMode) {
  * Wraps a promise with a timeout
  * Returns null if the promise doesn't resolve within the timeout period
  */
-function withTimeout(promise, timeoutMs, protocolName) {
-  const timeoutPromise = new Promise((resolve) => {
+function withTimeout(promise, timeoutMs, protocolName, shouldThrow) {
+  const timeoutPromise = new Promise((resolve, reject) => {
     setTimeout(() => {
+      if (shouldThrow) 
+        return reject('Quote on contract took too long, please trigger another quote. First usages are slower as we cache the Balancer pools.');
+
       resolve(null);
     }, timeoutMs);
   });
@@ -358,7 +361,7 @@ export async function getAllQuotes({
   const allowedProtocols = getAllowedProtocols(walletMode);
   console.log(`🔍 Querying protocols: ${allowedProtocols.join(', ')}`);
 
-  const TIMEOUT_MS = 30000; // 30 seconds
+  const TIMEOUT_MS = 10000; // 30 seconds
   const quotePromises = [];
   const queriedProtocols = []; // Track which protocols are actually queried
 
@@ -413,8 +416,9 @@ export async function getAllQuotes({
           provider,
           uniswapPools
         }),
-        TIMEOUT_MS,
-        'WalletBundler'
+        TIMEOUT_MS * 12,
+        'WalletBundler',
+        true
       )
     );
   }
@@ -442,7 +446,7 @@ export async function getAllQuotes({
     if (result.status === 'fulfilled') {
       // Check if this is WalletBundler with error response
       if (protocolName === 'WalletBundler' && result.value && result.value.error === 429) {
-        throw new Error('⚠️ Rate limit error when quoting WalletBundler');
+        throw new Error('⚠️ Rate limit error on the RPC when quoting WalletBundler due to massive pools caching');
       }
 
       // Handle WalletBundler's {error, result} format
@@ -461,7 +465,11 @@ export async function getAllQuotes({
         }
       }
     } else {
-      console.log(`  ❌ ${protocolName}: Promise rejected - ${result.reason?.message || result.reason}`);
+      if (protocolName === 'WalletBundler') {
+        throw new Error(result?.reason || 'ERROR IN CONTRACT, QUOTE TOOK TOO LONG, PLEASE TRY AGAIN');
+      }
+
+      console.error(`  ❌ ${protocolName}: Promise rejected - ${result.reason?.message || result.reason}`);
     }
   });
 
