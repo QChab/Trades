@@ -652,9 +652,12 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
       }
     } else if (route.protocol === 'uniswap') {
       // Uniswap single path
+      // Use path.pools (already extracted) or fallback to trade.swaps[0].route.pools
+      const poolId = path.pools?.[0]?.poolId || path.trade?.swaps?.[0]?.route?.pools?.[0]?.poolId || '';
+
       pools.push({
-        poolAddress: path.trade?.route?.pools?.[0]?.address || path.trade?.route?.pools?.[0]?.id || '',
-        poolId: path.trade?.route?.pools?.[0]?.id || path.trade?.route?.pools?.[0]?.address || '',
+        poolAddress: poolId,
+        poolId: poolId,
         protocol: 'uniswap',
         inputToken: { symbol: tokenIn.symbol, address: tokenIn.address },
         outputToken: { symbol: tokenOut.symbol, address: tokenOut.address },
@@ -801,10 +804,11 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
         // Extract pool identifier from various possible locations
         let poolIdentifier = '';
         if (protocol === 'uniswap' && leg.trade) {
-          // Try multiple paths for Uniswap pool data
-          const pool = leg.trade.route?.pools?.[0] || leg.trade.swaps?.[0]?.route?.pools?.[0];
+          // Try multiple paths for Uniswap pool data (V4 uses swaps[0].route.pools)
+          const pool = leg.trade.swaps?.[0]?.route?.pools?.[0] || leg.trade.route?.pools?.[0];
           if (pool) {
-            poolIdentifier = pool.id || pool.address || pool.poolId || '';
+            // Uniswap V4 pools use poolId as primary identifier
+            poolIdentifier = pool.poolId || pool.id || pool.address || '';
           }
         } else if (protocol === 'balancer' && leg.path) {
           // Extract from Balancer path hops
@@ -826,9 +830,10 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
           console.warn(`   ⚠️  Leg ${legIndex} (${protocol}) missing pool identifier. Trade structure:`, {
             hasTrade: !!leg.trade,
             hasRoute: !!leg.trade?.route,
-            hasPools: !!leg.trade?.route?.pools,
             hasSwaps: !!leg.trade?.swaps,
-            poolsLength: leg.trade?.route?.pools?.length || leg.trade?.swaps?.[0]?.route?.pools?.length || 0
+            swapsPools: !!leg.trade?.swaps?.[0]?.route?.pools,
+            routePools: !!leg.trade?.route?.pools,
+            poolsLength: leg.trade?.swaps?.[0]?.route?.pools?.length || leg.trade?.route?.pools?.length || 0
           });
         }
 

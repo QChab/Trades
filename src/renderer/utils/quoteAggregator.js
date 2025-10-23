@@ -416,7 +416,7 @@ export async function getAllQuotes({
           provider,
           uniswapPools
         }),
-        TIMEOUT_MS * 12,
+        120000,
         'WalletBundler',
         true
       )
