@@ -84,18 +84,27 @@ export async function useMixedUniswapBalancer({
     // ========================================
     // Collect all tokens that might be used in routing
     const intermediates = [
-      WETH_ADDRESS,
-      ETH_ADDRESS,
-      '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
-      '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
-      '0x6B175474E89094C44Da98b954EedeAC495271d0F', // DAI
-      '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'  // WBTC
+      {address: WETH_ADDRESS, symbol: 'WETH', decimals: 18, isETH: true},
+      {address: ETH_ADDRESS,  symbol: 'ETH', decimals: 18, isETH: true},
+      {address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol:'USDC', decimals: 18}, // USDC
+      {address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol:'USDT', decimals: 18}, // USDT
+      {address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', symbol:'DAI', decimals: 18}, // DAI
+      {address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', symbol:'ONE', decimals: 18}, // ONE
+      {address: '0x965b64ae2C04cfF248e6502C10cF3A4931e1F1d9', symbol:'SEV', decimals: 18}, // SEV
+      {address: '0x8dbe1f9d7b2a25652510bc080a0fee3522841073', symbol:'SEV2', decimals: 18}, // SEV2
+      {address: '0x1422336b4c46a808d61e9c19cde79091a2b9ac2a', symbol:'SEV3', decimals: 18}, // SEV3
+      {address: '0x0ed75b3e12b3e78bd8d154061d1725c8d9f0d118', symbol:'EIG', decimals: 18}, // EIG
+      {address: '0x0edff9f275128ff397fcfaeb600f6e6cf922f7a6', symbol:'EIG2', decimals: 18}, // EIG2
+      {address: '0xb2f1134accf58b762efca758def19b2b88e8b978', symbol:'EIG3', decimals: 18}, // EIG3
+      {address: '0x98fae31948b16b90a2c72cccc10cb61654850b28', symbol:'NIN', decimals: 18}, // NIN
+      {address: '0x2998049c6bc35ccfabafda1d50eedb8b669774a9', symbol:'NIN2', decimals: 18}, // NIN2
+      {address: '0x06f7a703fb888b2ae12652dedf40f132816df995', symbol: 'NIN3', decimals: 18} // NIN3
     ];
 
     const allTokens = [
       tokenInObject.address,
       tokenOutObject.address,
-      ...intermediates
+      ...intermediates.map((intermediate) => intermediate.address)
     ];
 
     // Bulk fetch all pools once at the start
@@ -110,13 +119,14 @@ export async function useMixedUniswapBalancer({
         console.log(`📦 Using ${uniswapPools.length} pre-fetched Uniswap pools`);
         allUniswapPools = uniswapPools;
       } else if (useUniswap && !uniswapPools) {
-        console.log('📦 Fetching Uniswap pools...');
-        // Fallback: fetch specific pools for the direct tokenIn → tokenOut pair
-        const specificPools = await uniswap.findPossiblePools(tokenInObject, tokenOutObject).catch(err => {
-          console.log(`   No specific pools for ${tokenInObject.symbol}→${tokenOutObject.symbol}: ${err.message}`);
+        console.log('📦 Fetching Uniswap pools with intermediates...');
+        // Fetch pools for direct pair AND all intermediate routes
+        const specificPools = await uniswap.findPossiblePools(tokenInObject, tokenOutObject, intermediates).catch(err => {
+          console.log(`   No pools for ${tokenInObject.symbol}→${tokenOutObject.symbol}: ${err.message}`);
           return [];
         });
         allUniswapPools = specificPools;
+        console.log(`   Fetched ${allUniswapPools.length} Uniswap pools (including intermediate routes)`);
       }
 
       // Fetch Balancer pools
@@ -142,14 +152,14 @@ export async function useMixedUniswapBalancer({
       // Parallel discovery when both enabled
       [uniswapRoutes, balancerRoutes] = await Promise.all([
         discoverUniswapPaths(tokenInObject, tokenOutObject, amountInBN, allUniswapPools),
-        discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider, allBalancerPools)
+        discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider, allBalancerPools, intermediates)
       ]);
     } else if (useUniswap) {
       // Only Uniswap
       uniswapRoutes = await discoverUniswapPaths(tokenInObject, tokenOutObject, amountInBN, allUniswapPools);
     } else if (useBalancer) {
       // Only Balancer
-      balancerRoutes = await discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider, allBalancerPools);
+      balancerRoutes = await discoverBalancerPaths(tokenInObject, tokenOutObject, amountInBN, provider, allBalancerPools, intermediates);
     }
 
     results.uniswapPaths = uniswapRoutes || [];
@@ -166,7 +176,8 @@ export async function useMixedUniswapBalancer({
         amountInBN,
         provider,
         allUniswapPools,
-        allBalancerPools
+        allBalancerPools,
+        intermediates
       );
       console.log(`🔀 Found ${crossDEXPaths.length} cross-DEX multi-hop paths`);
     }
@@ -234,6 +245,7 @@ function isWETHToETHConversion(original, normalized) {
 /**
  * Discover Uniswap V4 paths with ETH/WETH unification
  * Now uses pre-fetched pools instead of querying
+ * @param {Array} intermediates - Array of intermediate token addresses for multi-hop routing
  */
 async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn, prefetchedPools = []) {
   try {
@@ -400,7 +412,11 @@ async function discoverUniswapPaths(tokenInObject, tokenOutObject, amountIn, pre
  * Discover Balancer V3 paths
  * Now uses pre-fetched pools instead of querying
  */
-async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, provider, prefetchedPools = []) {
+/**
+ * Discover Balancer V3 paths
+ * @param {Array} intermediates - Array of intermediate token addresses for multi-hop routing
+ */
+async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, provider, prefetchedPools = [], intermediates = []) {
   try {
     // Balancer uses WETH, not ETH - normalize addresses
     const normalizedTokenIn = tokenInObject.address === ETH_ADDRESS ?
@@ -420,16 +436,12 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
     const tokenInAddr = normalizedTokenIn.address.toLowerCase();
     const tokenOutAddr = normalizedTokenOut.address.toLowerCase();
 
-    // Include intermediates for multi-hop routing
-    const intermediates = [
-      WETH_ADDRESS,
-      '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
-      '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
-      '0x6B175474E89094C44Da98b954EedeAC495271d0F', // DAI
-      '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'  // WBTC
-    ].map(addr => addr.toLowerCase());
+    // Use passed intermediates for multi-hop routing (normalize to lowercase)
+    // Balancer uses WETH, so convert ETH addresses to WETH
+    const normalizedIntermediates = intermediates.filter(token => token.address !== ETH_ADDRESS).map(inter => inter.address.toLowerCase());
 
-    const relevantTokens = [tokenInAddr, tokenOutAddr, ...intermediates];
+
+    const relevantTokens = [tokenInAddr, tokenOutAddr, ...normalizedIntermediates];
 
     const filteredPools = prefetchedPools.filter(pool => {
       if (!pool.tokens || pool.tokens.length === 0) return false;
@@ -557,17 +569,13 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
  * E.g., ONE -> WETH on Balancer, then ETH -> SEV on Uniswap (with WETH->ETH conversion)
  * Now uses pre-fetched pools instead of querying
  */
-async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, prefetchedUniswapPools = [], prefetchedBalancerPools = []) {
+/**
+ * Discover cross-DEX paths combining Uniswap and Balancer
+ * @param {Array} intermediates - Array of intermediate token objects {address, symbol, decimals}
+ */
+async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, prefetchedUniswapPools = [], prefetchedBalancerPools = [], intermediates = []) {
   const paths = [];
-  
-  // Common intermediate tokens for bridging between DEXs
-  // Note: Balancer uses WETH, Uniswap V4 uses ETH
-  const intermediates = [
-    { address: WETH_ADDRESS, symbol: 'WETH', decimals: 18, isETH: true },
-    { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol: 'USDC', decimals: 6 },
-    { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', decimals: 6 },
-    { address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', symbol: 'DAI', decimals: 18 }
-  ];
+
 
   // Add tokenOut as an intermediate if it's not already in the list
   // This helps find direct paths when tokenOut is a common token like ETH/WETH
@@ -590,15 +598,21 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
       });
     }
   }
-  
+
   // For each intermediate token, try to find a path
+  console.log(`\n🔀 Trying ${intermediates.length} intermediates for ${tokenIn.symbol} → ${tokenOut.symbol}:`);
+  console.log(`   Intermediates: ${intermediates.map(t => t.symbol).join(', ')}`);
+
   for (const intermediate of intermediates) {
     // Skip only if intermediate is same as input
     // Allow intermediate to be same as output (for direct paths)
     if (intermediate.address.toLowerCase() === tokenIn.address.toLowerCase()) {
+      console.log(`   ⊗ Skipping ${intermediate.symbol} (same as input)`);
       continue;
     }
-    
+
+    console.log(`\n   🔍 Trying via ${intermediate.symbol} (${tokenIn.symbol} → ${intermediate.symbol} → ${tokenOut.symbol})...`);
+
     try {
       // First leg: tokenIn -> intermediate (try both DEXs)
       // Note: Uniswap uses ETH while Balancer uses WETH
@@ -607,7 +621,7 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
         : intermediate;
         
       const [balancerLeg1, uniswapLeg1] = await Promise.all([
-        discoverBalancerPaths(tokenIn, intermediate, amountIn, provider, prefetchedBalancerPools),
+        discoverBalancerPaths(tokenIn, intermediate, amountIn, provider, prefetchedBalancerPools, intermediates),
         discoverUniswapPaths(tokenIn, intermediateForUniswap, amountIn, prefetchedUniswapPools)
       ]);
       
@@ -634,10 +648,15 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
 
         // Second leg: intermediate -> tokenOut using Balancer output
         const [balancerLeg2, uniswapLeg2] = await Promise.all([
-          discoverBalancerPaths(intermediate, tokenOut, balancerLeg1[0].outputAmount, provider, prefetchedBalancerPools),
+          discoverBalancerPaths(intermediate, tokenOut, balancerLeg1[0].outputAmount, provider, prefetchedBalancerPools, intermediates),
           discoverUniswapPaths(intermediateForUniswap, tokenOut, balancerLeg1[0].outputAmount, prefetchedUniswapPools)
         ]);
-        
+
+        // Log second leg results
+        console.log(`   🔍 Second leg (${intermediate.symbol} → ${tokenOut.symbol}):`);
+        console.log(`      Balancer leg2: ${balancerLeg2 && balancerLeg2.length > 0 ? '✓ Found' : '✗ Not found'}`);
+        console.log(`      Uniswap leg2: ${uniswapLeg2 && uniswapLeg2.length > 0 ? '✓ Found' : '✗ Not found'}`);
+
         // Create cross-DEX paths
         if (uniswapLeg2 && uniswapLeg2.length > 0) {
           const bestUniswapLeg2 = selectBestVariant(uniswapLeg2);
@@ -706,9 +725,14 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
 
           // Second leg with estimated output from first leg
           const [balancerLeg2, uniswapLeg2] = await Promise.all([
-            discoverBalancerPaths(intermediateForBalancer, tokenOut, estimatedMaxOutput, provider, prefetchedBalancerPools),
+            discoverBalancerPaths(intermediateForBalancer, tokenOut, estimatedMaxOutput, provider, prefetchedBalancerPools, intermediates),
             discoverUniswapPaths(intermediate, tokenOut, estimatedMaxOutput, prefetchedUniswapPools)
           ]);
+
+          // Log second leg results
+          console.log(`   🔍 Second leg (${intermediate.symbol} → ${tokenOut.symbol}):`);
+          console.log(`      Balancer leg2: ${balancerLeg2 && balancerLeg2.length > 0 ? '✓ Found' : '✗ Not found'}`);
+          console.log(`      Uniswap leg2: ${uniswapLeg2 && uniswapLeg2.length > 0 ? '✓ Found' : '✗ Not found'}`);
 
         if (balancerLeg2 && balancerLeg2.length > 0 && balancerLeg2[0].outputAmount) {
           const conversionStep = needsETHToWETHConversion ? ' -> [wrap ETH to WETH]' : '';
@@ -857,10 +881,19 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
         } else {
           console.log(`   ⚠ Skipping Uniswap leg1: ${tokenIn.symbol} -> ${intermediate.symbol} (zero output)`);
         }
+      } else {
+        console.log(`   ✗ No Uniswap paths found for ${tokenIn.symbol} → ${intermediate.symbol}`);
+      }
+
+      // Log if NO paths found through this intermediate
+      const hasBalancerLeg1 = balancerLeg1 && balancerLeg1.length > 0 && balancerLeg1[0].outputAmount && balancerLeg1[0].outputAmount.gt(0);
+      const hasUniswapLeg1 = uniswapLeg1 && uniswapLeg1.length > 0;
+      if (!hasBalancerLeg1 && !hasUniswapLeg1) {
+        console.log(`   ❌ No first-leg paths found via ${intermediate.symbol} (neither Balancer nor Uniswap)`);
       }
 
     } catch (error) {
-      console.error(`Error finding cross-DEX path via ${intermediate.symbol}:`, error.message);
+      console.error(`❌ Error finding cross-DEX path via ${intermediate.symbol}:`, error.message);
     }
   }
 
@@ -2896,7 +2929,11 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
 
     // Sum final outputs
     if (group.outputToken === tokenOut.symbol) {
+      const groupOutput = ethers.utils.formatUnits(opt.totalOutput, tokenOut.decimals);
+      console.log(`      ✓ Adding ${group.tokenPairKey} output: ${groupOutput} ${tokenOut.symbol}`);
       totalOptimizedOutput = totalOptimizedOutput.add(opt.totalOutput);
+    } else {
+      console.log(`      ⊗ Skipping ${group.tokenPairKey} (outputs ${group.outputToken}, not ${tokenOut.symbol})`);
     }
   }
 
@@ -3885,7 +3922,14 @@ function selectBestVariant(paths) {
  */
 async function selectBestRoute(routes, amountIn, tokenIn, tokenOut) {
   if (routes.length === 0) return null;
-  
+
+  // Log all routes being considered
+  console.log(`\n🔍 selectBestRoute: Comparing ${routes.length} routes:`);
+  routes.forEach((route, i) => {
+    const output = route.totalOutput ? ethers.utils.formatUnits(route.totalOutput, tokenOut.decimals) : 'N/A';
+    console.log(`   ${i + 1}. ${route.type || 'unknown'}: ${output} ${tokenOut.symbol}`);
+  });
+
   // Evaluate each route for post-trade arbitrage risk
   const routesWithMetrics = routes.map(route => {
     // Calculate how much arbitrage opportunity this trade creates
@@ -3952,6 +3996,10 @@ async function selectBestRoute(routes, amountIn, tokenIn, tokenOut) {
   });
   
   const selected = routesWithMetrics[0];
+
+  // Log selected route
+  const selectedOutput = selected.totalOutput ? ethers.utils.formatUnits(selected.totalOutput, tokenOut.decimals) : 'N/A';
+  console.log(`\n✅ Selected: ${selected.type || 'unknown'} with ${selectedOutput} ${tokenOut.symbol} (arbitrageRisk: ${selected.arbitrageRisk.toFixed(3)})`);
 
   // Explain why this minimizes arbitrage
   if (selected.arbitrageRisk < 0.5) {

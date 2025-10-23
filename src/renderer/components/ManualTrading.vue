@@ -691,6 +691,27 @@ export default {
     ];
     const SUBGRAPH_URL = `https://gateway.thegraph.com/api/d692082c59f956790647e889e75fa84d/subgraphs/id/DiYPVdygkfjDWhbxGSqAQxwBKmfKnkWQojqeM2rkLb3G`;
 
+    // Intermediate tokens for multi-hop routing
+    const ETH_ADDRESS = '0x0000000000000000000000000000000000000000';
+    const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
+    const intermediates = [
+      {address: WETH_ADDRESS, symbol: 'WETH', decimals: 18, isETH: true},
+      {address: ETH_ADDRESS,  symbol: 'ETH', decimals: 18, isETH: true},
+      {address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol:'USDC', decimals: 18}, // USDC
+      {address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol:'USDT', decimals: 18}, // USDT
+      {address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', symbol:'DAI', decimals: 18}, // DAI
+      {address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', symbol:'ONE', decimals: 18}, // ONE
+      {address: '0x965b64ae2C04cfF248e6502C10cF3A4931e1F1d9', symbol:'SEV', decimals: 18}, // SEV
+      {address: '0x8dbe1f9d7b2a25652510bc080a0fee3522841073', symbol:'SEV2', decimals: 18}, // SEV2
+      {address: '0x1422336b4c46a808d61e9c19cde79091a2b9ac2a', symbol:'SEV3', decimals: 18}, // SEV3
+      {address: '0x0ed75b3e12b3e78bd8d154061d1725c8d9f0d118', symbol:'EIG', decimals: 18}, // EIG
+      {address: '0x0edff9f275128ff397fcfaeb600f6e6cf922f7a6', symbol:'EIG2', decimals: 18}, // EIG2
+      {address: '0xb2f1134accf58b762efca758def19b2b88e8b978', symbol:'EIG3', decimals: 18}, // EIG3
+      {address: '0x98fae31948b16b90a2c72cccc10cb61654850b28', symbol:'NIN', decimals: 18}, // NIN
+      {address: '0x2998049c6bc35ccfabafda1d50eedb8b669774a9', symbol:'NIN2', decimals: 18}, // NIN2
+      {address: '0x06f7a703fb888b2ae12652dedf40f132816df995', symbol: 'NIN3', decimals: 18} // NIN3
+    ];
+
     const {
       findPossiblePools,
       selectBestPath,
@@ -1494,8 +1515,8 @@ export default {
       // Fetch all Uniswap pools for both tokens
       console.log('🔍 Fetching Uniswap pools...');
       const tokenAddresses = Object.keys(tokensByAddresses.value);
-      const uniswapPools = await findPossiblePools(fromToken, toToken);
-      console.log(`✅ Fetched ${uniswapPools ? uniswapPools.length : 0} Uniswap pools`);
+      const uniswapPools = await findPossiblePools(fromToken, toToken, intermediates);
+      console.log(`✅ Fetched ${uniswapPools ? uniswapPools.length : 0} Uniswap pools (including intermediate routes)`);
 
       // Get quotes from all allowed protocols
       const quotes = await getAllQuotes({
@@ -2037,8 +2058,8 @@ export default {
       }
 
       // Use pre-fetched pools if provided, otherwise fetch them
-      const pools = _pools || await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo]);
-      console.log(`getTradesUniswap: Using ${_pools ? 'pre-fetched' : 'newly fetched'} pools (${pools.length} total)`);
+      const pools = _pools || await findPossiblePools(tokensByAddresses.value[_newFrom], tokensByAddresses.value[_newTo], intermediates);
+      console.log(`getTradesUniswap: Using ${_pools ? 'pre-fetched' : 'newly fetched'} pools (${pools.length} total, including intermediate routes)`);
       
       // FINDING TRADES
       const tokenDecimals = tokensByAddresses.value[_newFrom].decimals;

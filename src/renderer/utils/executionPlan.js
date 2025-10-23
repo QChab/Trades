@@ -96,7 +96,7 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
         const poolIdentifier = pool.poolAddress || pool.poolId || 'unknown';
 
         console.log(`      ${poolIdx + 1}. ${pool.protocol}: ${inputTokenSymbol}→${outputTokenSymbol}`);
-        console.log(`         Pool: ${poolIdentifier.slice(0, 10)}...`);
+        console.log(`         Pool: ${poolIdentifier}`);
         console.log(`         Allocation: ${(pool.percentage * 100).toFixed(1)}% of level ${level.level} input${pool.shouldUseAllBalance ? ' [USE ALL]' : ''}`);
 
         // Display wrap/unwrap operation if applicable

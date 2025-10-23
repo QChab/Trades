@@ -17,6 +17,11 @@ const TEST_PARAMS = {
     symbol: 'SEV',
     decimals: 18
   },
+  tokenOutObject: {
+    address: '0xb2f1134accf58b762efca758def19b2b88e8b978', // ETH
+    symbol: 'EIG3',
+    decimals: 18
+  },
   // tokenInObject: {
   //   address: '0x0000000000000000000000000000000000000000', // osETH
   //   symbol: 'ETH',
@@ -269,20 +274,20 @@ describe("Real Swap Integration Test", function () {
 
     // if (contractCallArgs.encoderTargets.length <= 1) return console.log('not interesting tx to try')
     // Execute the swap
-    const tx = await walletBundler.encodeAndExecuteaaaaaYops(
-      contractCallArgs.fromToken,
-      contractCallArgs.fromAmount,
-      contractCallArgs.toToken,
-      contractCallArgs.encoderTargets,
-      contractCallArgs.encoderData,
-      contractCallArgs.wrapOperations,
-      {
-        value: msgValue,
-        maxFeePerGas: maxFeePerGas,
-        maxPriorityFeePerGas: maxPriorityFeePerGas,
-        gasLimit: 2000000  // Fixed gas limit to skip estimation and see actual error
-      }
-    );
+    // const tx = await walletBundler.encodeAndExecuteaaaaaYops(
+    //   contractCallArgs.fromToken,
+    //   contractCallArgs.fromAmount,
+    //   contractCallArgs.toToken,
+    //   contractCallArgs.encoderTargets,
+    //   contractCallArgs.encoderData,
+    //   contractCallArgs.wrapOperations,
+    //   {
+    //     value: msgValue,
+    //     maxFeePerGas: maxFeePerGas,
+    //     maxPriorityFeePerGas: maxPriorityFeePerGas,
+    //     gasLimit: 2000000  // Fixed gas limit to skip estimation and see actual error
+    //   }
+    // );
 
     console.log(`   Transaction Hash: ${tx.hash}`);
     console.log("   Waiting for confirmation...");

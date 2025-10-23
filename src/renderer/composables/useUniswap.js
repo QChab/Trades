@@ -270,10 +270,33 @@ export function useUniswapV4() {
     return {tokenA, tokenB}
   }
   // --- Path finding ---
-  async function findPossiblePools(tokenInObject, tokenOutObject) {
+  async function findPossiblePools(tokenInObject, tokenOutObject, intermediates = []) {
     const tokenIn = tokenInObject.address.toLowerCase();
     const tokenOut = tokenOutObject.address.toLowerCase();
-    
+
+    // Build intermediate addresses list (use ETH address for Uniswap, not WETH)
+    const intermediateAddresses = intermediates
+      .map(inter => inter.isETH ? "0x0000000000000000000000000000000000000000" : inter.address.toLowerCase())
+      .filter((addr, index, self) => self.indexOf(addr) === index); // deduplicate
+
+    // Default intermediates if none provided (backwards compatibility)
+    const defaultIntermediates = [
+      "0x0000000000000000000000000000000000000000", // ETH
+      "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", // USDC
+      "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
+      "0x6b175474e89094c44da98b954eedeac495271d0f"  // DAI
+    ];
+
+    const allIntermediates = intermediateAddresses.length > 0
+      ? intermediateAddresses
+      : defaultIntermediates;
+
+    // Build GraphQL list strings for intermediates
+    const token0Intermediates = allIntermediates.map(addr => `"${addr}"`).join(',\n                  ');
+    const token1Intermediates = allIntermediates
+      .filter(addr => addr !== "0x0000000000000000000000000000000000000000") // Exclude ETH from token1
+      .map(addr => `"${addr}"`).join(',\n                  ');
+
     // --- 1) Fetch all pools involving tokens and trusted intermediates ---
     const firstAddressAlphabet = tokenIn < tokenOut ? tokenIn : tokenOut;
     const lastAddressAlphabet = tokenIn < tokenOut ? tokenOut : tokenIn;
@@ -328,30 +351,21 @@ export function useUniswapV4() {
       query($a: String!, $b: String!) {
         poolsInBetween: pools(
           where: {
-            or: [
-              {
-                token0_in: [
-                  $a,
-                  $b,
-                  "0x0000000000000000000000000000000000000000",
-                  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-                  "0xdac17f958d2ee523a2206206994597c13d831ec7",
-                  "0x6b175474e89094c44da98b954eedeac495271d0f"
-                ],
-                liquidity_not: "0"
-              }, {
-                token1_in: [
-                  $a,
-                  $b,
-                  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-                  "0xdac17f958d2ee523a2206206994597c13d831ec7",
-                  "0x6b175474e89094c44da98b954eedeac495271d0f"
-                ],
-                liquidity_not: "0"
-              }
-            ]
+            token0_in: [
+              $a,
+              $b,
+              ${token0Intermediates}
+            ],
+            token1_in: [
+              $a,
+              $b,
+              ${token1Intermediates}
+            ],
+            liquidity_not: "0"
           },
-          first: 1000
+          first: 1000,
+          orderBy: totalValueLockedUSD,
+          orderDirection: desc
         ) {
           id feeTier sqrtPrice hooks tick tickSpacing liquidity totalValueLockedUSD
           token0 { id decimals symbol } token1 { id decimals symbol }
@@ -367,7 +381,24 @@ export function useUniswapV4() {
       request(SUBGRAPH_URL, poolsOutQuery, { a: tokenIn, b: tokenOut }),
       request(SUBGRAPH_URL, poolsInBetweenQuery, { a: tokenIn, b: tokenOut })
     ])
-  
+
+    // Log fetched pools by category
+    console.log(`📊 Uniswap pool fetch results for ${tokenInObject.symbol} → ${tokenOutObject.symbol}:`);
+    console.log(`   Direct pools: ${poolsDirect?.length || 0}`);
+    console.log(`   Out pools: ${poolsOut?.length || 0}`);
+    console.log(`   InBetween pools: ${poolsInBetween?.length || 0}`);
+
+    // Log unique token pairs in InBetween pools
+    if (poolsInBetween && poolsInBetween.length > 0) {
+      const pairSet = new Set();
+      poolsInBetween.forEach(p => {
+        if (p.token0 && p.token1) {
+          pairSet.add(`${p.token0.symbol}/${p.token1.symbol}`);
+        }
+      });
+      console.log(`   InBetween pairs: ${Array.from(pairSet).join(', ')}`);
+    }
+
       // --- 3) Combine and dedupe ---
     const rawPools = [...poolsDirect, ...poolsOut, ...poolsInBetween];
     const unique = new Map();
@@ -408,6 +439,12 @@ export function useUniswapV4() {
     }
 
     console.log('Sane pools: ' + pools.length);
+
+    // Log final pool token pairs
+    if (pools.length > 0) {
+      const poolPairs = pools.map(p => `${p.token0.symbol}/${p.token1.symbol}`).join(', ');
+      console.log(`   Final pool pairs: ${poolPairs}`);
+    }
 
     return pools;
   }
