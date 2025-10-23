@@ -454,7 +454,8 @@ export async function getAllQuotes({
         if (result.value && result.value.result !== null) {
           console.log(`  ✅ ${protocolName}: Quote received`);
         } else {
-          console.log(`  ⚠️ ${protocolName}: Returned null (failed or timed out)`);
+          console.error(`  ⚠️ ${protocolName}: Returned null (failed or timed out)`);
+          throw new Error('⚠️ Quote on WalletBundler failed, try again');
         }
       } else {
         // Handle other protocols

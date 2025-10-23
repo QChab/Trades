@@ -201,7 +201,7 @@ export async function useMixedUniswapBalancer({
 
   } catch (error) {
     console.error('❌ Mixed routing error:', error);
-    return results;
+    throw error;
   }
 }
 

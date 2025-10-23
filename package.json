@@ -1,6 +1,6 @@
 {
   "name": "trades",
-  "version": "2.1.10",
+  "version": "2.1.11",
   "description": "App for manual and automated trades of ERC20 tokens.",
   "main": "main.mjs",
   "type": "module",
