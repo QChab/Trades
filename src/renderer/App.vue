@@ -487,56 +487,26 @@
           return;
         }
 
-        // Filter valid tokens (must have address)
+        // Filter valid tokens (must have address and not be zero address/ETH)
         const validTokens = currentSettings.value.tokens.filter(token =>
-          token.address && token.address !== ''
+          token.address &&
+          token.address !== '' &&
+          token.address.toLowerCase() !== ethers.constants.AddressZero.toLowerCase()
         );
 
-        if (validTokens.length === 0) {
+        // Track ETH token separately if it exists
+        const ethToken = currentSettings.value.tokens.find(token =>
+          token.address && token.address.toLowerCase() === ethers.constants.AddressZero.toLowerCase()
+        );
+
+        if (validTokens.length === 0 && !ethToken) {
           return;
         }
 
         const BATCH_SIZE = 5000; // Process 5000 wallets at a time
         const CONTRACT_ADDRESS = '0xa3048fbD1d338A879944030B675427C5aA55E5F0';
 
-        // Check network
-        try {
-          const network = await toRaw(provider.value).getNetwork();
-          console.log('Network check:', {
-            chainId: network.chainId,
-            name: network.name
-          });
-        } catch (err) {
-          console.error('Error checking network:', err);
-        }
-
-        // Verify contract exists
-        try {
-          const contractCode = await toRaw(provider.value).getCode(CONTRACT_ADDRESS);
-          console.log('Contract code check:', {
-            address: CONTRACT_ADDRESS,
-            exists: contractCode !== '0x',
-            codeLength: contractCode.length
-          });
-
-          if (contractCode === '0x') {
-            console.error('Contract does not exist at address:', CONTRACT_ADDRESS);
-            throw new Error(`Contract not found at ${CONTRACT_ADDRESS}`);
-          }
-        } catch (err) {
-          console.error('Error checking contract:', err);
-          throw err;
-        }
-
-        // Verify method selector
-        const expectedSelector = ethers.utils.id('getBalancesForTokens(bytes,address[])').slice(0, 10);
-        console.log('Method selector verification:', {
-          expected: expectedSelector,
-          using: '0x59f297a9',
-          match: expectedSelector === '0x59f297a9'
-        });
-
-        const METHOD_SELECTOR = expectedSelector;
+        const METHOD_SELECTOR = ethers.utils.id('getBalancesForTokens(bytes,address[])').slice(0, 10);
 
         // Helper: ABI-encode address (32 bytes, left-padded)
         const abiEncodeAddress = (addr) => {
@@ -596,13 +566,6 @@
             }
           }
 
-          console.log('Encoding with ethers ABI coder:', {
-            numberOfWallets,
-            addressesBytesLength: addressesBytes.length,
-            tokenCount,
-            tokenAddresses: validTokens.map(t => t.address)
-          });
-
           // Encode the function call using ethers
           const calldata = METHOD_SELECTOR + abiCoder.encode(
             ['bytes', 'address[]'],
@@ -611,35 +574,14 @@
 
           // Make the RPC call
           try {
-            console.log('Making RPC call to contract:', CONTRACT_ADDRESS);
-            console.log('Calldata:', calldata);
-
             const result = await toRaw(provider.value).call({
               to: CONTRACT_ADDRESS,
               data: calldata,
             });
 
-            console.log('RPC result:', result);
-            console.log('Result length:', result?.length);
-
-            // Decode the response
-            // Skip first 166 characters (VBA: Mid(localResponse, 167))
-            // This skips: response header with offset and length info
-            const responseData = result.slice(166);
-
-            console.log('Response data after slice(166):', responseData?.slice(0, 100) + '...');
-
-            if (!responseData || responseData.length === 0) {
-              throw new Error(`Empty response data from contract. Full result: ${result}`);
-            }
-
-            const balancesPerWallet = tokenCount;
-            const lengthPerBalance = 64;
-            const expectedLength = numberOfWallets * balancesPerWallet * lengthPerBalance;
-
-            if (responseData.length < expectedLength) {
-              console.warn(`Response data length (${responseData.length}) is less than expected (${expectedLength})`);
-            }
+            // Decode the response using ethers ABI decoder
+            const decoded = abiCoder.decode(['uint256[]'], result);
+            const balances = decoded[0]; // Get the array of balances
 
             // Parse balances for each wallet
             for (let walletIdx = 0; walletIdx < numberOfWallets; walletIdx++) {
@@ -650,33 +592,21 @@
 
               for (let tokenIdx = 0; tokenIdx < tokenCount; tokenIdx++) {
                 const token = validTokens[tokenIdx];
-                const balanceStartIdx = (walletIdx * balancesPerWallet + tokenIdx) * lengthPerBalance;
-                const balanceHex = responseData.slice(balanceStartIdx, balanceStartIdx + lengthPerBalance);
+                const balanceIndex = walletIdx * tokenCount + tokenIdx;
 
-                // Convert hex to decimal (handle empty or invalid hex)
-                let balance = 0;
-                if (balanceHex && balanceHex.length === 64) {
-                  try {
-                    const balanceRaw = BigInt('0x' + balanceHex);
-                    const decimals = tokenDecimals.get(token.address.toLowerCase()) || 18;
-                    balance = Number(balanceRaw) / Math.pow(10, decimals);
-                  } catch (hexErr) {
-                    console.error(`Error parsing balance hex "${balanceHex}" for ${token.symbol}:`, hexErr);
-                    balance = 0;
-                  }
-                } else if (balanceHex && balanceHex.length > 0) {
-                  console.warn(`Invalid balance hex length (${balanceHex.length}) for ${addressDetail.name} - ${token.symbol}: "${balanceHex}"`);
+                if (balanceIndex >= balances.length) {
+                  console.warn(`Balance index ${balanceIndex} out of range for ${addressDetail.name} - ${token.symbol}`);
+                  continue;
                 }
+
+                const balanceRaw = balances[balanceIndex];
+                const decimals = tokenDecimals.get(token.address.toLowerCase()) || 18;
+                const balance = Number(balanceRaw) / Math.pow(10, decimals);
 
                 addressDetail.balances[token.address.toLowerCase()] = balance;
-
-                if (balance > 0) {
-                  console.log(`${addressDetail.name || addressDetail.address} - ${token.symbol}: ${balance}`);
-                }
               }
             }
 
-            console.log(`Processed batch ${Math.floor(batchStart / BATCH_SIZE) + 1}: wallets ${batchStart + 1} to ${batchEnd}`);
           } catch (err) {
             console.error(`Error fetching balances for batch ${batchStart}-${batchEnd}:`, err);
             console.error('Call data:', calldata);
@@ -688,6 +618,24 @@
                 await refreshBalance(addressDetail, token);
                 await new Promise(r => setTimeout(r, 100));
               }
+            }
+          }
+        }
+
+        // Fetch ETH balances separately if ETH token exists
+        if (ethToken) {
+          console.log('Fetching ETH balances separately for all wallets...');
+          for (const addressDetail of loadedAddresses.value) {
+            try {
+              const ethBalance = await toRaw(provider.value).getBalance(addressDetail.address);
+              const balance = Number(ethBalance) / Math.pow(10, 18); // ETH has 18 decimals
+              if (!addressDetail.balances) addressDetail.balances = {};
+              addressDetail.balances[ethers.constants.AddressZero.toLowerCase()] = balance;
+              if (balance > 0) {
+                console.log(`${addressDetail.name || addressDetail.address} - ETH: ${balance}`);
+              }
+            } catch (err) {
+              console.error(`Error fetching ETH balance for ${addressDetail.address}:`, err);
             }
           }
         }
