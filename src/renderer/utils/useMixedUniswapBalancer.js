@@ -86,8 +86,8 @@ export async function useMixedUniswapBalancer({
     const intermediates = [
       {address: WETH_ADDRESS, symbol: 'WETH', decimals: 18, isETH: true},
       {address: ETH_ADDRESS,  symbol: 'ETH', decimals: 18, isETH: true},
-      {address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol:'USDC', decimals: 18}, // USDC
-      {address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol:'USDT', decimals: 18}, // USDT
+      {address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol:'USDC', decimals: 6}, // USDC - 6 decimals!
+      {address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol:'USDT', decimals: 6}, // USDT - 6 decimals!
       {address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', symbol:'DAI', decimals: 18}, // DAI
       {address: '0x91c65c2a9a3adfe2424ecc4a4890b8334c3a8212', symbol:'ONE', decimals: 18}, // ONE
       {address: '0x965b64ae2C04cfF248e6502C10cF3A4931e1F1d9', symbol:'SEV', decimals: 18}, // SEV
@@ -2254,7 +2254,17 @@ async function optimizeInterGroupSplit(
     'USDC': 6,
     'USDT': 6,
     'DAI': 18,
-    'WBTC': 8
+    'WBTC': 8,
+    'ONE': 18,
+    'SEV': 18,
+    'SEV2': 18,
+    'SEV3': 18,
+    'EIG': 18,
+    'EIG2': 18,
+    'EIG3': 18,
+    'NIN': 18,
+    'NIN2': 18,
+    'NIN3': 18
   };
 
   const numGroups = competingGroups.length;
@@ -2343,7 +2353,10 @@ async function optimizeInterGroupSplit(
             bestSplit = testSplit;
             currentSplit = testSplit;
             improved = true;
-            console.log(`      Iteration ${iteration}: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol} - Split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+            // Only log first iteration to reduce verbosity
+            if (iteration === 1) {
+              console.log(`      Iteration ${iteration}: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol} - Split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+            }
             break outerLoop;
           }
         }
@@ -2370,7 +2383,10 @@ async function optimizeInterGroupSplit(
             bestSplit = testSplit;
             currentSplit = testSplit;
             improved = true;
-            console.log(`      Iteration ${iteration}: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol} - Split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+            // Only log first iteration to reduce verbosity
+            if (iteration === 1) {
+              console.log(`      Iteration ${iteration}: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol} - Split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
+            }
             break outerLoop;
           }
         }
@@ -2391,7 +2407,8 @@ async function optimizeInterGroupSplit(
     }
   }
 
-  // console.log(`      ✓ Optimized inter-group split: ${bestSplit.map(x => (x * 100).toFixed(3) + '%').join(' / ')}`);
+  // Log final result after optimization completes
+  console.log(`      ✓ Final (iteration ${iteration}): ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol} - Split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
 
   // CONSOLIDATE: Redistribute tiny allocations to groups with same input token
   // Then cascade removal to downstream groups that lose their only input source
@@ -2534,7 +2551,17 @@ async function evaluateInterGroupSplit(
     'USDC': 6,
     'USDT': 6,
     'DAI': 18,
-    'WBTC': 8
+    'WBTC': 8,
+    'ONE': 18,
+    'SEV': 18,
+    'SEV2': 18,
+    'SEV3': 18,
+    'EIG': 18,
+    'EIG2': 18,
+    'EIG3': 18,
+    'NIN': 18,
+    'NIN2': 18,
+    'NIN3': 18
   };
 
   // Calculate outputs for each competing group with its split
@@ -2546,7 +2573,7 @@ async function evaluateInterGroupSplit(
 
     // OPTIMIZATION: Skip expensive intra-group optimization for groups with < 2.5% allocation
     // The output difference is negligible and not worth 6-11 iterations
-    if (split[i] < 0.025 && group.pools.length > 1) {
+    if (split[i] < 0.01 && group.pools.length > 1) {
       // Use simple single-best-pool strategy for tiny allocations
       const groupTokenIn = { symbol: group.inputToken, decimals: tokenDecimalsLookup[group.inputToken] || 18, address: tokenIn.address };
       const groupTokenOut = { symbol: group.outputToken, decimals: tokenDecimalsLookup[group.outputToken] || 18, address: tokenOut.address };
@@ -2646,7 +2673,7 @@ async function evaluateInterGroupSplit(
           }
         }
 
-        console.log(`         ↳ Downstream competing: ${groupNames} split ${splits.join(' / ')}`);
+        // console.log(`         ↳ Downstream competing: ${groupNames} split ${splits.join(' / ')}`);
       }
     }
   }
@@ -2918,7 +2945,7 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
   const groupInputAmounts = new Map(); // tokenPairKey -> input amount for this group
 
   // GLOBAL OPTIMIZATION LOOP: Iterate across all levels to allow cross-level convergence
-  const maxGlobalIterations = 2; // Reduced from 20 - no improvement after iteration 1 in practice
+  const maxGlobalIterations = 3; // Reduced from 20 - no improvement after iteration 1 in practice
   let globalIteration = 0;
   let previousGlobalOutput = BigNumber.from(0);
 
@@ -2971,7 +2998,17 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
       'USDC': 6,
       'USDT': 6,
       'DAI': 18,
-      'WBTC': 8
+      'WBTC': 8,
+      'ONE': 18,
+      'SEV': 18,
+      'SEV2': 18,
+      'SEV3': 18,
+      'EIG': 18,
+      'EIG2': 18,
+      'EIG3': 18,
+      'NIN': 18,
+      'NIN2': 18,
+      'NIN3': 18
     };
 
     for (const competingGroups of competingAtLevel) {
@@ -3035,7 +3072,7 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
           groupOptimizations,
           groupInitialAllocations,
           poolInitialAllocations,
-          30  // maxIterationsOverride: 30 iterations per level in global optimization
+          50  // maxIterationsOverride: 50 iterations per level in global optimization
         );
 
         // Accumulate removed groups from this optimization
@@ -3150,7 +3187,17 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
     'USDC': 6,
     'USDT': 6,
     'DAI': 18,
-    'WBTC': 8
+    'WBTC': 8,
+    'ONE': 18,
+    'SEV': 18,
+    'SEV2': 18,
+    'SEV3': 18,
+    'EIG': 18,
+    'EIG2': 18,
+    'EIG3': 18,
+    'NIN': 18,
+    'NIN2': 18,
+    'NIN3': 18
   };
 
   console.log(`\n✅ Optimization Complete:`);
@@ -3295,19 +3342,32 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
       const percentageOfLevelInput = poolPercentageWithinGroup * groupPercentageOfLevel;
 
       // FILTER: Skip pools with allocation < 0.02% (0.0002) to save gas
-      // BUT: NEVER skip if output token is consumed by downstream levels
-      const isConsumedDownstream = tokenPairGroups.some(g =>
-        g.level > level &&
-        getTokenSymbol(g.inputToken) === outputTokenSymbol
-      );
+      // EXCEPTION: Keep pool if output is consumed by a downstream pool with meaningful allocation
+      const MIN_ALLOCATION = 0.0002; // 0.02%
 
-      if (percentageOfLevelInput < 0.0002 && !isConsumedDownstream) {
-        // console.log(`      ⚠️  Skipping pool ${pool.poolAddress?.slice(0, 10)}... at Level ${level}: ${(percentageOfLevelInput * 100).toFixed(4)}% (< 0.02% threshold, not consumed downstream)`);
-        continue; // Skip this pool
-      }
+      if (percentageOfLevelInput < MIN_ALLOCATION) {
+        // Check if any downstream consumer has meaningful allocation
+        const downstreamConsumers = tokenPairGroups.filter(g =>
+          g.level > level &&
+          getTokenSymbol(g.inputToken) === outputTokenSymbol
+        );
 
-      if (isConsumedDownstream && percentageOfLevelInput < 0.0002) {
-        console.log(`      ⚠️  Keeping pool ${pool.poolAddress?.slice(0, 10)}... at Level ${level}: ${(percentageOfLevelInput * 100).toFixed(4)}% (< 0.02% BUT consumed by Level ${tokenPairGroups.find(g => g.level > level && getTokenSymbol(g.inputToken) === outputTokenSymbol)?.level})`);
+        let hasSignificantConsumer = false;
+        for (const consumer of downstreamConsumers) {
+          const consumerOpt = groupOptimizations.get(consumer.tokenPairKey);
+          const consumerPercentage = consumerOpt?.inputPercentage || 0;
+
+          if (consumerPercentage >= MIN_ALLOCATION) {
+            hasSignificantConsumer = true;
+            console.log(`      ⚠️  Keeping pool ${pool.poolAddress?.slice(0, 10)}... at Level ${level}: ${(percentageOfLevelInput * 100).toFixed(4)}% (< 0.02% BUT consumed by ${consumer.tokenPairKey} with ${(consumerPercentage * 100).toFixed(2)}%)`);
+            break;
+          }
+        }
+
+        if (!hasSignificantConsumer) {
+          // console.log(`      ⚠️  Skipping pool ${pool.poolAddress?.slice(0, 10)}... at Level ${level}: ${(percentageOfLevelInput * 100).toFixed(4)}% (< 0.02% threshold, no significant downstream consumers)`);
+          continue; // Skip this pool
+        }
       }
 
       // Get exact input and output amounts from optimization
@@ -3518,8 +3578,50 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
       };
     });
 
+  // CRITICAL: Second validation pass - remove orphaned pools whose input isn't produced
+  // This handles cascading removals where a pool was filtered but downstream pools weren't
+  console.log('\n🔍 Validating pool connectivity...');
+
+  // Track which tokens are available at each level (start with initial input from first level)
+  const availableTokens = new Set();
+
+  // Determine initial input token from Level 0 pools
+  if (levels.length > 0 && levels[0].pools.length > 0) {
+    const firstPool = levels[0].pools[0];
+    const initialToken = getTokenSymbol(firstPool.inputToken);
+    availableTokens.add(initialToken);
+    console.log(`   Initial token: ${initialToken}`);
+  }
+
+  // Process each level and remove orphaned pools
+  const validatedLevels = levels.map((level, idx) => {
+    const validPools = level.pools.filter(pool => {
+      const inputToken = getTokenSymbol(pool.inputToken);
+      const hasValidInput = availableTokens.has(inputToken);
+
+      if (!hasValidInput) {
+        console.log(`   ⚠️  Removing orphaned pool at Level ${level.level}: ${inputToken}→${getTokenSymbol(pool.outputToken)} (no source for ${inputToken})`);
+      }
+
+      return hasValidInput;
+    });
+
+    // Add all output tokens from valid pools to available set for next level
+    validPools.forEach(pool => {
+      const outputToken = getTokenSymbol(pool.outputToken);
+      availableTokens.add(outputToken);
+    });
+
+    return {
+      level: level.level,
+      pools: validPools
+    };
+  }).filter(level => level.pools.length > 0); // Remove empty levels
+
+  console.log(`✓ Validation complete: ${levels.length} → ${validatedLevels.length} levels`);
+
   return {
-    levels,
+    levels: validatedLevels,
     poolMap
   };
 }
