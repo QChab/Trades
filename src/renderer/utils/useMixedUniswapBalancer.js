@@ -688,6 +688,88 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
             estimatedGas: 180000
           });
         }
+
+        // IMPORTANT: Add 3-hop paths starting with Balancer
+        // E.g., EIG → SEV (Balancer) → ONE → ETH
+        if (!intermediate.isETH) {
+          const balancerLeg1Output = balancerLeg1[0].outputAmount;
+
+          // Try going through ALL other intermediates as second hop
+          const secondIntermediates = intermediates.filter(int2 =>
+            int2.address.toLowerCase() !== intermediate.address.toLowerCase() && // Not same as first intermediate
+            int2.address.toLowerCase() !== tokenIn.address.toLowerCase() // Not same as input
+          );
+
+          for (const secondIntermediate of secondIntermediates) {
+            const secondIntermediateForUniswap = secondIntermediate.isETH
+              ? { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 }
+              : secondIntermediate;
+
+            // Second leg: intermediate1 → intermediate2 (e.g., SEV → ONE)
+            const uniswapLeg2ToIntermediate2 = await discoverUniswapPaths(
+              intermediateForUniswap,
+              secondIntermediateForUniswap,
+              balancerLeg1Output,
+              prefetchedUniswapPools
+            );
+
+            if (uniswapLeg2ToIntermediate2 && uniswapLeg2ToIntermediate2.length > 0) {
+              const bestLeg2 = selectBestVariant(uniswapLeg2ToIntermediate2);
+
+              // Third leg: intermediate2 → tokenOut (e.g., ONE → ETH)
+              const uniswapLeg3 = await discoverUniswapPaths(
+                secondIntermediateForUniswap,
+                tokenOut,
+                bestLeg2.outputAmount,
+                prefetchedUniswapPools
+              );
+
+              if (uniswapLeg3 && uniswapLeg3.length > 0) {
+                const bestLeg3 = selectBestVariant(uniswapLeg3);
+
+                // CRITICAL: Validate that we don't reuse the same pool
+                const poolIdentifiers = new Set();
+                const legs = [bestLeg2, bestLeg3];
+                let hasReusedPool = false;
+
+                for (const leg of legs) {
+                  if (leg.trade && leg.trade.swaps && leg.trade.swaps[0]) {
+                    const pools = leg.trade.swaps[0].route.pools;
+                    for (const pool of pools) {
+                      const poolId = pool.address || pool.id || pool.poolId;
+                      if (poolId) {
+                        const normalizedId = poolId.toLowerCase();
+                        if (poolIdentifiers.has(normalizedId)) {
+                          hasReusedPool = true;
+                          break;
+                        }
+                        poolIdentifiers.add(normalizedId);
+                      }
+                    }
+                  }
+                  if (hasReusedPool) break;
+                }
+
+                // Only add route if no pool is reused
+                if (!hasReusedPool) {
+                  paths.push({
+                    type: 'cross-dex-balancer-3hop',
+                    protocol: 'mixed',
+                    legs: [
+                      { ...balancerLeg1[0], protocol: 'balancer', token: intermediate },
+                      { ...bestLeg2, protocol: 'uniswap', token: secondIntermediateForUniswap },
+                      { ...bestLeg3, protocol: 'uniswap' }
+                    ],
+                    totalOutput: bestLeg3.outputAmount,
+                    path: `${tokenIn.symbol} -> ${intermediate.symbol} (Balancer) -> ${secondIntermediate.symbol} -> ${tokenOut.symbol} (3-hop)`,
+                    estimatedGas: 280000 // Higher gas for 3 hops with cross-DEX
+                  });
+                  console.log(`   ✓ Found 3-hop route: ${tokenIn.symbol} -> ${intermediate.symbol} (Balancer) -> ${secondIntermediate.symbol} -> ${tokenOut.symbol}`);
+                }
+              }
+            }
+          }
+        }
       } else if (balancerLeg1 && balancerLeg1.length > 0 && balancerLeg1[0].outputAmount && balancerLeg1[0].outputAmount.eq(0)) {
         console.log(`   ⚠ Skipping Balancer leg1: ${tokenIn.symbol} -> ${intermediate.symbol} (zero output)`);
       }
@@ -790,31 +872,49 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
         }
 
         // IMPORTANT: Add 3-hop paths for better liquidity distribution
-        // E.g., AAVE → USDC → ETH → 1INCH
+        // E.g., AAVE → USDC → ETH → 1INCH, or EIG → SEV → ONE → ETH
         if (!intermediate.isETH) {
-          // Try going through ETH as second intermediate
-          const ethIntermediate = { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 };
+          // Try going through ALL other intermediates as second hop (not just ETH)
+          const secondIntermediates = intermediates.filter(int2 =>
+            int2.address.toLowerCase() !== intermediate.address.toLowerCase() && // Not same as first intermediate
+            int2.address.toLowerCase() !== tokenIn.address.toLowerCase() // Not same as input
+          );
 
-          // Second leg: USDC → ETH
-          const uniswapLeg2ToETH = await discoverUniswapPaths(intermediate, ethIntermediate, estimatedMaxOutput, prefetchedUniswapPools);
+          for (const secondIntermediate of secondIntermediates) {
+            const secondIntermediateForUniswap = secondIntermediate.isETH
+              ? { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 }
+              : secondIntermediate;
 
-          if (uniswapLeg2ToETH && uniswapLeg2ToETH.length > 0) {
-            const bestLeg2 = selectBestVariant(uniswapLeg2ToETH);
+            // Second leg: intermediate1 → intermediate2 (e.g., SEV → ONE)
+            const uniswapLeg2ToIntermediate2 = await discoverUniswapPaths(
+              intermediate,
+              secondIntermediateForUniswap,
+              estimatedMaxOutput,
+              prefetchedUniswapPools
+            );
 
-            // Third leg: ETH → tokenOut
-            const uniswapLeg3 = await discoverUniswapPaths(ethIntermediate, tokenOut, bestLeg2.outputAmount, prefetchedUniswapPools);
+            if (uniswapLeg2ToIntermediate2 && uniswapLeg2ToIntermediate2.length > 0) {
+              const bestLeg2 = selectBestVariant(uniswapLeg2ToIntermediate2);
 
-            if (uniswapLeg3 && uniswapLeg3.length > 0) {
+              // Third leg: intermediate2 → tokenOut (e.g., ONE → ETH)
+              const uniswapLeg3 = await discoverUniswapPaths(
+                secondIntermediateForUniswap,
+                tokenOut,
+                bestLeg2.outputAmount,
+                prefetchedUniswapPools
+              );
+
+              if (uniswapLeg3 && uniswapLeg3.length > 0) {
               // IMPORTANT: Calculate output for EACH first-leg pool's specific output chain
               for (let i = 0; i < uniswapLeg1.length; i++) {
                 const firstLegRoute = uniswapLeg1[i];
                 const firstLegOutput = firstLegRoute.outputAmount;
 
                 // Query second leg with THIS specific first leg's output
-                const leg2ForThisRoute = await discoverUniswapPaths(intermediate, ethIntermediate, firstLegOutput, prefetchedUniswapPools);
+                const leg2ForThisRoute = await discoverUniswapPaths(intermediate, secondIntermediateForUniswap, firstLegOutput, prefetchedUniswapPools);
 
                 if (!leg2ForThisRoute || leg2ForThisRoute.length === 0) {
-                  console.log(`   ⚠️  No second leg found for 3-hop pool ${i + 1}`);
+                  // console.log(`   ⚠️  No second leg found for 3-hop pool ${i + 1} via ${secondIntermediate.symbol}`);
                   continue;
                 }
 
@@ -822,10 +922,10 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
                 const secondLegOutput = bestLeg2ForThisRoute.outputAmount;
 
                 // Query third leg with second leg's output
-                const leg3ForThisRoute = await discoverUniswapPaths(ethIntermediate, tokenOut, secondLegOutput, prefetchedUniswapPools);
+                const leg3ForThisRoute = await discoverUniswapPaths(secondIntermediateForUniswap, tokenOut, secondLegOutput, prefetchedUniswapPools);
 
                 if (!leg3ForThisRoute || leg3ForThisRoute.length === 0) {
-                  console.log(`   ⚠️  No third leg found for 3-hop pool ${i + 1}`);
+                  // console.log(`   ⚠️  No third leg found for 3-hop pool ${i + 1} via ${secondIntermediate.symbol}`);
                   continue;
                 }
 
@@ -847,7 +947,7 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
                         const normalizedId = poolId.toLowerCase();
                         if (poolIdentifiers.has(normalizedId)) {
                           hasReusedPool = true;
-                          console.log(`   ⚠️ Filtered 3-hop route: reuses pool ${poolId.slice(0, 10)}... (${tokenIn.symbol} → ${intermediate.symbol} → ETH → ${tokenOut.symbol})`);
+                          // console.log(`   ⚠️ Filtered 3-hop route: reuses pool ${poolId.slice(0, 10)}... (${tokenIn.symbol} → ${intermediate.symbol} → ${secondIntermediate.symbol} → ${tokenOut.symbol})`);
                           break;
                         }
                         poolIdentifiers.add(normalizedId);
@@ -864,19 +964,20 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
                     protocol: 'uniswap',
                     legs: [
                       { ...firstLegRoute, protocol: 'uniswap', token: intermediate },
-                      { ...bestLeg2ForThisRoute, protocol: 'uniswap', token: ethIntermediate },
+                      { ...bestLeg2ForThisRoute, protocol: 'uniswap', token: secondIntermediateForUniswap },
                       { ...bestLeg3, protocol: 'uniswap' }
                     ],
                     totalOutput: bestLeg3.outputAmount, // Now specific to this route!
-                    path: `${tokenIn.symbol} -> ${intermediate.symbol} (pool ${i + 1}) -> ETH -> ${tokenOut.symbol} (Uniswap 3-hop)`,
+                    path: `${tokenIn.symbol} -> ${intermediate.symbol} (pool ${i + 1}) -> ${secondIntermediate.symbol} -> ${tokenOut.symbol} (Uniswap 3-hop)`,
                     estimatedGas: 250000 // Higher gas for 3 hops
                   });
                 }
               }
 
-              console.log(`   ✓ Found 3-hop routes: ${tokenIn.symbol} -> ${intermediate.symbol} -> ETH -> ${tokenOut.symbol}`);
+              console.log(`   ✓ Found 3-hop routes: ${tokenIn.symbol} -> ${intermediate.symbol} -> ${secondIntermediate.symbol} -> ${tokenOut.symbol}`);
             }
           }
+        }
         }
         } else {
           console.log(`   ⚠ Skipping Uniswap leg1: ${tokenIn.symbol} -> ${intermediate.symbol} (zero output)`);
@@ -1935,9 +2036,12 @@ function initializeFromRoutes(routes, groupsWithLevels, totalAmount) {
     const poolsUsed = [];
     const routeDesc = route.description || route.path || `Route ${routeIdx + 1}`;
 
-    if (route.legs && route.legs.length > 0) {
-      // console.log(`         Route ${routeIdx + 1} (${routeDesc}): ${route.legs.length} legs`);
-      for (const leg of route.legs) {
+    // Handle both multi-hop routes (with legs) and direct routes (with paths)
+    const routeLegs = route.legs || route.paths || [];
+
+    if (routeLegs.length > 0) {
+      // console.log(`         Route ${routeIdx + 1} (${routeDesc}): ${routeLegs.length} legs`);
+      for (const leg of routeLegs) {
         // Extract pool identification info
         let poolAddress = null;
         let inputToken = null;
@@ -3074,7 +3178,7 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
       console.log(`      ✓ Adding ${group.tokenPairKey} output: ${groupOutput} ${tokenOut.symbol}`);
       totalOptimizedOutput = totalOptimizedOutput.add(opt.totalOutput);
     } else {
-      console.log(`      ⊗ Skipping ${group.tokenPairKey} (outputs ${group.outputToken}, not ${tokenOut.symbol})`);
+      console.log(`      → Intermediate output: ${group.outputToken} (feeds Level ${group.level + 1})`);
     }
   }
 
