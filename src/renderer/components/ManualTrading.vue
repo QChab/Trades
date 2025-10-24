@@ -3886,12 +3886,22 @@ export default {
     
     async function checkPendingOrdersToTrigger() {
       // Check global pause state first
-      
+
       automaticMessage.value = null;
       try {
         await setTokenPrices(tokens.value);
       } catch (error) {
         console.error('Error updating token prices:', error);
+        // If price update fails, skip order checking to prevent triggering with stale/invalid data
+        console.warn('⚠️ Skipping order checks due to price update failure');
+        return;
+      }
+
+      // Validate ETH price is available and valid
+      // This is critical for dollar-based orders and any price calculations
+      if (!props.ethPrice || isNaN(props.ethPrice) || props.ethPrice <= 0 || !isFinite(props.ethPrice)) {
+        console.warn(`⚠️ Invalid ETH price (${props.ethPrice}), skipping order checks. API may be down.`);
+        return;
       }
 
       if (!props.isInitialBalanceFetchDone) return;
@@ -3922,8 +3932,8 @@ export default {
           if (!order || !order.status || (order.status !== 'pending')) continue;
           try {
             // Validate token addresses first
-            if (!order.fromToken?.address || !order.toToken?.address || 
-                !ethers.utils.isAddress(order.fromToken.address) || 
+            if (!order.fromToken?.address || !order.toToken?.address ||
+                !ethers.utils.isAddress(order.fromToken.address) ||
                 !ethers.utils.isAddress(order.toToken.address)) {
               console.error(`Order ${order.id} has invalid token addresses:`, {
                 fromToken: order.fromToken?.address,
@@ -3931,7 +3941,20 @@ export default {
               });
               continue;
             }
-            
+
+            // Comprehensive price validation helper
+            const isValidPrice = (price) => {
+              return price !== null && price !== undefined && !isNaN(price) && isFinite(price) && price > 0;
+            };
+
+            // Validate order's stored token prices (if dollar-based, these are critical)
+            if (order.limitPriceInDollars) {
+              if (!isValidPrice(order.fromToken?.price) || !isValidPrice(order.toToken?.price)) {
+                console.warn(`⚠️ Dollar-based order ${order.id} skipped: order's stored token prices are invalid (fromToken: ${order.fromToken?.price}, toToken: ${order.toToken?.price})`);
+                continue;
+              }
+            }
+
             // Get current token prices from our updated token list
             const fromToken = tokensByAddresses.value[order.fromToken.address];
             if (!order.automatic) {
@@ -3951,10 +3974,32 @@ export default {
             }
 
             const toToken = tokensByAddresses.value[order.toToken.address];
-            
-            if (!fromToken?.price || !toToken?.price) {
-              console.log(`Missing price data for order ${order.id}: fromToken=${fromToken?.symbol} price=${fromToken?.price}, toToken=${toToken?.symbol} price=${toToken?.price}`);
+
+            // Validate current market prices from tokensByAddresses
+            if (!isValidPrice(fromToken?.price) || !isValidPrice(toToken?.price)) {
+              console.log(`❌ Invalid price data for order ${order.id}: fromToken=${fromToken?.symbol} price=${fromToken?.price}, toToken=${toToken?.symbol} price=${toToken?.price}`);
+
+              // For dollar-based orders, this is critical - log more details
+              if (order.limitPriceInDollars) {
+                console.warn(`⚠️ Dollar-based order ${order.id} skipped: requires valid token prices and ETH price`);
+              }
               continue;
+            }
+
+            // Additional validation for dollar-based orders
+            if (order.limitPriceInDollars) {
+              // Verify ETH price is still valid (in case it changed since initial check)
+              if (!isValidPrice(props.ethPrice)) {
+                console.warn(`⚠️ Dollar-based order ${order.id} skipped: ETH price is invalid (${props.ethPrice})`);
+                continue;
+              }
+
+              // Sanity check: token prices should be reasonable (not extreme values)
+              const maxReasonablePrice = 1e9; // $1 billion per token
+              if (fromToken.price > maxReasonablePrice || toToken.price > maxReasonablePrice) {
+                console.warn(`⚠️ Order ${order.id} skipped: unreasonable token prices (fromToken: $${fromToken.price}, toToken: $${toToken.price})`);
+                continue;
+              }
             }
 
             if (orderExecutionLocks.has(order.id)) {
