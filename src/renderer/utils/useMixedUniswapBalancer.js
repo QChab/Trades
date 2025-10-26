@@ -2844,10 +2844,76 @@ async function evaluateInterGroupSplit(
  * Level N = groups that consume outputs from level N-1
  */
 function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
-  const groupsWithLevels = tokenPairGroups.map(g => ({ ...g, level: -1 }));
+  // CRITICAL FIX: Remove circular pairs BEFORE level assignment
+  // This prevents them from polluting the producer dependency graph
+  console.log(`\n🔍 Detecting circular pairs before level assignment...`);
+  const groupsToRemove = new Set();
+
+  for (let i = 0; i < tokenPairGroups.length; i++) {
+    const groupA = tokenPairGroups[i];
+    if (groupsToRemove.has(groupA)) continue;
+
+    for (let j = i + 1; j < tokenPairGroups.length; j++) {
+      const groupB = tokenPairGroups[j];
+      if (groupsToRemove.has(groupB)) continue;
+
+      // Detect circular flow: A→B and B→A
+      if (getTokenSymbol(groupA.inputToken) === getTokenSymbol(groupB.outputToken) &&
+          getTokenSymbol(groupA.outputToken) === getTokenSymbol(groupB.inputToken)) {
+
+        console.log(`   ⚠️  Circular token flow detected: ${groupA.tokenPairKey} ⇄ ${groupB.tokenPairKey}`);
+
+        // Determine which direction moves forward (away from initial input)
+        // Keep the direction that consumes tokens closer to the initial input
+        const initialInputSymbol = getTokenSymbol(initialInputToken);
+        const inputA = getTokenSymbol(groupA.inputToken);
+        const inputB = getTokenSymbol(groupB.inputToken);
+
+        // Count how many groups produce each input token from the initial input
+        const producersOfInputA = tokenPairGroups.filter(g =>
+          getTokenSymbol(g.outputToken) === inputA &&
+          getTokenSymbol(g.inputToken) === initialInputSymbol
+        ).length;
+        const producersOfInputB = tokenPairGroups.filter(g =>
+          getTokenSymbol(g.outputToken) === inputB &&
+          getTokenSymbol(g.inputToken) === initialInputSymbol
+        ).length;
+
+        console.log(`       ${groupA.tokenPairKey}: input ${inputA} has ${producersOfInputA} direct producer(s) from initial input`);
+        console.log(`       ${groupB.tokenPairKey}: input ${inputB} has ${producersOfInputB} direct producer(s) from initial input`);
+
+        // Keep the direction whose input is produced directly from initial input
+        // This is the "forward" direction; the other is "backward"
+        let groupToRemove;
+        if (producersOfInputA > producersOfInputB) {
+          // A consumes a token closer to initial input - keep A, remove B
+          groupToRemove = groupB;
+        } else if (producersOfInputB > producersOfInputA) {
+          // B consumes a token closer to initial input - keep B, remove A
+          groupToRemove = groupA;
+        } else {
+          // Equal - fall back to route count
+          const routeCountA = groupA.pools.reduce((sum, p) => sum + (p.routeIndices?.length || 0), 0);
+          const routeCountB = groupB.pools.reduce((sum, p) => sum + (p.routeIndices?.length || 0), 0);
+          groupToRemove = (routeCountA >= routeCountB) ? groupB : groupA;
+        }
+
+        groupsToRemove.add(groupToRemove);
+        console.log(`       → Removing ${groupToRemove.tokenPairKey} (fewer routes)`);
+      }
+    }
+  }
+
+  if (groupsToRemove.size > 0) {
+    console.log(`   ✓ Removed ${groupsToRemove.size} circular pair direction(s) before level assignment`);
+  }
+
+  // Filter out circular pairs before processing
+  const filteredGroups = tokenPairGroups.filter(g => !groupsToRemove.has(g));
+  const groupsWithLevels = filteredGroups.map(g => ({ ...g, level: -1 }));
   const tokenProducers = new Map(); // outputToken -> [groups that produce it]
 
-  // Build producer map
+  // Build producer map from filtered groups only
   for (const group of groupsWithLevels) {
     const outputSymbol = getTokenSymbol(group.outputToken);
     if (!tokenProducers.has(outputSymbol)) {
@@ -2877,13 +2943,32 @@ function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
     for (const group of remaining) {
       // Check if this group's input is produced by a lower level
       const inputSymbol = getTokenSymbol(group.inputToken);
+      const outputSymbol = getTokenSymbol(group.outputToken);
       const producers = tokenProducers.get(inputSymbol) || [];
-      const hasUnresolvedDependency = producers.some(p =>
-        p !== group && remaining.has(p)
-      );
+
+      // CRITICAL: Exclude circular partners from dependency check
+      // E.g., ETH→SEV should not wait for SEV→ETH to be assigned
+      const hasUnresolvedDependency = producers.some(p => {
+        if (p === group) return false; // Self
+        if (!remaining.has(p)) return false; // Already assigned
+
+        // Check if p is a circular partner (A→B, B→A)
+        const pInput = getTokenSymbol(p.inputToken);
+        const pOutput = getTokenSymbol(p.outputToken);
+        const isCircularPartner = (pInput === outputSymbol && pOutput === inputSymbol);
+
+        return !isCircularPartner; // Don't wait for circular partner
+      });
 
       if (!hasUnresolvedDependency) {
-        group.level = currentLevel;
+        // CRITICAL: Assign to level AFTER the MAXIMUM producer level
+        // This ensures groups wait for ALL producers to compound the input
+        const assignedProducers = producers.filter(p => p !== group && p.level >= 0);
+        const maxProducerLevel = assignedProducers.length > 0
+          ? Math.max(...assignedProducers.map(p => p.level))
+          : -1; // No producers (initial input)
+
+        group.level = maxProducerLevel + 1;
         assignedThisLevel.push(group);
       }
     }
@@ -2895,79 +2980,6 @@ function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
     }
 
     assignedThisLevel.forEach(g => remaining.delete(g));
-  }
-
-  // CRITICAL FIX: Detect and resolve circular token flows at the same level
-  // Use leg indices from routes to determine correct execution order
-  const maxAssignedLevel = Math.max(...groupsWithLevels.map(g => g.level));
-
-  for (let level = 0; level <= maxAssignedLevel; level++) {
-    const groupsAtLevel = groupsWithLevels.filter(g => g.level === level);
-
-    // Check for circular token flows
-    for (let i = 0; i < groupsAtLevel.length; i++) {
-      for (let j = i + 1; j < groupsAtLevel.length; j++) {
-        const groupA = groupsAtLevel[i];
-        const groupB = groupsAtLevel[j];
-
-        // Detect circular flow: A→B and B→A
-        if (getTokenSymbol(groupA.inputToken) === getTokenSymbol(groupB.outputToken) &&
-            getTokenSymbol(groupA.outputToken) === getTokenSymbol(groupB.inputToken)) {
-          console.log(`   ⚠️  Circular token flow detected at Level ${level}:`);
-          console.log(`       ${groupA.tokenPairKey} ⇄ ${groupB.tokenPairKey}`);
-
-          // Use leg indices to determine which should execute first
-          // Find routes where BOTH token-pairs appear together
-          const routeIndicesA = new Set(groupA.pools.flatMap(p => p.routeIndices || []));
-          const routeIndicesB = new Set(groupB.pools.flatMap(p => p.routeIndices || []));
-          const sharedRoutes = [...routeIndicesA].filter(r => routeIndicesB.has(r));
-
-          console.log(`       Shared routes: [${sharedRoutes.join(', ')}]`);
-
-          if (sharedRoutes.length > 0) {
-            // Check which one appears earlier in shared routes
-            let sumLegA = 0;
-            let sumLegB = 0;
-
-            for (const routeIdx of sharedRoutes) {
-              // Find leg index for groupA in this route
-              for (const pool of groupA.pools) {
-                const idx = pool.routeIndices.indexOf(routeIdx);
-                if (idx !== -1) {
-                  sumLegA += pool.legIndices[idx];
-                  break;
-                }
-              }
-
-              // Find leg index for groupB in this route
-              for (const pool of groupB.pools) {
-                const idx = pool.routeIndices.indexOf(routeIdx);
-                if (idx !== -1) {
-                  sumLegB += pool.legIndices[idx];
-                  break;
-                }
-              }
-            }
-
-            const avgLegA = sumLegA / sharedRoutes.length;
-            const avgLegB = sumLegB / sharedRoutes.length;
-
-            // The one with higher average leg index executes AFTER, so push to next level
-            if (avgLegA > avgLegB) {
-              groupA.level = level + 1;
-              console.log(`       → Moved ${groupA.tokenPairKey} to Level ${level + 1} (appears later in routes)`);
-            } else if (avgLegB > avgLegA) {
-              groupB.level = level + 1;
-              console.log(`       → Moved ${groupB.tokenPairKey} to Level ${level + 1} (appears later in routes)`);
-            } else {
-              console.log(`       ⚠️  Same average - keeping both at Level ${level}`);
-            }
-          } else {
-            console.log(`       ⚠️  No shared routes - keeping both at Level ${level}`);
-          }
-        }
-      }
-    }
   }
 
   return groupsWithLevels;
@@ -3037,6 +3049,33 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
       // If this group outputs the final token, keep it
       if (group.outputToken === tokenOut.symbol) {
         return true;
+      }
+
+      // Check for circular pairs at same level (e.g., ETH⇄SEV at Level 1)
+      // These are competing paths, not dead-ends
+      const circularPartner = groupsWithLevels.find(otherGroup =>
+        otherGroup !== group &&
+        otherGroup.level === group.level &&
+        otherGroup.inputToken === group.outputToken &&
+        otherGroup.outputToken === group.inputToken
+      );
+
+      if (circularPartner) {
+        // Check if this group's OUTPUT is consumed at same or higher level
+        // (circular pairs can have consumers at the same level - competing intermediate paths)
+        const hasOutputConsumer = groupsWithLevels.some(consumer =>
+          consumer !== group &&
+          consumer !== circularPartner &&
+          consumer.level >= group.level &&
+          consumer.inputToken === group.outputToken
+        );
+
+        if (hasOutputConsumer) {
+          // Keep if output is consumed at same level or downstream
+          console.log(`   ✓ Keeping circular pair member: ${group.tokenPairKey} (output ${group.outputToken} consumed at L${group.level}+)`);
+          return true;
+        }
+        // Otherwise, will be filtered as dead-end below
       }
 
       // Check if any downstream group consumes this group's output
@@ -3239,6 +3278,12 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
             continue;
           }
 
+          // Skip groups with 0% or near-zero allocation
+          if (optimization.inputPercentage < 0.0001) {  // Less than 0.01%
+            console.log(`   ⚠️  Skipping group with 0% allocation: ${group.tokenPairKey}`);
+            continue;
+          }
+
           groupInputAmounts.set(group.tokenPairKey, interGroupResult.groupInputs[i]);
           groupOptimizations.set(group.tokenPairKey, optimization);
         }
@@ -3306,7 +3351,7 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
         const oldPct = groupInitialAllocations.get(tokenPairKey);
         groupInitialAllocations.set(tokenPairKey, opt.inputPercentage);
         if (oldPct !== opt.inputPercentage) {
-          console.log(`   ${tokenPairKey}: ${(oldPct * 100).toFixed(1)}% → ${(opt.inputPercentage * 100).toFixed(1)}%`);
+          console.log(`   ${tokenPairKey}: ${(oldPct * 100).toFixed(3)}% → ${(opt.inputPercentage * 100).toFixed(3)}%`);
         }
       }
     }
@@ -3364,7 +3409,7 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
     console.log(`      Input: ${ethers.utils.formatUnits(inputAmt, tokenIn.decimals)} ${group.inputToken}`);
     console.log(`      Output: ${ethers.utils.formatUnits(opt.totalOutput, outputDecimals)} ${group.outputToken}`);
     if (opt.inputPercentage !== undefined) {
-      console.log(`      Share: ${(opt.inputPercentage * 100).toFixed(1)}%`);
+      console.log(`      Share: ${(opt.inputPercentage * 100).toFixed(3)}%`);
     }
 
     // Sum final outputs
@@ -3482,6 +3527,12 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
     const optimization = groupOptimizations.get(group.tokenPairKey);
     const level = group.level;
 
+    // CRITICAL: Skip groups that were consolidated/removed during optimization
+    // These groups have 0% allocation and were removed from groupOptimizations Map
+    if (!optimization) {
+      continue;
+    }
+
     if (!levelMap.has(level)) {
       levelMap.set(level, []);
     }
@@ -3495,8 +3546,8 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
 
       // CRITICAL: Calculate percentage of level input, not just group input
       // percentage = group's share of level × pool's share within group
-      const poolPercentageWithinGroup = optimization?.poolAllocations?.get(pool.poolAddress || pool.poolId) || 0;
-      const groupPercentageOfLevel = optimization?.inputPercentage || 1.0;
+      const poolPercentageWithinGroup = optimization.poolAllocations?.get(pool.poolAddress || pool.poolId) || 0;
+      const groupPercentageOfLevel = optimization.inputPercentage || 0;  // Should always be defined now
       const percentageOfLevelInput = poolPercentageWithinGroup * groupPercentageOfLevel;
 
       // FILTER: Skip pools with allocation < 0.02% (0.0002) to save gas
