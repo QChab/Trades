@@ -3420,7 +3420,17 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
       const poolAddr = pool.poolAddress || pool.poolKey || 'unknown';
       const displayAddr = poolAddr.length > 10 ? poolAddr.slice(0, 10) + '...' : poolAddr;
       const pct = pool.percentage !== undefined ? (pool.percentage * 100).toFixed(1) + '%' : 'N/A';
-      console.log(`      • ${pool.protocol} (${displayAddr}): ${pool.inputToken?.symbol || pool.inputToken}→${pool.outputToken?.symbol || pool.outputToken} at ${pct}`);
+
+      // Determine wrap operation description
+      const wrapOpDescriptions = {
+        1: ' [Wrap ETH→WETH before]',
+        2: ' [Wrap ETH→WETH after]',
+        3: ' [Unwrap WETH→ETH before]',
+        4: ' [Unwrap WETH→ETH after]'
+      };
+      const wrapOpDesc = pool.wrapOperation ? wrapOpDescriptions[pool.wrapOperation] || '' : '';
+
+      console.log(`      • ${pool.protocol} (${displayAddr}): ${pool.inputToken?.symbol || pool.inputToken}→${pool.outputToken?.symbol || pool.outputToken} at ${pct}${wrapOpDesc}`);
     });
   });
 

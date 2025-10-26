@@ -635,6 +635,152 @@ The cross-DEX routing system has been significantly enhanced with the following 
 - Multi-hop convergence path support (currently disabled due to performance)
 - Hierarchical optimization to properly handle pool convergence
 
+### Advanced Path Discovery and Pool Consolidation (Latest Optimizations)
+
+#### 3-Hop Path Discovery Without ETH Restrictions
+
+**Problem Solved**: Path discovery asymmetry where ONE→SEV found only 5 routes while SEV→ONE found 11 routes.
+
+**Root Cause**: The 3-hop discovery code had `if (!intermediate.isETH)` restrictions at lines 694 and 944 that prevented discovering 3-hop paths when ETH/WETH was the first intermediate token.
+
+**Fix Applied** (`useMixedUniswapBalancer.js`):
+- Removed the `if (!intermediate.isETH)` condition from both Balancer-based and Uniswap-based 3-hop discovery sections
+- Now discovers routes like ONE→ETH→EIG→SEV even when ETH is the first intermediate
+- Both directions (ONE→SEV and SEV→ONE) now symmetrically discover all available 3-hop paths
+
+**Impact**:
+```javascript
+// Before: ONE→SEV discovery skipped 3-hop routes
+intermediates = [ETH, ONE, EIG, ...]
+if (!intermediate.isETH) {  // ❌ Skips when intermediate is ETH
+  // 3-hop discovery code
+}
+
+// After: ONE→SEV discovers all paths
+intermediates = [ETH, ONE, EIG, ...]
+// No restriction - always runs 3-hop discovery ✅
+// Discovers: ONE→ETH→EIG→SEV, ONE→ETH→USDC→SEV, etc.
+```
+
+#### Pool Consolidation System
+
+The optimization system implements intelligent pool filtering to reduce gas costs while maintaining optimal routing:
+
+**1. Tiny Pool Filtering** (MIN_ALLOCATION = 0.02%)
+- Pools with < 0.02% allocation are candidates for removal
+- Exception: Kept if consumed by significant downstream pools (≥ 0.02%)
+- Location: `buildPoolExecutionStructureFromGroups()` lines 3490-3520
+
+**Logic**:
+```javascript
+if (percentageOfLevelInput < 0.0002) {  // < 0.02%
+  // Check if downstream consumers have meaningful allocation
+  const downstreamConsumers = findConsumersForToken(outputToken);
+
+  if (hasSignificantConsumer >= 0.0002) {
+    keepPool();  // Needed to feed significant downstream pool
+  } else {
+    skipPool();  // Wastes gas for negligible output
+  }
+}
+```
+
+**2. Orphaned Pool Removal** (Cascading Validation)
+- After filtering, validates that each pool's input token is produced by previous levels
+- Removes pools whose input source was filtered out
+- Prevents impossible execution scenarios
+- Location: `buildPoolExecutionStructureFromGroups()` lines 3800-3830
+
+**Example**:
+```javascript
+// After filtering removes ONE→SEV (0.000% allocation):
+Level 0: [pools producing ONE removed]
+Level 1: SEV→ETH still present ❌
+
+// Orphaned pool validation:
+availableTokens = {initial input token}
+for each level:
+  for each pool:
+    if (!availableTokens.has(pool.inputToken)) {
+      remove pool;  // ✅ Removes SEV→ETH (no SEV source)
+    }
+  add pool.outputToken to availableTokens;
+```
+
+**3. Competing Output Token Consolidation**
+- When multiple groups compete for same input token with different outputs
+- Tiny competing outputs (< 0.02%) are consolidated into the largest output
+- Their percentages are added to the dominant route
+- Location: `buildPoolExecutionStructureFromGroups()` lines 3549-3622
+
+**Example**:
+```javascript
+// Before consolidation:
+Level 1: SEV→ETH (99.992%)
+Level 1: SEV→EIG (0.008%)
+
+// After consolidation:
+Level 1: SEV→ETH (100.000%)  // ✅ Absorbed SEV→EIG allocation
+// SEV→EIG removed (wasted gas for negligible gain)
+```
+
+**Benefits**:
+- Reduces gas costs by eliminating negligible pools
+- Maintains routing optimality (tiny pools don't significantly affect output)
+- Prevents execution failures from orphaned token dependencies
+- Ensures clean execution structure with meaningful allocations
+
+#### Wrap/Unwrap Operation Display
+
+**Problem Solved**: When Balancer outputs WETH and Uniswap needs ETH, the conversion wasn't visible:
+```
+Level 0: Balancer ONE → WETH
+Level 1: Uniswap ETH → SEV
+```
+Users couldn't see how WETH became ETH!
+
+**Fix Applied** (`useMixedUniswapBalancer.js` lines 3424-3433):
+- Added wrap operation descriptions to pool execution structure display
+- Shows explicit conversion operations inline with pool information
+
+**New Display Format**:
+```
+Level 0:
+  • balancer (0x1a2b3c...): ONE→WETH at 100.0% [Unwrap WETH→ETH after]
+
+Level 1:
+  • uniswap (0x4d5e6f...): ETH→SEV at 100.0%
+```
+
+**Wrap Operation Codes**:
+- **[Wrap ETH→WETH before]**: wrapOp=1 - Balancer pool needs WETH input
+- **[Wrap ETH→WETH after]**: wrapOp=2 - Uniswap outputs ETH but next level needs WETH
+- **[Unwrap WETH→ETH before]**: wrapOp=3 - Uniswap pool needs ETH input
+- **[Unwrap WETH→ETH after]**: wrapOp=4 - Balancer outputs WETH but next level needs ETH
+
+**Implementation**:
+```javascript
+const wrapOpDescriptions = {
+  1: ' [Wrap ETH→WETH before]',
+  2: ' [Wrap ETH→WETH after]',
+  3: ' [Unwrap WETH→ETH before]',
+  4: ' [Unwrap WETH→ETH after]'
+};
+const wrapOpDesc = pool.wrapOperation ? wrapOpDescriptions[pool.wrapOperation] || '' : '';
+```
+
+**Detection Logic** (already existed, now visible):
+- Input conversion: Checks if pool expects different form than provided (lines 3547-3555)
+- Output conversion: Checks if next level consumers need different form (lines 3560-3596)
+- Mixed consumption: Handles cases where multiple consuming pools need different forms
+- Final output: Ensures user receives expected token form (ETH or WETH)
+
+**Critical Cases Handled**:
+1. **Cross-DEX Bridge**: Balancer (WETH) → Uniswap (ETH) - unwrap after Balancer
+2. **Same Protocol Sequence**: Multiple Balancer hops maintain WETH without conversion
+3. **Mixed Consumption**: Level produces WETH, some consumers need WETH, others need ETH - conversions happen at consumer input
+4. **Final Output**: Always converts to user's expected token form
+
 ### Pool-Based Execution Architecture (CRITICAL)
 
 **IMPORTANT**: After optimization, the system transitions from route-based thinking to pool-based execution. This is a fundamental architectural principle.
