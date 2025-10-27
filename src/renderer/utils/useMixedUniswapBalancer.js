@@ -611,6 +611,13 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
       continue;
     }
 
+    // Skip if would create ETH+WETH mix with input token
+    if ((tokenIn.symbol === 'ETH' && intermediate.symbol === 'WETH') ||
+        (tokenIn.symbol === 'WETH' && intermediate.symbol === 'ETH')) {
+      console.log(`   ⊗ Skipping ${intermediate.symbol} (conflicts with ${tokenIn.symbol})`);
+      continue;
+    }
+
     console.log(`\n   🔍 Trying via ${intermediate.symbol} (${tokenIn.symbol} → ${intermediate.symbol} → ${tokenOut.symbol})...`);
 
     try {
@@ -700,18 +707,39 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
         );
 
         for (const secondIntermediate of secondIntermediates) {
+          // Skip if would create ETH+WETH combination or duplicate ETH/WETH
+          const leg1Symbol = intermediate.symbol;
+          const leg2Symbol = secondIntermediate.symbol;
+          if ((leg1Symbol === 'ETH' && leg2Symbol === 'WETH') ||
+              (leg1Symbol === 'WETH' && leg2Symbol === 'ETH') ||
+              (leg1Symbol === 'ETH' && leg2Symbol === 'ETH') ||
+              (leg1Symbol === 'WETH' && leg2Symbol === 'WETH')) {
+            continue;
+          }
+
           const secondIntermediateForUniswap = secondIntermediate.isETH
             ? { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 }
             : secondIntermediate;
 
-          // Second leg: intermediate1 → intermediate2 (e.g., SEV → ONE)
-          const uniswapLeg2ToIntermediate2 = await discoverUniswapPaths(
-            intermediateForUniswap,
-            secondIntermediateForUniswap,
-            balancerLeg1Output,
-            prefetchedUniswapPools
-          );
+          // Second leg: intermediate1 → intermediate2 (try BOTH Uniswap AND Balancer)
+          const [uniswapLeg2ToIntermediate2, balancerLeg2ToIntermediate2] = await Promise.all([
+            discoverUniswapPaths(
+              intermediateForUniswap,
+              secondIntermediateForUniswap,
+              balancerLeg1Output,
+              prefetchedUniswapPools
+            ),
+            discoverBalancerPaths(
+              intermediate,
+              secondIntermediate,
+              balancerLeg1Output,
+              provider,
+              prefetchedBalancerPools,
+              intermediates
+            )
+          ]);
 
+          // Try Uniswap for leg2
           if (uniswapLeg2ToIntermediate2 && uniswapLeg2ToIntermediate2.length > 0) {
             const bestLeg2 = selectBestVariant(uniswapLeg2ToIntermediate2);
 
@@ -835,6 +863,124 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
               }
             }
           }
+
+          // Try Balancer for leg2 (NEW: Bal→Bal→* combinations)
+          if (balancerLeg2ToIntermediate2 && balancerLeg2ToIntermediate2.length > 0 && balancerLeg2ToIntermediate2[0].outputAmount) {
+            const bestBalancerLeg2 = selectBestVariant(balancerLeg2ToIntermediate2);
+
+            // Third leg: intermediate2 → tokenOut (check BOTH Uniswap AND Balancer)
+            const [uniswapLeg3ForBal, balancerLeg3ForBal] = await Promise.all([
+              discoverUniswapPaths(
+                secondIntermediateForUniswap,
+                tokenOut,
+                bestBalancerLeg2.outputAmount,
+                prefetchedUniswapPools
+              ),
+              discoverBalancerPaths(
+                secondIntermediate,
+                tokenOut,
+                bestBalancerLeg2.outputAmount,
+                provider,
+                prefetchedBalancerPools,
+                intermediates
+              )
+            ]);
+
+            // Create route: Bal→Bal→Uni
+            if (uniswapLeg3ForBal && uniswapLeg3ForBal.length > 0) {
+              const bestUniLeg3 = selectBestVariant(uniswapLeg3ForBal);
+
+              // Check for pool reuse
+              const poolIdentifiers = new Set();
+              let hasReusedPool = false;
+
+              // Check Balancer pools (leg1 and leg2)
+              for (const leg of [balancerLeg1[0], bestBalancerLeg2]) {
+                if (leg.path && leg.path.poolAddresses) {
+                  for (const poolAddr of leg.path.poolAddresses) {
+                    const normalizedId = poolAddr.toLowerCase();
+                    if (poolIdentifiers.has(normalizedId)) {
+                      hasReusedPool = true;
+                      break;
+                    }
+                    poolIdentifiers.add(normalizedId);
+                  }
+                }
+                if (hasReusedPool) break;
+              }
+
+              // Check Uniswap pools (leg3)
+              if (!hasReusedPool && bestUniLeg3.trade && bestUniLeg3.trade.swaps && bestUniLeg3.trade.swaps[0]) {
+                const pools = bestUniLeg3.trade.swaps[0].route.pools;
+                for (const pool of pools) {
+                  const poolId = pool.address || pool.id || pool.poolId;
+                  if (poolId) {
+                    const normalizedId = poolId.toLowerCase();
+                    if (poolIdentifiers.has(normalizedId)) {
+                      hasReusedPool = true;
+                      break;
+                    }
+                    poolIdentifiers.add(normalizedId);
+                  }
+                }
+              }
+
+              if (!hasReusedPool) {
+                paths.push({
+                  type: 'cross-dex-balancer-3hop-mixed',
+                  protocol: 'mixed',
+                  legs: [
+                    { ...balancerLeg1[0], protocol: 'balancer', token: intermediate },
+                    { ...bestBalancerLeg2, protocol: 'balancer', token: secondIntermediate },
+                    { ...bestUniLeg3, protocol: 'uniswap' }
+                  ],
+                  totalOutput: bestUniLeg3.outputAmount,
+                  path: `${tokenIn.symbol} -> ${intermediate.symbol} (Balancer) -> ${secondIntermediate.symbol} (Balancer) -> ${tokenOut.symbol} (Uniswap)`,
+                  estimatedGas: 300000
+                });
+                console.log(`   ✓ Found 3-hop Bal→Bal→Uni route: ${tokenIn.symbol} -> ${intermediate.symbol} -> ${secondIntermediate.symbol} -> ${tokenOut.symbol}`);
+              }
+            }
+
+            // Create route: Bal→Bal→Bal
+            if (balancerLeg3ForBal && balancerLeg3ForBal.length > 0 && balancerLeg3ForBal[0].outputAmount) {
+              const bestBalLeg3 = selectBestVariant(balancerLeg3ForBal);
+
+              // Check for pool reuse
+              const poolIdentifiers = new Set();
+              let hasReusedPool = false;
+
+              for (const leg of [balancerLeg1[0], bestBalancerLeg2, bestBalLeg3]) {
+                if (leg.path && leg.path.poolAddresses) {
+                  for (const poolAddr of leg.path.poolAddresses) {
+                    const normalizedId = poolAddr.toLowerCase();
+                    if (poolIdentifiers.has(normalizedId)) {
+                      hasReusedPool = true;
+                      break;
+                    }
+                    poolIdentifiers.add(normalizedId);
+                  }
+                }
+                if (hasReusedPool) break;
+              }
+
+              if (!hasReusedPool) {
+                paths.push({
+                  type: 'cross-dex-balancer-3hop',
+                  protocol: 'balancer',
+                  legs: [
+                    { ...balancerLeg1[0], protocol: 'balancer', token: intermediate },
+                    { ...bestBalancerLeg2, protocol: 'balancer', token: secondIntermediate },
+                    { ...bestBalLeg3, protocol: 'balancer' }
+                  ],
+                  totalOutput: bestBalLeg3.outputAmount,
+                  path: `${tokenIn.symbol} -> ${intermediate.symbol} -> ${secondIntermediate.symbol} -> ${tokenOut.symbol} (Balancer 3-hop)`,
+                  estimatedGas: 280000
+                });
+                console.log(`   ✓ Found 3-hop Balancer-only route: ${tokenIn.symbol} -> ${intermediate.symbol} -> ${secondIntermediate.symbol} -> ${tokenOut.symbol}`);
+              }
+            }
+          }
         }
       } else if (balancerLeg1 && balancerLeg1.length > 0 && balancerLeg1[0].outputAmount && balancerLeg1[0].outputAmount.eq(0)) {
         console.log(`   ⚠ Skipping Balancer leg1: ${tokenIn.symbol} -> ${intermediate.symbol} (zero output)`);
@@ -946,18 +1092,39 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
         );
 
         for (const secondIntermediate of secondIntermediates) {
+          // Skip if would create ETH+WETH combination or duplicate ETH/WETH
+          const leg1Symbol = intermediate.symbol;
+          const leg2Symbol = secondIntermediate.symbol;
+          if ((leg1Symbol === 'ETH' && leg2Symbol === 'WETH') ||
+              (leg1Symbol === 'WETH' && leg2Symbol === 'ETH') ||
+              (leg1Symbol === 'ETH' && leg2Symbol === 'ETH') ||
+              (leg1Symbol === 'WETH' && leg2Symbol === 'WETH')) {
+            continue;
+          }
+
           const secondIntermediateForUniswap = secondIntermediate.isETH
             ? { address: ETH_ADDRESS, symbol: 'ETH', decimals: 18 }
             : secondIntermediate;
 
-          // Second leg: intermediate1 → intermediate2 (e.g., SEV → ONE)
-          const uniswapLeg2ToIntermediate2 = await discoverUniswapPaths(
-            intermediate,
-            secondIntermediateForUniswap,
-            estimatedMaxOutput,
-            prefetchedUniswapPools
-          );
+          // Second leg: intermediate1 → intermediate2 (try BOTH Uniswap AND Balancer)
+          const [uniswapLeg2ToIntermediate2, balancerLeg2ToIntermediate2] = await Promise.all([
+            discoverUniswapPaths(
+              intermediate,
+              secondIntermediateForUniswap,
+              estimatedMaxOutput,
+              prefetchedUniswapPools
+            ),
+            discoverBalancerPaths(
+              intermediate,
+              secondIntermediate,
+              estimatedMaxOutput,
+              provider,
+              prefetchedBalancerPools,
+              intermediates
+            )
+          ]);
 
+          // Try Uniswap for leg2
           if (uniswapLeg2ToIntermediate2 && uniswapLeg2ToIntermediate2.length > 0) {
             const bestLeg2 = selectBestVariant(uniswapLeg2ToIntermediate2);
 
@@ -1126,6 +1293,221 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
               console.log(`   ✓ Found 3-hop mixed routes: ${tokenIn.symbol} -> ${intermediate.symbol} -> ${secondIntermediate.symbol} -> ${tokenOut.symbol} (Balancer leg3)`);
             }
           }
+
+          // Try Balancer for leg2 (NEW: Uni→Bal→* combinations)
+          if (balancerLeg2ToIntermediate2 && balancerLeg2ToIntermediate2.length > 0) {
+            const bestBalancerLeg2 = selectBestVariant(balancerLeg2ToIntermediate2);
+
+            // Third leg: intermediate2 → tokenOut (check BOTH Uniswap AND Balancer)
+            const [uniswapLeg3ForBal, balancerLeg3ForBal] = await Promise.all([
+              discoverUniswapPaths(
+                secondIntermediateForUniswap,
+                tokenOut,
+                bestBalancerLeg2.outputAmount,
+                prefetchedUniswapPools
+              ),
+              discoverBalancerPaths(
+                secondIntermediate,
+                tokenOut,
+                bestBalancerLeg2.outputAmount,
+                provider,
+                prefetchedBalancerPools,
+                intermediates
+              )
+            ]);
+
+            // Create route with Uniswap third leg (Uni→Bal→Uni)
+            if (uniswapLeg3ForBal && uniswapLeg3ForBal.length > 0) {
+              const bestUniLeg3 = selectBestVariant(uniswapLeg3ForBal);
+
+              // Create route for EACH first-leg pool
+              for (let i = 0; i < uniswapLeg1.length; i++) {
+                const firstLegRoute = uniswapLeg1[i];
+                const firstLegOutput = firstLegRoute.outputAmount;
+
+                // Query second leg with THIS specific first leg's output
+                const leg2ForThisRoute = await discoverBalancerPaths(
+                  intermediate,
+                  secondIntermediate,
+                  firstLegOutput,
+                  provider,
+                  prefetchedBalancerPools,
+                  intermediates
+                );
+
+                if (!leg2ForThisRoute || leg2ForThisRoute.length === 0) {
+                  continue;
+                }
+
+                const bestBalLeg2ForThisRoute = selectBestVariant(leg2ForThisRoute);
+                const secondLegOutput = bestBalLeg2ForThisRoute.outputAmount;
+
+                // Query third leg with second leg's output
+                const leg3ForThisRoute = await discoverUniswapPaths(
+                  secondIntermediateForUniswap,
+                  tokenOut,
+                  secondLegOutput,
+                  prefetchedUniswapPools
+                );
+
+                if (!leg3ForThisRoute || leg3ForThisRoute.length === 0) {
+                  continue;
+                }
+
+                const bestUniLeg3ForThisRoute = selectBestVariant(leg3ForThisRoute);
+
+                // CRITICAL: Validate that we don't reuse the same pool
+                const poolIdentifiers = new Set();
+                const legs = [firstLegRoute, bestBalLeg2ForThisRoute, bestUniLeg3ForThisRoute];
+                let hasReusedPool = false;
+
+                for (const leg of legs) {
+                  // Check Uniswap pools
+                  if (leg.trade && leg.trade.swaps && leg.trade.swaps[0]) {
+                    const pools = leg.trade.swaps[0].route.pools;
+                    for (const pool of pools) {
+                      const poolId = pool.address || pool.id || pool.poolId;
+                      if (poolId) {
+                        const normalizedId = poolId.toLowerCase();
+                        if (poolIdentifiers.has(normalizedId)) {
+                          hasReusedPool = true;
+                          break;
+                        }
+                        poolIdentifiers.add(normalizedId);
+                      }
+                    }
+                  }
+                  // Check Balancer pools
+                  if (leg.path && leg.path.poolAddresses) {
+                    for (const poolAddr of leg.path.poolAddresses) {
+                      const normalizedId = poolAddr.toLowerCase();
+                      if (poolIdentifiers.has(normalizedId)) {
+                        hasReusedPool = true;
+                        break;
+                      }
+                      poolIdentifiers.add(normalizedId);
+                    }
+                  }
+                  if (hasReusedPool) break;
+                }
+
+                // Only add route if no pool is reused
+                if (!hasReusedPool) {
+                  paths.push({
+                    type: 'cross-dex-uniswap-3hop-mixed',
+                    protocol: 'mixed',
+                    legs: [
+                      { ...firstLegRoute, protocol: 'uniswap', token: intermediate },
+                      { ...bestBalLeg2ForThisRoute, protocol: 'balancer', token: secondIntermediate },
+                      { ...bestUniLeg3ForThisRoute, protocol: 'uniswap' }
+                    ],
+                    totalOutput: bestUniLeg3ForThisRoute.outputAmount,
+                    path: `${tokenIn.symbol} -> ${intermediate.symbol} (Uniswap pool ${i + 1}) -> ${secondIntermediate.symbol} (Balancer) -> ${tokenOut.symbol} (Uniswap)`,
+                    estimatedGas: 280000 // Higher gas for 3 hops mixing protocols
+                  });
+                }
+              }
+
+              console.log(`   ✓ Found 3-hop mixed routes: ${tokenIn.symbol} -> ${intermediate.symbol} -> ${secondIntermediate.symbol} -> ${tokenOut.symbol} (Uni→Bal→Uni)`);
+            }
+
+            // Also create routes with Balancer third leg (Uni→Bal→Bal)
+            if (balancerLeg3ForBal && balancerLeg3ForBal.length > 0 && balancerLeg3ForBal[0].outputAmount) {
+              const bestBalLeg3 = selectBestVariant(balancerLeg3ForBal);
+
+              // Create route for EACH first-leg pool
+              for (let i = 0; i < uniswapLeg1.length; i++) {
+                const firstLegRoute = uniswapLeg1[i];
+                const firstLegOutput = firstLegRoute.outputAmount;
+
+                // Query second leg with THIS specific first leg's output
+                const leg2ForThisRoute = await discoverBalancerPaths(
+                  intermediate,
+                  secondIntermediate,
+                  firstLegOutput,
+                  provider,
+                  prefetchedBalancerPools,
+                  intermediates
+                );
+
+                if (!leg2ForThisRoute || leg2ForThisRoute.length === 0) {
+                  continue;
+                }
+
+                const bestBalLeg2ForThisRoute = selectBestVariant(leg2ForThisRoute);
+                const secondLegOutput = bestBalLeg2ForThisRoute.outputAmount;
+
+                // Query third leg with second leg's output
+                const leg3ForThisRoute = await discoverBalancerPaths(
+                  secondIntermediate,
+                  tokenOut,
+                  secondLegOutput,
+                  provider,
+                  prefetchedBalancerPools,
+                  intermediates
+                );
+
+                if (!leg3ForThisRoute || leg3ForThisRoute.length === 0) {
+                  continue;
+                }
+
+                const bestBalLeg3ForThisRoute = selectBestVariant(leg3ForThisRoute);
+
+                // CRITICAL: Validate that we don't reuse the same pool
+                const poolIdentifiers = new Set();
+                const legs = [firstLegRoute, bestBalLeg2ForThisRoute, bestBalLeg3ForThisRoute];
+                let hasReusedPool = false;
+
+                for (const leg of legs) {
+                  // Check Uniswap pools
+                  if (leg.trade && leg.trade.swaps && leg.trade.swaps[0]) {
+                    const pools = leg.trade.swaps[0].route.pools;
+                    for (const pool of pools) {
+                      const poolId = pool.address || pool.id || pool.poolId;
+                      if (poolId) {
+                        const normalizedId = poolId.toLowerCase();
+                        if (poolIdentifiers.has(normalizedId)) {
+                          hasReusedPool = true;
+                          break;
+                        }
+                        poolIdentifiers.add(normalizedId);
+                      }
+                    }
+                  }
+                  // Check Balancer pools
+                  if (leg.path && leg.path.poolAddresses) {
+                    for (const poolAddr of leg.path.poolAddresses) {
+                      const normalizedId = poolAddr.toLowerCase();
+                      if (poolIdentifiers.has(normalizedId)) {
+                        hasReusedPool = true;
+                        break;
+                      }
+                      poolIdentifiers.add(normalizedId);
+                    }
+                  }
+                  if (hasReusedPool) break;
+                }
+
+                // Only add route if no pool is reused
+                if (!hasReusedPool) {
+                  paths.push({
+                    type: 'cross-dex-uniswap-3hop',
+                    protocol: 'balancer',
+                    legs: [
+                      { ...firstLegRoute, protocol: 'uniswap', token: intermediate },
+                      { ...bestBalLeg2ForThisRoute, protocol: 'balancer', token: secondIntermediate },
+                      { ...bestBalLeg3ForThisRoute, protocol: 'balancer' }
+                    ],
+                    totalOutput: bestBalLeg3ForThisRoute.outputAmount,
+                    path: `${tokenIn.symbol} -> ${intermediate.symbol} (Uniswap pool ${i + 1}) -> ${secondIntermediate.symbol} -> ${tokenOut.symbol} (Balancer 2-hop)`,
+                    estimatedGas: 280000 // Higher gas for 3 hops
+                  });
+                }
+              }
+
+              console.log(`   ✓ Found 3-hop routes: ${tokenIn.symbol} -> ${intermediate.symbol} -> ${secondIntermediate.symbol} -> ${tokenOut.symbol} (Uni→Bal→Bal)`);
+            }
+          }
         }
         } else {
           console.log(`   ⚠ Skipping Uniswap leg1: ${tokenIn.symbol} -> ${intermediate.symbol} (zero output)`);
@@ -1139,6 +1521,208 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
       const hasUniswapLeg1 = uniswapLeg1 && uniswapLeg1.length > 0;
       if (!hasBalancerLeg1 && !hasUniswapLeg1) {
         console.log(`   ❌ No first-leg paths found via ${intermediate.symbol} (neither Balancer nor Uniswap)`);
+      }
+
+      // ========================================
+      // 4-HOP PATH DISCOVERY (MIXED PROTOCOLS)
+      // ========================================
+      // Pattern: tokenIn → intermediate1 → intermediate2 → intermediate3 → tokenOut
+      // Example: ONE → SEV (Uni) → EIG (Bal) → ETH (Uni) → SEV3 (Bal)
+      // Supports ALL protocol combinations: Uni-Uni-Uni-Uni, Uni-Bal-Uni-Bal, etc.
+
+      // Try starting with both Uniswap and Balancer for leg1
+      const leg1Options = [];
+      if (uniswapLeg1 && uniswapLeg1.length > 0 && uniswapLeg1[0].outputAmount?.gt(0)) {
+        leg1Options.push({ leg: uniswapLeg1[0], protocol: 'uniswap' });
+      }
+      if (balancerLeg1 && balancerLeg1.length > 0 && balancerLeg1[0].outputAmount?.gt(0)) {
+        leg1Options.push({ leg: balancerLeg1[0], protocol: 'balancer' });
+      }
+
+      for (const leg1Option of leg1Options) {
+        const leg1Output = leg1Option.leg.outputAmount;
+
+        // Try 4-hop through ALL intermediates
+        for (const secondIntermediate of intermediates) {
+          if (secondIntermediate.address === intermediate.address ||
+              secondIntermediate.address === tokenIn.address ||
+              secondIntermediate.address === tokenOut.address) {
+            continue;
+          }
+
+          // Skip if would create ETH+WETH combination or duplicate ETH/WETH
+          const leg1Symbol = intermediate.symbol;
+          const leg2Symbol = secondIntermediate.symbol;
+          if ((leg1Symbol === 'ETH' && leg2Symbol === 'WETH') ||
+              (leg1Symbol === 'WETH' && leg2Symbol === 'ETH') ||
+              (leg1Symbol === 'ETH' && leg2Symbol === 'ETH') ||
+              (leg1Symbol === 'WETH' && leg2Symbol === 'WETH')) {
+            continue;
+          }
+
+          try {
+            // Handle ETH/WETH conversion for Uniswap
+            const intermediateForUniswap = intermediate.isETH
+              ? { ...intermediate, address: ethers.constants.AddressZero, symbol: 'ETH' }
+              : intermediate;
+            const secondIntermediateForUniswap = secondIntermediate.isETH
+              ? { ...secondIntermediate, address: ethers.constants.AddressZero, symbol: 'ETH' }
+              : secondIntermediate;
+
+            // Leg 2: Try BOTH Uniswap and Balancer
+            const [leg2Uniswap, leg2Balancer] = await Promise.all([
+              discoverUniswapPaths(intermediateForUniswap, secondIntermediateForUniswap, leg1Output, prefetchedUniswapPools),
+              discoverBalancerPaths(intermediate, secondIntermediate, leg1Output, provider, prefetchedBalancerPools, intermediates)
+            ]);
+
+            const leg2Options = [];
+            if (leg2Uniswap && leg2Uniswap.length > 0) {
+              const bestLeg2Uni = selectBestVariant(leg2Uniswap);
+              if (bestLeg2Uni && bestLeg2Uni.outputAmount?.gt(0)) {
+                leg2Options.push({ leg: bestLeg2Uni, protocol: 'uniswap' });
+              }
+            }
+            if (leg2Balancer && leg2Balancer.length > 0) {
+              const bestLeg2Bal = selectBestVariant(leg2Balancer);
+              if (bestLeg2Bal && bestLeg2Bal.outputAmount?.gt(0)) {
+                leg2Options.push({ leg: bestLeg2Bal, protocol: 'balancer' });
+              }
+            }
+
+            for (const leg2Option of leg2Options) {
+              const leg2Output = leg2Option.leg.outputAmount;
+
+              // Try third intermediate (all of them)
+              for (const thirdIntermediate of intermediates) {
+                if (thirdIntermediate.address === secondIntermediate.address ||
+                    thirdIntermediate.address === intermediate.address ||
+                    thirdIntermediate.address === tokenIn.address ||
+                    thirdIntermediate.address === tokenOut.address) {
+                  continue;
+                }
+
+                // Skip if would create ETH+WETH combination or duplicate ETH/WETH
+                const leg3Symbol = thirdIntermediate.symbol;
+                const pathSymbols = [leg1Symbol, leg2Symbol, leg3Symbol];
+                const hasETH = pathSymbols.includes('ETH');
+                const hasWETH = pathSymbols.includes('WETH');
+                const ethCount = pathSymbols.filter(s => s === 'ETH').length;
+                const wethCount = pathSymbols.filter(s => s === 'WETH').length;
+
+                if ((hasETH && hasWETH) || ethCount > 1 || wethCount > 1) {
+                  continue;
+                }
+
+                try {
+                  // Handle ETH/WETH conversion for Uniswap
+                  const secondIntermediateForUniswapLeg3 = secondIntermediate.isETH
+                    ? { ...secondIntermediate, address: ethers.constants.AddressZero, symbol: 'ETH' }
+                    : secondIntermediate;
+                  const thirdIntermediateForUniswap = thirdIntermediate.isETH
+                    ? { ...thirdIntermediate, address: ethers.constants.AddressZero, symbol: 'ETH' }
+                    : thirdIntermediate;
+
+                  // Leg 3: Try BOTH Uniswap and Balancer
+                  const [leg3Uniswap, leg3Balancer] = await Promise.all([
+                    discoverUniswapPaths(secondIntermediateForUniswapLeg3, thirdIntermediateForUniswap, leg2Output, prefetchedUniswapPools),
+                    discoverBalancerPaths(secondIntermediate, thirdIntermediate, leg2Output, provider, prefetchedBalancerPools, intermediates)
+                  ]);
+
+                  const leg3Options = [];
+                  if (leg3Uniswap && leg3Uniswap.length > 0) {
+                    const bestLeg3Uni = selectBestVariant(leg3Uniswap);
+                    if (bestLeg3Uni && bestLeg3Uni.outputAmount?.gt(0)) {
+                      leg3Options.push({ leg: bestLeg3Uni, protocol: 'uniswap' });
+                    }
+                  }
+                  if (leg3Balancer && leg3Balancer.length > 0) {
+                    const bestLeg3Bal = selectBestVariant(leg3Balancer);
+                    if (bestLeg3Bal && bestLeg3Bal.outputAmount?.gt(0)) {
+                      leg3Options.push({ leg: bestLeg3Bal, protocol: 'balancer' });
+                    }
+                  }
+
+                  for (const leg3Option of leg3Options) {
+                    const leg3Output = leg3Option.leg.outputAmount;
+
+                    // Handle ETH/WETH conversion for Uniswap (final hop)
+                    const thirdIntermediateForUniswapLeg4 = thirdIntermediate.isETH
+                      ? { ...thirdIntermediate, address: ethers.constants.AddressZero, symbol: 'ETH' }
+                      : thirdIntermediate;
+                    const tokenOutForUniswap = tokenOut.isETH
+                      ? { ...tokenOut, address: ethers.constants.AddressZero, symbol: 'ETH' }
+                      : tokenOut;
+
+                    // Leg 4: Try BOTH Uniswap and Balancer (final hop)
+                    const [leg4Uniswap, leg4Balancer] = await Promise.all([
+                      discoverUniswapPaths(thirdIntermediateForUniswapLeg4, tokenOutForUniswap, leg3Output, prefetchedUniswapPools),
+                      discoverBalancerPaths(thirdIntermediate, tokenOut, leg3Output, provider, prefetchedBalancerPools, intermediates)
+                    ]);
+
+                    const leg4Options = [];
+                    if (leg4Uniswap && leg4Uniswap.length > 0) {
+                      const bestLeg4Uni = selectBestVariant(leg4Uniswap);
+                      if (bestLeg4Uni && bestLeg4Uni.outputAmount?.gt(0)) {
+                        leg4Options.push({ leg: bestLeg4Uni, protocol: 'uniswap' });
+                      }
+                    }
+                    if (leg4Balancer && leg4Balancer.length > 0) {
+                      const bestLeg4Bal = selectBestVariant(leg4Balancer);
+                      if (bestLeg4Bal && bestLeg4Bal.outputAmount?.gt(0)) {
+                        leg4Options.push({ leg: bestLeg4Bal, protocol: 'balancer' });
+                      }
+                    }
+
+                    for (const leg4Option of leg4Options) {
+                      // Check for pool reuse
+                      const poolIdentifiers = new Set();
+                      let hasReusedPool = false;
+
+                      for (const legOption of [leg1Option, leg2Option, leg3Option, leg4Option]) {
+                        const pool = legOption.leg;
+                        const poolId = pool.poolKey || pool.poolId || pool.poolAddress;
+                        if (poolId) {
+                          const normalizedId = poolId.toLowerCase();
+                          if (poolIdentifiers.has(normalizedId)) {
+                            hasReusedPool = true;
+                            break;
+                          }
+                          poolIdentifiers.add(normalizedId);
+                        }
+                      }
+
+                      if (!hasReusedPool) {
+                        // Determine if mixed protocols
+                        const protocols = [leg1Option.protocol, leg2Option.protocol, leg3Option.protocol, leg4Option.protocol];
+                        const isMixed = new Set(protocols).size > 1;
+                        const protocolLabel = isMixed ? 'mixed' : leg1Option.protocol;
+
+                        paths.push({
+                          type: 'cross-dex-4hop',
+                          protocol: protocolLabel,
+                          legs: [
+                            leg1Option.leg,
+                            leg2Option.leg,
+                            leg3Option.leg,
+                            leg4Option.leg
+                          ],
+                          totalOutput: leg4Option.leg.outputAmount,
+                          path: `${tokenIn.symbol} -> ${intermediate.symbol} (${leg1Option.protocol}) -> ${secondIntermediate.symbol} (${leg2Option.protocol}) -> ${thirdIntermediate.symbol} (${leg3Option.protocol}) -> ${tokenOut.symbol} (${leg4Option.protocol})`,
+                          estimatedGas: 350000
+                        });
+                        console.log(`   ✓ Found 4-hop ${protocolLabel} route: ${tokenIn.symbol} -> ${intermediate.symbol} -> ${secondIntermediate.symbol} -> ${thirdIntermediate.symbol} -> ${tokenOut.symbol}`);
+                      }
+                    }
+                  }
+                } catch (err) {
+                  // Silently skip
+                }
+              }
+            }
+          } catch (err) {
+            // Silently skip
+          }
+        }
       }
 
     } catch (error) {
