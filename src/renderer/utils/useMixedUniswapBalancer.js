@@ -1175,7 +1175,7 @@ async function optimizeTokenPairGroup(group, groupInputAmount, tokenIn, tokenOut
   let bestOutput = await evaluateGroupSplit(currentSplit, pools, groupInputAmount, tokenIn, tokenOut);
 
   // Hill climbing optimization
-  const maxIterations = 30;
+  const maxIterations = 40;
   const initialStepSize = 0.02;
   const minStepSize = 0.0001;
   const stepReduction = 0.8;
@@ -2341,7 +2341,8 @@ async function optimizeInterGroupSplit(
   previousOptimizations,
   groupInitialAllocations,
   poolInitialAllocations,
-  maxIterationsOverride = null
+  maxIterationsOverride = null,
+  globalIterationCount
 ) {
   // CRITICAL: Define token decimals lookup for intermediate tokens
   const tokenDecimalsLookup = {
@@ -2397,8 +2398,8 @@ async function optimizeInterGroupSplit(
 
   // Hill climbing
   const maxIterations = maxIterationsOverride || 100;
-  const initialStepSize = 0.05; // 5%
-  const minStepSize = 0.0001; // 0.01%
+  const initialStepSize = globalIterationCount > 1 ? 0.05 / (globalIterationCount * 5) : 0.05; // 5%
+  const minStepSize = globalIterationCount > 1 ? 0.0001 / (globalIterationCount * 5) : 0.0001; // 0.01%
   const MIN_GROUP_ALLOCATION = 0.00005; // 0.005% minimum (lowered from 0.05% to keep more groups in optimization)
   const stepReduction = 0.7;
   let stepSize = initialStepSize;
@@ -2451,6 +2452,9 @@ async function optimizeInterGroupSplit(
             bestSplit = testSplit;
             currentSplit = testSplit;
             improved = true;
+            console.log('best')
+            noImprovementCount = 0;
+
             // Only log first iteration to reduce verbosity
             if (iteration === 1) {
               console.log(`      Iteration ${iteration}: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol} - Split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
@@ -2477,10 +2481,12 @@ async function optimizeInterGroupSplit(
           );
 
           if (testOutput.gt(bestOutput)) {
+            console.log('best')
             bestOutput = testOutput;
             bestSplit = testSplit;
             currentSplit = testSplit;
             improved = true;
+            noImprovementCount = 0;
             // Only log first iteration to reduce verbosity
             if (iteration === 1) {
               console.log(`      Iteration ${iteration}: ${ethers.utils.formatUnits(bestOutput, tokenOut.decimals)} ${tokenOut.symbol} - Split: ${bestSplit.map(x => (x * 100).toFixed(1) + '%').join(' / ')}`);
@@ -2496,8 +2502,8 @@ async function optimizeInterGroupSplit(
       noImprovementCount++;
 
       // Early convergence: stop if no improvement for 5 consecutive iterations
-      if (noImprovementCount >= 10) {
-        console.log(`      ✓ Converged after ${iteration} iterations (no improvement for 10 iterations)`);
+      if (noImprovementCount >= 15) {
+        console.log(`      ✓ Converged after ${iteration} iterations (no improvement for 15 iterations)`);
         break;
       }
     } else {
@@ -3208,7 +3214,8 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
           groupOptimizations,
           groupInitialAllocations,
           poolInitialAllocations,
-          50  // maxIterationsOverride: 50 iterations per level in global optimization
+          50, // maxIterationsOverride: 50 iterations per level in global optimization
+          maxGlobalIterations + 1
         );
 
         // Accumulate removed groups from this optimization
@@ -3255,13 +3262,20 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
       bestGlobalOutput = currentGlobalOutput;
       bestGlobalIteration = globalIteration + 1;
 
-      // Deep clone the best solution
-      bestGroupOptimizations = new Map();
+      // CRITICAL: Clear previous best solution before saving new one
+      // This ensures we don't mix groups from different iterations
+      // (e.g., USDC→ETH from iteration 1 + USDC→USDT from iteration 3)
+      bestGroupOptimizations.clear();
+      bestGroupInputAmounts.clear();
+      bestGroupInitialAllocations.clear();
+
+      // Deep clone the best solution (only groups that exist in THIS iteration)
       for (const [key, value] of groupOptimizations) {
         bestGroupOptimizations.set(key, { ...value });
       }
-      bestGroupInputAmounts = new Map(groupInputAmounts);
-      bestGroupInitialAllocations = new Map();
+      for (const [key, value] of groupInputAmounts) {
+        bestGroupInputAmounts.set(key, value);
+      }
       for (const [key, value] of groupInitialAllocations) {
         bestGroupInitialAllocations.set(key, value);
       }
@@ -3413,7 +3427,7 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
     level.pools.forEach(pool => {
       const poolAddr = pool.poolAddress || pool.poolKey || 'unknown';
       const displayAddr = poolAddr.length > 10 ? poolAddr.slice(0, 10) + '...' : poolAddr;
-      const pct = pool.percentage !== undefined ? (pool.percentage * 100).toFixed(1) + '%' : 'N/A';
+      const pct = pool.percentage !== undefined ? (pool.percentage * 100).toFixed(3) + '%' : 'N/A';
 
       // Determine wrap operation description
       const wrapOpDescriptions = {
@@ -3793,10 +3807,22 @@ function buildPoolExecutionStructureFromGroups(tokenPairGroups, groupOptimizatio
           return 0;
         });
 
-        // Mark the last one (highest percentage) as shouldUseAllBalance
-        if (poolGroup.length > 0) {
-          poolGroup[poolGroup.length - 1].shouldUseAllBalance = true;
+        // CRITICAL: Only mark shouldUseAllBalance for Level 1+ sequential consumption
+        // Level 0 has competing groups that must use exact percentages (sum to 100%)
+        // Mark the last pool as shouldUseAllBalance ONLY if:
+        // 1. This is Level 1+ (not the initial input level)
+        // 2. All pools in this group have the same output token (not competing)
+        if (poolGroup.length > 0 && levelNum > 0) {
+          // Check if all pools have the same output token (sequential, not competing)
+          const outputTokens = new Set(poolGroup.map(p => getTokenSymbol(p.outputToken)));
+
+          if (outputTokens.size === 1) {
+            // All pools produce the same output token - mark last one to use all balance
+            poolGroup[poolGroup.length - 1].shouldUseAllBalance = true;
+          }
+          // If outputTokens.size > 1, these are competing routes - use exact percentages
         }
+        // Level 0 never uses shouldUseAllBalance - competing groups must use exact percentages
 
         sortedPools.push(...poolGroup);
       });
