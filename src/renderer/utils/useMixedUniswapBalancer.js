@@ -726,8 +726,17 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
             continue;
           }
 
-          // Skip if would use WETH consecutively (redundant since it's the same token)
-          if (intermediate.symbol === 'WETH' && secondIntermediate.symbol === 'WETH') {
+          // Check for token duplicates in the path (treating ETH and WETH as same token)
+          const pathTokens = [
+            tokenIn.symbol === 'ETH' ? 'WETH' : tokenIn.symbol,
+            intermediate.symbol === 'ETH' ? 'WETH' : intermediate.symbol,
+            secondIntermediate.symbol === 'ETH' ? 'WETH' : secondIntermediate.symbol,
+            tokenOut.symbol === 'ETH' ? 'WETH' : tokenOut.symbol
+          ];
+
+          const uniqueTokens = new Set(pathTokens);
+          if (uniqueTokens.size !== pathTokens.length) {
+            // Duplicate token in path - skip
             continue;
           }
 
@@ -819,11 +828,18 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
                   continue;
                 }
 
-                // Skip if WETH appears more than once in the path (redundant since it's the same token)
-                const pathSymbols = [intermediate.symbol, secondIntermediate.symbol, thirdIntermediate.symbol];
-                const wethCount = pathSymbols.filter(s => s === 'WETH').length;
+                // Check for token duplicates in the path (treating ETH and WETH as same token)
+                const pathTokens = [
+                  tokenIn.symbol === 'ETH' ? 'WETH' : tokenIn.symbol,
+                  intermediate.symbol === 'ETH' ? 'WETH' : intermediate.symbol,
+                  secondIntermediate.symbol === 'ETH' ? 'WETH' : secondIntermediate.symbol,
+                  thirdIntermediate.symbol === 'ETH' ? 'WETH' : thirdIntermediate.symbol,
+                  tokenOut.symbol === 'ETH' ? 'WETH' : tokenOut.symbol
+                ];
 
-                if (wethCount > 1) {
+                const uniqueTokens = new Set(pathTokens);
+                if (uniqueTokens.size !== pathTokens.length) {
+                  // Duplicate token in path - skip
                   continue;
                 }
 
@@ -941,11 +957,19 @@ async function discoverCrossDEXPaths(tokenIn, tokenOut, amountIn, provider, pref
                           continue;
                         }
 
-                        // Skip if WETH appears more than once in the path (redundant since it's the same token)
-                        const pathSymbols = [intermediate.symbol, secondIntermediate.symbol, thirdIntermediate.symbol, fourthIntermediate.symbol];
-                        const wethCount = pathSymbols.filter(s => s === 'WETH').length;
+                        // Check for token duplicates in the path (treating ETH and WETH as same token)
+                        const pathTokens = [
+                          tokenIn.symbol === 'ETH' ? 'WETH' : tokenIn.symbol,
+                          intermediate.symbol === 'ETH' ? 'WETH' : intermediate.symbol,
+                          secondIntermediate.symbol === 'ETH' ? 'WETH' : secondIntermediate.symbol,
+                          thirdIntermediate.symbol === 'ETH' ? 'WETH' : thirdIntermediate.symbol,
+                          fourthIntermediate.symbol === 'ETH' ? 'WETH' : fourthIntermediate.symbol,
+                          tokenOut.symbol === 'ETH' ? 'WETH' : tokenOut.symbol
+                        ];
 
-                        if (wethCount > 1) {
+                        const uniqueTokens = new Set(pathTokens);
+                        if (uniqueTokens.size !== pathTokens.length) {
+                          // Duplicate token in path - skip
                           continue;
                         }
 

@@ -921,6 +921,19 @@ export async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provi
 
     // Check if the pool can handle small trades reasonably
     // Expected rate for WETH->USDC should be around 4100
+    // Skip test if testAmount is too small to avoid division by zero
+    if (testAmount.isZero()) {
+      return {
+        poolAddress: pool.poolAddress,
+        poolType: pool.poolType,
+        tokenIn: pool.tokens[tokenInIndex].address,
+        tokenOut: pool.tokens[tokenOutIndex].address,
+        amountIn: ethers.BigNumber.from(amountIn),
+        amountOut: outputAmount,
+        swapFee: pool.swapFee || '0',
+        poolData: pool
+      };
+    }
     const testRate = testOutputAmount.mul(1000).div(testAmount);
     const expectedRate = pool.tokens[tokenOutIndex].symbol === 'USDC' ? 4100 : 1;
 
