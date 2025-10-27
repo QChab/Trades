@@ -924,12 +924,12 @@ export async function findOptimalPaths(tokenIn, tokenOut, amountIn, pools, provi
     const testRate = testOutputAmount.mul(1000).div(testAmount);
     const expectedRate = pool.tokens[tokenOutIndex].symbol === 'USDC' ? 4100 : 1;
 
-    // If the test trade gives unreasonable output, pool has liquidity issues
+    // If the test trade gives unreasonable output, pool has liquidity issues - filter it out
     if (pool.tokens[tokenInIndex].symbol === 'WETH' && pool.tokens[tokenOutIndex].symbol === 'USDC') {
       const testRateNum = parseFloat(ethers.utils.formatUnits(testRate, 6));
-      if (testRateNum < expectedRate * 0.5) { // Less than 50% of expected rate
-        console.log(`   ⚠️ Pool ${pool.poolAddress.slice(0, 10)}... has poor liquidity (rate: ${testRateNum.toFixed(0)} vs expected: ${expectedRate})`);
-        // Don't return null, but mark it as low liquidity
+      if (testRateNum < expectedRate * 0.005) { // Less than 0.5% of expected rate
+        console.log(`   ⚠️ Pool ${pool.poolAddress.slice(0, 10)}... has poor liquidity (rate: ${testRateNum.toFixed(0)} vs expected: ${expectedRate}) - excluding from routes`);
+        return null; // Exclude this pool from route discovery
       }
     }
 

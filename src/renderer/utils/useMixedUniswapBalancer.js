@@ -461,7 +461,7 @@ async function discoverBalancerPaths(tokenInObject, tokenOutObject, amountIn, pr
     );
 
     if (paths.length === 0) {
-      console.log('No Balancer paths found');
+      // console.log('No Balancer paths found');
       return null;
     }
 
@@ -3130,8 +3130,8 @@ async function optimizeInterGroupSplit(
       noImprovementCount++;
 
       // Early convergence: stop if no improvement for 5 consecutive iterations
-      if (noImprovementCount >= 15) {
-        console.log(`      ✓ Converged after ${iteration} iterations (no improvement for 15 iterations)`);
+      if (noImprovementCount >= 10) {
+        console.log(`      ✓ Converged after ${iteration} iterations (no improvement for 10 iterations)`);
         break;
       }
     } else {
@@ -3380,8 +3380,7 @@ async function evaluateInterGroupSplit(
         const result = await optimizeTokenPairGroup(group, totalInputForToken, groupTokenIn, groupTokenOut, poolInitialAllocations);
         groupOutputs.set(group.tokenPairKey, result.totalOutput);
       } else {
-        // Competing groups - need to split input
-        // Use split from previousOptimizations if available
+        // Competing groups - use split from previous optimizations
         const groupNames = groups.map(g => g.tokenPairKey).join(' vs ');
         const splits = [];
 
@@ -3404,8 +3403,6 @@ async function evaluateInterGroupSplit(
             groupOutputs.set(group.tokenPairKey, result.totalOutput);
           }
         }
-
-        // console.log(`         ↳ Downstream competing: ${groupNames} split ${splits.join(' / ')}`);
       }
     }
   }
@@ -3445,13 +3442,18 @@ function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
       if (getTokenSymbol(groupA.inputToken) === getTokenSymbol(groupB.outputToken) &&
           getTokenSymbol(groupA.outputToken) === getTokenSymbol(groupB.inputToken)) {
 
-        console.log(`   ⚠️  Circular token flow detected: ${groupA.tokenPairKey} ⇄ ${groupB.tokenPairKey}`);
-
-        // Determine which direction moves forward (away from initial input)
-        // Keep the direction that consumes tokens closer to the initial input
         const initialInputSymbol = getTokenSymbol(initialInputToken);
         const inputA = getTokenSymbol(groupA.inputToken);
         const inputB = getTokenSymbol(groupB.inputToken);
+
+        // CRITICAL: Don't remove pairs where one input IS the initial token
+        // e.g., SEV->EIG ⇄ EIG->SEV where SEV is input - both are valid paths!
+        if (inputA === initialInputSymbol || inputB === initialInputSymbol) {
+          console.log(`   ℹ️  Circular pair detected but one input is initial token: ${groupA.tokenPairKey} ⇄ ${groupB.tokenPairKey} - keeping both`);
+          continue;
+        }
+
+        console.log(`   ⚠️  Circular token flow detected: ${groupA.tokenPairKey} ⇄ ${groupB.tokenPairKey}`);
 
         // Count how many groups produce each input token from the initial input
         const producersOfInputA = tokenPairGroups.filter(g =>
@@ -3467,13 +3469,10 @@ function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
         console.log(`       ${groupB.tokenPairKey}: input ${inputB} has ${producersOfInputB} direct producer(s) from initial input`);
 
         // Keep the direction whose input is produced directly from initial input
-        // This is the "forward" direction; the other is "backward"
         let groupToRemove;
         if (producersOfInputA > producersOfInputB) {
-          // A consumes a token closer to initial input - keep A, remove B
           groupToRemove = groupB;
         } else if (producersOfInputB > producersOfInputA) {
-          // B consumes a token closer to initial input - keep B, remove A
           groupToRemove = groupA;
         } else {
           // Equal - fall back to route count
@@ -3483,7 +3482,7 @@ function assignLevelsToGroups(tokenPairGroups, initialInputToken) {
         }
 
         groupsToRemove.add(groupToRemove);
-        console.log(`       → Removing ${groupToRemove.tokenPairKey} (fewer routes)`);
+        console.log(`       → Removing ${groupToRemove.tokenPairKey}`);
       }
     }
   }
