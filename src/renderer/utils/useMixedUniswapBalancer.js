@@ -2398,8 +2398,8 @@ async function optimizeInterGroupSplit(
 
   // Hill climbing
   const maxIterations = maxIterationsOverride || 100;
-  const initialStepSize = globalIterationCount > 1 ? 0.05 / (globalIterationCount * 5) : 0.05; // 5%
-  const minStepSize = globalIterationCount > 1 ? 0.0001 / (globalIterationCount * 5) : 0.0001; // 0.01%
+  const initialStepSize = globalIterationCount > 0 ? 0.05 / (Math.pow(100, globalIterationCount)) : 0.05; // 5%
+  const minStepSize = globalIterationCount > 0 ? 0.0001 / (Math.pow(100, globalIterationCount)) : 0.0001; // 0.01%
   const MIN_GROUP_ALLOCATION = 0.00005; // 0.005% minimum (lowered from 0.05% to keep more groups in optimization)
   const stepReduction = 0.7;
   let stepSize = initialStepSize;
@@ -2452,7 +2452,7 @@ async function optimizeInterGroupSplit(
             bestSplit = testSplit;
             currentSplit = testSplit;
             improved = true;
-            console.log('best')
+            // console.log('best')
             noImprovementCount = 0;
 
             // Only log first iteration to reduce verbosity
@@ -2481,7 +2481,7 @@ async function optimizeInterGroupSplit(
           );
 
           if (testOutput.gt(bestOutput)) {
-            console.log('best')
+            // console.log('best')
             bestOutput = testOutput;
             bestSplit = testSplit;
             currentSplit = testSplit;
@@ -2974,7 +2974,7 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
     console.log(`   ${idx + 1}. ${group.tokenPairKey}: ${group.poolCount} pool(s)`);
     group.pools.forEach(pool => {
       const poolAddr = pool.poolAddress || pool.poolId || 'unknown';
-      console.log(`      • ${pool.protocol} (${poolAddr.slice(0, 10)}...) - Used by ${pool.routeIndices.length} route(s)`);
+      console.log(`      • ${pool.protocol} (${poolAddr}) - Used by ${pool.routeIndices.length} route(s)`);
     });
   });
 
@@ -3087,7 +3087,7 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
   const groupInputAmounts = new Map(); // tokenPairKey -> input amount for this group
 
   // GLOBAL OPTIMIZATION LOOP: Iterate across all levels to allow cross-level convergence
-  const maxGlobalIterations = 3; // Reduced from 20 - no improvement after iteration 1 in practice
+  const maxGlobalIterations = 2; // Reduced from 20 - no improvement after iteration 1 in practice
   let globalIteration = 0;
   let previousGlobalOutput = BigNumber.from(0);
 
@@ -3214,8 +3214,8 @@ async function optimizeSplitSimple(routes, totalAmount, tokenIn, tokenOut) {
           groupOptimizations,
           groupInitialAllocations,
           poolInitialAllocations,
-          50, // maxIterationsOverride: 50 iterations per level in global optimization
-          maxGlobalIterations + 1
+          100, // maxIterationsOverride: 50 iterations per level in global optimization
+          globalIteration
         );
 
         // Accumulate removed groups from this optimization

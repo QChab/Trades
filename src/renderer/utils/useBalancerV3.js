@@ -171,7 +171,54 @@ async function getPoolData(poolAddress, provider, poolInfo = null) {
   // Check if pool data is already cached (static data like weights, type)
   if (cache.pools[poolAddress.toLowerCase()]) {
     const cachedData = cache.pools[poolAddress.toLowerCase()];
-    
+
+    // WHITELIST: Only use WeightedPool and StablePool types
+    // All other types are either unsupported or unreliable
+    if (cachedData.poolType !== 'WeightedPool' && cachedData.poolType !== 'StablePool') {
+      // console.log(`  ⚠️ Skipping cached non-whitelisted pool type: ${cachedData.poolType}`);
+      return null;
+    }
+
+    // REFETCH STRATEGY: If no name/symbol in cache, fetch it now
+    // This ensures ALL cached pools are checked for BTF
+    if (!cachedData.name && !cachedData.symbol) {
+      console.log(`  🔄 Fetching name/symbol for cached pool ${poolAddress.slice(0, 10)}...`);
+      try {
+        const basicPool = new ethers.Contract(poolAddress, POOL_ABI, provider);
+        const name = await basicPool.name();
+        let symbol = '';
+        try {
+          symbol = await basicPool.symbol();
+        } catch (e) {
+          // Symbol might not exist
+        }
+
+        // Update cache with name/symbol
+        cachedData.name = name;
+        cachedData.symbol = symbol;
+        cache.pools[poolAddress.toLowerCase()] = cachedData;
+        await savePoolCache(cache);
+
+        // Check if it's BTF
+        const nameOrSymbol = `${name} ${symbol}`.toLowerCase();
+        if (nameOrSymbol.includes('btf')) {
+          console.log(`  ⚠️ Pool ${poolAddress.slice(0, 10)}... is BTF - filtering out`);
+          return null;
+        }
+      } catch (e) {
+        console.log(`  ⚠️ Could not fetch name/symbol for ${poolAddress.slice(0, 10)}...`);
+        // Continue with cached data, will retry next time
+      }
+    } else {
+      // CRITICAL: Check cached pools for BTF in name/symbol
+      // Even if cached as WeightedPool, BTF pools must be filtered out
+      const nameOrSymbol = `${cachedData.name || ''} ${cachedData.symbol || ''}`.toLowerCase();
+      if (nameOrSymbol.includes('btf')) {
+        console.log(`  ⚠️ Cached pool ${poolAddress.slice(0, 10)}... contains BTF - filtering out`);
+        return null;
+      }
+    }
+
     // If we have fresh poolInfo from GraphQL, use its balances
     if (poolInfo && poolInfo.tokens) {
       // Merge cached static data with fresh GraphQL data
@@ -201,6 +248,27 @@ async function getPoolData(poolAddress, provider, poolInfo = null) {
     return { error: 429 };
   }
 
+  // WHITELIST: Only use WeightedPool and StablePool types - don't cache others
+  if (poolData.poolType !== 'WeightedPool' && poolData.poolType !== 'StablePool') {
+    // console.log(`  ⚠️ Skipping non-whitelisted pool type: ${poolData.poolType}`);
+    return null;
+  }
+
+  // Get name and symbol for cache (helps with BTF detection on cached pools)
+  let poolName = '';
+  let poolSymbol = '';
+  try {
+    const basicPool = new ethers.Contract(poolAddress, POOL_ABI, provider);
+    poolName = await basicPool.name();
+    try {
+      poolSymbol = await basicPool.symbol();
+    } catch (e) {
+      // Symbol might not exist
+    }
+  } catch (e) {
+    // Can't get name/symbol, continue anyway
+  }
+
   // Calculate total liquidity (sum of token balances)
   let totalLiquidity = 0;
   if (poolInfo && poolInfo.tokens && poolInfo.tokens.length > 0) {
@@ -210,28 +278,30 @@ async function getPoolData(poolAddress, provider, poolInfo = null) {
       return sum + balance;
     }, 0);
   }
-  
+
   // Skip pools with less than 1 total tokens (too small to be useful)
   if (totalLiquidity < .01) {
     console.log(`  ⚠️ Pool has insufficient liquidity (${totalLiquidity.toFixed(4)} total tokens)`);
     return null;
   }
-  
-  // Add additional useful data
+
+  // Add additional useful data including name/symbol for BTF detection
   const enrichedData = {
     ...poolData,
     address: poolAddress,
     id: poolAddress, // In V3, ID is the address
+    name: poolName,
+    symbol: poolSymbol,
     tokens: poolInfo?.tokens || [],
     totalLiquidity,
     swapFee: poolInfo?.swapFee || '0.003',
     queriedAt: new Date().toISOString()
   };
-  
+
   // Cache the result
   cache.pools[poolAddress.toLowerCase()] = enrichedData;
   await savePoolCache(cache);
-  
+
   return enrichedData;
 }
 
@@ -583,7 +653,10 @@ async function enrichPoolData(pools, provider) {
         break;
       }
 
-      if (poolData.poolType === 'ConstantProduct') continue;
+      // Skip if pool was filtered (null = not WeightedPool or StablePool)
+      if (!poolData) {
+        continue;
+      }
 
       enrichedPools.push({
         ...pool,
@@ -617,6 +690,35 @@ async function enrichPoolData(pools, provider) {
 
 async function detectPoolType(poolAddress, provider) {
   try {
+    // CRITICAL: Check for BTF pools FIRST before anything else
+    // BTF pools may respond to getNormalizedWeights() with dynamic weights
+    // but they are NOT standard weighted pools - weights change over time!
+    const basicPoolFirst = new ethers.Contract(poolAddress, POOL_ABI, provider);
+    try {
+      const name = await basicPoolFirst.name();
+      let symbol = '';
+      try {
+        symbol = await basicPoolFirst.symbol();
+      } catch (e) {
+        // Symbol might not exist, continue
+      }
+
+      const nameOrSymbol = `${name} ${symbol}`.toLowerCase();
+      if (nameOrSymbol.includes('btf')) {
+        console.log(`Pool ${poolAddress.slice(0, 10)}... is BTF (Balancer Token Fund) - UNSUPPORTED (dynamic weights)`);
+        return {
+          poolType: 'Unsupported_BTF',
+          weights: null,
+          amplificationParameter: null
+        };
+      }
+    } catch (e) {
+      // Can't get name/symbol, continue with other checks
+      if (isRateLimitError(e)) {
+        return { error: 429 };
+      }
+    }
+
     // Try to detect if it's a weighted pool
     const weightedPool = new ethers.Contract(poolAddress, WEIGHTED_POOL_ABI, provider);
     try {
@@ -666,8 +768,15 @@ async function detectPoolType(poolAddress, provider) {
     const basicPool = new ethers.Contract(poolAddress, POOL_ABI, provider);
     try {
       const name = await basicPool.name();
+      let symbol = '';
+      try {
+        symbol = await basicPool.symbol();
+      } catch (e) {
+        // Symbol might not exist, continue with just name
+      }
 
       // Try to infer pool type from name
+      // (BTF already filtered at the start of function)
       if (name.toLowerCase().includes('weighted')) {
         return {
           poolType: 'WeightedPool',

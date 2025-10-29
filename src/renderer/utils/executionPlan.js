@@ -97,7 +97,7 @@ export async function createExecutionPlan(route, tokenIn, tokenOut, slippageTole
 
         console.log(`      ${poolIdx + 1}. ${pool.protocol}: ${inputTokenSymbol}→${outputTokenSymbol}`);
         console.log(`         Pool: ${poolIdentifier}`);
-        console.log(`         Allocation: ${(pool.percentage * 100).toFixed(1)}% of level ${level.level} input${pool.shouldUseAllBalance ? ' [USE ALL]' : ''}`);
+        console.log(`         Allocation: ${(pool.percentage * 100).toFixed(3)}% of level ${level.level} input${pool.shouldUseAllBalance ? ' [USE ALL]' : ''}`);
 
         // Display wrap/unwrap operation if applicable
         if (pool.wrapOperation && pool.wrapOperation !== 0) {
@@ -759,36 +759,23 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
           }
         }
 
-        // Determine wrap operation for first leg
+        // Determine wrap operation
         let wrapOp = 0;
+
+        // Check what the pool expects based on protocol
+        let poolExpectsWETH = false;
+        let poolExpectsETH = false;
+
+        if (protocol === 'balancer') {
+          // Balancer ALWAYS uses WETH, never native ETH
+          poolExpectsWETH = true;
+        } else if (protocol === 'uniswap') {
+          // Uniswap V4 uses native ETH
+          poolExpectsETH = true;
+        }
+
         if (legIndex === 0) {
-          // Check what the pool expects based on protocol and actual token addresses
-          let poolExpectsWETH = false;
-          let poolExpectsETH = false;
-
-          if (protocol === 'balancer') {
-            // Balancer ALWAYS uses WETH, never native ETH
-            // Check if the input token in the Balancer path is WETH
-            const balancerInputToken = leg.path?.hops?.[0]?.tokenIn;
-            if (balancerInputToken) {
-              poolExpectsWETH = balancerInputToken.toLowerCase() === WETH_ADDRESS.toLowerCase();
-              poolExpectsETH = balancerInputToken.toLowerCase() === ETH_ADDRESS.toLowerCase();
-            } else {
-              // If we can't determine, assume Balancer expects WETH (it always does)
-              poolExpectsWETH = true;
-            }
-          } else if (protocol === 'uniswap') {
-            // Uniswap V4 uses native ETH
-            const uniswapInputAddr = leg.trade?.route?.input?.address || leg.trade?.inputAmount?.currency?.address;
-            if (uniswapInputAddr) {
-              poolExpectsWETH = uniswapInputAddr.toLowerCase() === WETH_ADDRESS.toLowerCase();
-              poolExpectsETH = uniswapInputAddr.toLowerCase() === ETH_ADDRESS.toLowerCase();
-            } else {
-              // If we can't determine, assume Uniswap expects ETH
-              poolExpectsETH = true;
-            }
-          }
-
+          // First leg: Check against user's input token
           const userSendsETH = tokenIn.address === ETH_ADDRESS;
           const userSendsWETH = tokenIn.address === WETH_ADDRESS;
 
@@ -798,6 +785,21 @@ function normalizeRouteToPoolStructure(route, tokenIn, tokenOut, inputAmount = n
           } else if (poolExpectsETH && userSendsWETH) {
             wrapOp = 3; // Unwrap WETH to ETH before swap
             console.log(`   🔄 Leg 0 (${protocol}): Pool expects ETH, user sends WETH → wrapOp=3 (unwrap before)`);
+          }
+        } else {
+          // Subsequent legs: Check against previous leg's output
+          const prevLeg = pools[legIndex - 1];
+          if (prevLeg && prevLeg.outputToken) {
+            const prevOutputsETH = prevLeg.outputToken.address === ETH_ADDRESS;
+            const prevOutputsWETH = prevLeg.outputToken.address === WETH_ADDRESS;
+
+            if (poolExpectsWETH && prevOutputsETH) {
+              wrapOp = 1; // Wrap ETH to WETH before swap
+              console.log(`   🔄 Leg ${legIndex} (${protocol}): Pool expects WETH, previous outputs ETH → wrapOp=1 (wrap before)`);
+            } else if (poolExpectsETH && prevOutputsWETH) {
+              wrapOp = 3; // Unwrap WETH to ETH before swap
+              console.log(`   🔄 Leg ${legIndex} (${protocol}): Pool expects ETH, previous outputs WETH → wrapOp=3 (unwrap before)`);
+            }
           }
         }
 
